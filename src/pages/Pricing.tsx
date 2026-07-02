@@ -3,13 +3,21 @@ import { CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import {
-  ADDON_OPTIONS,
   BASIC_FEATURES,
   BASIC_MONTHLY_PRICE,
+  PRICING,
   annualMonthlyEquivalent,
   annualSavings,
   formatInr,
 } from '../data/pricing';
+
+const MARKETING_ADDONS = [
+  { key: 'dual_service', title: 'Dine-in + Counter', description: 'Run both service modes from one account', price: PRICING.dual_service },
+  { key: 'kitchen_dine_in', title: 'Kitchen — dine-in', description: 'KOT queue & ready status for table orders', price: PRICING.kitchen_dine_in },
+  { key: 'kitchen_counter', title: 'Kitchen — counter / takeaway', description: 'Kitchen screen for counter tickets', price: PRICING.kitchen_counter },
+  { key: 'history_extended', title: 'Extended order history', description: '2 years of order & sales history', price: PRICING.history_extended },
+  { key: 'inventory', title: 'Inventory & stock management', description: 'Track ingredient levels, get low-stock alerts, and let staff restock from the app', price: PRICING.inventory },
+];
 
 type Cycle = 'monthly' | 'annual';
 
@@ -107,7 +115,7 @@ export function Pricing() {
             Turn on exactly what your restaurant needs — billed monthly, on top of the Basic plan.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {ADDON_OPTIONS.map((addon) => (
+            {MARKETING_ADDONS.map((addon) => (
               <div
                 key={addon.key}
                 className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-white p-5"
@@ -115,11 +123,6 @@ export function Pricing() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-ink">{addon.title}</h3>
-                    {addon.comingSoon && (
-                      <span className="rounded-full bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary-dark">
-                        Coming Soon
-                      </span>
-                    )}
                   </div>
                   <p className="mt-1 text-sm text-ink-soft">{addon.description}</p>
                 </div>
