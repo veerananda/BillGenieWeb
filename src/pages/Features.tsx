@@ -11,7 +11,7 @@ export function Features() {
 
   return (
     <div>
-      <section className="bg-gradient-to-b from-primary-light/60 to-surface">
+      <section className="bg-linear-to-b from-primary-light/60 to-surface">
         <div className="mx-auto max-w-4xl px-6 py-16 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-ink sm:text-5xl">
             Everything your restaurant runs on

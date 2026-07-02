@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
 const LINKS = [
@@ -32,13 +32,19 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="hidden md:block">
-          <a
-            href="#get-started"
+        <div className="hidden items-center gap-3 md:flex">
+          <Link
+            to="/login"
+            className="text-sm font-medium text-ink-soft hover:text-ink transition-colors"
+          >
+            Log in
+          </Link>
+          <Link
+            to="/register"
             className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-dark"
           >
             Start free trial
-          </a>
+          </Link>
         </div>
 
         <button
@@ -65,13 +71,20 @@ export function Navbar() {
                 {link.label}
               </NavLink>
             ))}
-            <a
-              href="#get-started"
+            <Link
+              to="/login"
+              className="text-sm font-medium text-ink-soft hover:text-ink transition-colors"
+              onClick={() => setOpen(false)}
+            >
+              Log in
+            </Link>
+            <Link
+              to="/register"
               className="mt-2 rounded-full bg-primary px-5 py-2.5 text-center text-sm font-semibold text-white"
               onClick={() => setOpen(false)}
             >
               Start free trial
-            </a>
+            </Link>
           </nav>
         </div>
       )}

@@ -11,7 +11,7 @@ export function Home() {
   return (
     <div>
       {/* Hero */}
-      <section className="bg-gradient-to-b from-primary-light/60 to-surface">
+      <section className="bg-linear-to-b from-primary-light/60 to-surface">
         <div className="mx-auto max-w-6xl px-6 py-20 text-center md:py-28">
           <span className="inline-flex items-center rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-primary shadow-sm ring-1 ring-primary-light">
             Built for Indian restaurants
@@ -24,14 +24,13 @@ export function Home() {
             display, and staff management together — synced in real time across every device.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
-              id="get-started"
-              href="#get-started"
+            <Link
+              to="/register"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-semibold text-white shadow-md transition-colors hover:bg-primary-dark"
             >
               Start your 30-day free trial
               <ArrowRight size={18} />
-            </a>
+            </Link>
             <Link
               to="/features"
               className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-7 py-3.5 text-base font-semibold text-ink transition-colors hover:border-primary hover:text-primary"
@@ -109,9 +108,15 @@ export function Home() {
           <div className="bg-primary-light/50 p-10 md:w-1/2">
             <h3 className="text-sm font-semibold text-ink">Add what your restaurant needs</h3>
             <p className="mt-2 text-sm text-ink-soft">
-              Kitchen displays, extended history, inventory, and aggregator sync are all optional
+              Kitchen displays, extended history, inventory, and more are all optional
               add-ons — pay only for what you turn on.
             </p>
+            <Link
+              to="/register"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+            >
+              Start free trial <ArrowRight size={14} />
+            </Link>
           </div>
         </div>
       </section>
@@ -125,12 +130,12 @@ export function Home() {
           <p className="mt-3 text-white/70">
             Start a 30-day free trial — no credit card required.
           </p>
-          <a
-            href="#get-started"
+          <Link
+            to="/register"
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-semibold text-white shadow-md hover:bg-primary-dark"
           >
             Start free trial <ArrowRight size={18} />
-          </a>
+          </Link>
         </div>
       </section>
     </div>

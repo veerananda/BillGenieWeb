@@ -92,3 +92,25 @@ export function annualSavings(monthly: number): number {
 export function formatInr(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
+
+export interface SubscriptionSelection {
+  plan: 'basic';
+  billing_cycle: 'monthly' | 'annual';
+  addons: string[];
+  extra_staff?: number;
+  extra_managers?: number;
+  extra_tables?: number;
+}
+
+export function calculateSubscriptionTotal(
+  selection: SubscriptionSelection,
+  billing: 'monthly' | 'annual' = 'monthly'
+): number {
+  const base = BASIC_MONTHLY_PRICE;
+  const addonTotal = selection.addons.reduce((sum, key) => {
+    const addon = ADDON_OPTIONS.find((a) => a.key === key);
+    return sum + (addon?.price ?? 0);
+  }, 0);
+  const monthly = base + addonTotal;
+  return billing === 'annual' ? annualTotal(monthly) : monthly;
+}

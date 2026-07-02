@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import {
   ADDON_OPTIONS,
@@ -21,7 +22,7 @@ export function Pricing() {
 
   return (
     <div>
-      <section className="bg-gradient-to-b from-primary-light/60 to-surface">
+      <section className="bg-linear-to-b from-primary-light/60 to-surface">
         <div className="mx-auto max-w-3xl px-6 py-16 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-ink sm:text-5xl">
             Simple, modular pricing
@@ -78,12 +79,12 @@ export function Pricing() {
               <div className="mt-6 inline-flex items-center rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary-dark">
                 30-day free trial
               </div>
-              <a
-                href="#get-started"
+              <Link
+                to="/register"
                 className="mt-6 block rounded-full bg-primary px-6 py-3 text-center text-sm font-semibold text-white hover:bg-primary-dark"
               >
                 Start free trial
-              </a>
+              </Link>
             </div>
             <div className="p-8 md:col-span-2">
               <h3 className="text-sm font-semibold text-ink">What's included</h3>

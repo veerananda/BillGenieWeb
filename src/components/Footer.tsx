@@ -29,6 +29,16 @@ export function Footer() {
                     Pricing
                   </Link>
                 </li>
+                <li>
+                  <Link to="/register" className="hover:text-primary">
+                    Start free trial
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/login" className="hover:text-primary">
+                    Log in
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>
