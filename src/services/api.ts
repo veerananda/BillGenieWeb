@@ -29,6 +29,7 @@ export interface RegisterData {
   phone: string;
   password: string;
   login_id: string;
+  operation_mode: 'dine_in' | 'counter' | 'both';
   address?: string;
   city?: string;
   cuisine?: string;

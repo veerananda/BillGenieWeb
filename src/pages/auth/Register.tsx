@@ -27,11 +27,14 @@ function generateLoginId(): string {
 
 // ── Step types ─────────────────────────────────────────────────────────────────
 
+type OperationMode = 'dine_in' | 'counter' | 'both';
+
 interface Step1 {
   restaurantName: string;
   cuisine: string;
   city: string;
   address: string;
+  operationMode: OperationMode;
 }
 
 interface Step2 {
@@ -112,6 +115,7 @@ export function Register() {
     cuisine: '',
     city: '',
     address: '',
+    operationMode: 'dine_in',
   });
 
   // Step 2 — login ID generated once on mount
@@ -218,6 +222,7 @@ export function Register() {
     try {
       const response = await apiClient.register({
         restaurant_name: step1.restaurantName.trim(),
+        operation_mode: step1.operationMode,
         cuisine: step1.cuisine.trim() || undefined,
         city: step1.city.trim() || undefined,
         address: step1.address.trim() || undefined,
@@ -328,6 +333,36 @@ export function Register() {
                   onChange={handleS1Change('address')}
                   className="mt-1.5 block w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
                 />
+              </div>
+
+              {/* Service mode */}
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  How do you serve customers? <span className="text-red-500">*</span>
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { value: 'dine_in', label: 'Dine-in', sub: 'Table billing' },
+                      { value: 'counter', label: 'Counter', sub: 'Takeaway / quick service' },
+                      { value: 'both', label: 'Both', sub: 'Dine-in + counter' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setStep1((p) => ({ ...p, operationMode: opt.value }))}
+                      className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                        step1.operationMode === opt.value
+                          ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                          : 'border-border bg-surface hover:border-ink-muted'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold text-ink">{opt.label}</div>
+                      <div className="mt-0.5 text-xs text-ink-muted">{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {error && (
