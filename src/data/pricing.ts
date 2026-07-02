@@ -53,17 +53,10 @@ export const ADDON_OPTIONS: AddonOption[] = [
   },
   {
     key: 'inventory',
-    title: 'Inventory & stock updates',
-    description: 'Track stock and auto-deduct on orders',
+    title: 'Inventory & stock management',
+    description: 'Track ingredient levels, get low-stock alerts, and let staff restock from the app',
     price: 349,
     comingSoon: false,
-  },
-  {
-    key: 'aggregator_integration',
-    title: 'Zomato / Swiggy',
-    description: 'Aggregator order sync',
-    price: 499,
-    comingSoon: true,
   },
 ];
 

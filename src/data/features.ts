@@ -10,7 +10,8 @@ import {
   BarChart3,
   Receipt,
   Package,
-  Link2,
+  Moon,
+  Smartphone,
 } from 'lucide-react';
 
 export type FeatureCategory = 'operations' | 'kitchen' | 'staff' | 'insights';
@@ -27,7 +28,7 @@ export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   operations: 'Orders & Billing',
   kitchen: 'Kitchen',
   staff: 'Staff & Setup',
-  insights: 'Insights',
+  insights: 'Insights & Inventory',
 };
 
 export const FEATURES: Feature[] = [
@@ -42,7 +43,7 @@ export const FEATURES: Feature[] = [
     icon: ShoppingBag,
     title: 'Counter & takeaway orders',
     description:
-      'Fast ticket-style ordering for counter service, separate from dine-in tables.',
+      'Fast ticket-style ordering for counter service — capture customer name and phone, and show a tracking QR after payment.',
     category: 'operations',
   },
   {
@@ -53,10 +54,10 @@ export const FEATURES: Feature[] = [
     category: 'operations',
   },
   {
-    icon: Receipt,
-    title: 'Cash & digital checkout',
+    icon: Smartphone,
+    title: 'Cash & UPI checkout',
     description:
-      'Take payments by cash or digital QR, then print or share a receipt in one tap.',
+      'Accept cash or generate a UPI QR for the exact bill amount from your restaurant UPI ID — no static image needed.',
     category: 'operations',
   },
   {
@@ -84,7 +85,14 @@ export const FEATURES: Feature[] = [
     icon: Users,
     title: 'Staff management with roles',
     description:
-      'Admin, manager, staff, and chef roles with scoped access, so everyone sees only what they need.',
+      'Admin, manager, staff, and chef roles with scoped access. Control who can cancel orders, restock inventory, and more.',
+    category: 'staff',
+  },
+  {
+    icon: Moon,
+    title: 'Auto dark / light mode',
+    description:
+      'The app switches to dark mode at 6 pm and back to light at 6 am automatically. Staff can override anytime from settings.',
     category: 'staff',
   },
   {
@@ -103,27 +111,18 @@ export const FEATURES: Feature[] = [
   },
   {
     icon: Package,
-    title: 'Inventory & ingredient tracking',
+    title: 'Inventory & stock management',
     description:
-      'Track stock levels and auto-deduct ingredients as orders go out.',
+      'Track ingredient levels in real time, get low-stock alerts on the home screen, and let staff restock directly from the app.',
     category: 'insights',
-    comingSoon: true,
-  },
-  {
-    icon: Link2,
-    title: 'Zomato / Swiggy integration',
-    description:
-      'Pull aggregator orders straight into the same kitchen and billing flow.',
-    category: 'insights',
-    comingSoon: true,
   },
 ];
 
 export const HOME_HIGHLIGHTS: Feature[] = [
   FEATURES[0], // Dine-in table billing
   FEATURES[2], // Self-service QR ordering
+  FEATURES[3], // Cash & UPI checkout
   FEATURES[4], // Kitchen display
   FEATURES[5], // Real-time sync
-  FEATURES[7], // Staff management
-  FEATURES[8], // Sales analytics
+  FEATURES[11], // Inventory & stock management
 ];
