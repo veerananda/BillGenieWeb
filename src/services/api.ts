@@ -152,6 +152,7 @@ export interface CompletePaymentRequest {
   amount_received?: number;
   change_returned?: number;
   upi_transaction_id?: string;
+  discount_amount?: number;
 }
 
 export interface CompletePaymentResponse {
@@ -190,10 +191,11 @@ export interface StaffMember {
   name: string;
   email?: string;
   phone?: string;
-  role: 'manager' | 'staff' | 'chef';
+  role: 'admin' | 'manager' | 'staff' | 'chef';
   staff_key?: string;
   can_cancel_orders?: boolean;
   can_restock_inventory?: boolean;
+  is_active?: boolean;
   created_at?: string;
 }
 
@@ -403,6 +405,16 @@ class APIClient {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }
 
+  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number }[]): Promise<Order> {
+    try {
+      const r = await this.makeRequest(`/orders/${orderId}/add-items`, 'POST', { items });
+      return r?.order ?? r;
+    } catch {
+      const r = await this.makeRequest(`/orders/${orderId}`, 'PUT', { items });
+      return r?.order ?? r;
+    }
+  }
+
   async getSalesSummary(period: 'today' | 'month'): Promise<{ total_revenue: number; total_orders: number; average_order_value: number; period: string }> {
     return this.makeRequest(`/orders/sales-summary?period=${period}`);
   }
@@ -462,22 +474,27 @@ class APIClient {
   // ── Staff ─────────────────────────────────────────────────────────────────
 
   async listStaff(): Promise<StaffMember[]> {
-    const r = await this.makeRequest('/staff');
-    return r?.staff ?? r ?? [];
+    const r = await this.makeRequest('/users');
+    return r?.staff ?? r?.users ?? (Array.isArray(r) ? r : []);
   }
 
-  async createStaff(data: { name: string; email?: string; phone?: string; role: string; can_cancel_orders?: boolean; can_restock_inventory?: boolean }): Promise<StaffMember> {
-    const r = await this.makeRequest('/staff', 'POST', data);
+  async createStaff(data: { name: string; email?: string; phone?: string; role: string; staff_key?: string; password?: string; can_cancel_orders?: boolean; can_restock_inventory?: boolean }): Promise<StaffMember> {
+    const r = await this.makeRequest('/users', 'POST', data);
     return r?.staff_member ?? r?.user ?? r;
   }
 
-  async updateStaff(id: string, data: Partial<StaffMember>): Promise<StaffMember> {
-    const r = await this.makeRequest(`/staff/${id}`, 'PUT', data);
+  async updateStaff(id: string, data: Partial<StaffMember> & { password?: string }): Promise<StaffMember> {
+    const r = await this.makeRequest(`/users/${id}`, 'PUT', data);
     return r?.staff_member ?? r?.user ?? r;
   }
 
   async deleteStaff(id: string): Promise<void> {
-    await this.makeRequest(`/staff/${id}`, 'DELETE');
+    await this.makeRequest(`/users/${id}`, 'DELETE');
+  }
+
+  async regenerateStaffKey(id: string): Promise<StaffMember> {
+    const r = await this.makeRequest(`/users/${id}/regenerate-key`, 'POST', {});
+    return r?.staff_member ?? r?.user ?? r;
   }
 
   // ── Ingredients / Inventory ───────────────────────────────────────────────

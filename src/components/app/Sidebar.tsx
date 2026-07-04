@@ -39,7 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Menu', to: '/app/menu', icon: UtensilsCrossed, requiresAdminOrManager: true },
   { label: 'Orders', to: '/app/orders', icon: ClipboardList, subscriptionKey: 'dine_in_enabled' },
   { label: 'Counter', to: '/app/counter', icon: ShoppingBag, subscriptionKey: 'counter_enabled' },
-  { label: 'Kitchen', to: '/app/kitchen', icon: Flame, subscriptionKey: 'kitchen' },
+  { label: 'Kitchen Updates', to: '/app/kitchen', icon: Flame, subscriptionKey: 'kitchen' },
   { label: 'Sales', to: '/app/sales', icon: BarChart3, requiresAdmin: true },
   { label: 'History', to: '/app/history', icon: Receipt, requiresAdminOrManager: true },
   { label: 'Inventory', to: '/app/inventory', icon: Package, subscriptionKey: 'inventory' },

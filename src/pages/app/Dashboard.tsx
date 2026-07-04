@@ -12,9 +12,13 @@ import {
   TrendingUp,
   ClipboardList,
   Calculator,
+  Package,
+  History,
+  Store,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { selectAuthName } from '../../store/authSlice';
+import { selectAuthName, selectAuthRole } from '../../store/authSlice';
+import { selectProfile } from '../../store/profileSlice';
 import { selectLowStockIngredients } from '../../store/inventorySlice';
 import { apiClient } from '../../services/api';
 import { Spinner } from '../../components/app/Spinner';
@@ -26,6 +30,8 @@ interface SalesSummary {
   period: string;
 }
 
+type UserRole = 'admin' | 'manager' | 'staff' | 'chef';
+
 interface FeatureCard {
   label: string;
   description: string;
@@ -33,56 +39,96 @@ interface FeatureCard {
   route: string;
   color: string;
   bg: string;
+  roles?: UserRole[];
+  requiresDineIn?: boolean;
+  requiresCounter?: boolean;
+  requiresKitchen?: boolean;
+  requiresInventory?: boolean;
 }
 
-const FEATURE_CARDS: FeatureCard[] = [
+const ALL_FEATURE_CARDS: FeatureCard[] = [
   {
-    label: 'Dine-in Orders',
-    description: 'Manage tables & orders',
+    label: 'Orders & Billing',
+    description: 'Tables, billing & checkout',
     icon: UtensilsCrossed,
     route: '/app/orders',
     color: 'text-emerald-600',
     bg: 'bg-emerald-50',
+    requiresDineIn: true,
   },
   {
-    label: 'Counter Orders',
-    description: 'Takeaway & eat-here',
+    label: 'Counter / Takeaway',
+    description: 'Takeaway & eat-here orders',
     icon: ShoppingBag,
     route: '/app/counter',
     color: 'text-blue-600',
     bg: 'bg-blue-50',
+    requiresCounter: true,
   },
   {
-    label: 'Kitchen Display',
-    description: 'Live kitchen tickets',
+    label: 'Kitchen',
+    description: 'Live KOT board',
     icon: ChefHat,
     route: '/app/kitchen',
     color: 'text-orange-600',
     bg: 'bg-orange-50',
+    roles: ['admin', 'manager', 'chef'],
+    requiresKitchen: true,
   },
   {
-    label: 'Menu',
-    description: 'Items & categories',
+    label: 'Menu & Pricing',
+    description: 'Manage menu & prices',
     icon: BookOpen,
     route: '/app/menu',
     color: 'text-violet-600',
     bg: 'bg-violet-50',
+    roles: ['admin', 'manager'],
   },
   {
-    label: 'Sales',
+    label: 'Sales Info',
     description: 'Revenue & reports',
     icon: BarChart2,
     route: '/app/sales',
     color: 'text-rose-600',
     bg: 'bg-rose-50',
+    roles: ['admin'],
   },
   {
-    label: 'Staff',
+    label: 'Staff Mgmt',
     description: 'Team management',
     icon: Users,
     route: '/app/staff',
     color: 'text-teal-600',
     bg: 'bg-teal-50',
+    roles: ['admin'],
+  },
+  {
+    label: 'Inventory',
+    description: 'Stock & ingredients',
+    icon: Package,
+    route: '/app/inventory',
+    color: 'text-amber-600',
+    bg: 'bg-amber-50',
+    roles: ['admin', 'manager', 'chef'],
+    requiresInventory: true,
+  },
+  {
+    label: 'Order History',
+    description: 'Past orders & receipts',
+    icon: History,
+    route: '/app/history',
+    color: 'text-indigo-600',
+    bg: 'bg-indigo-50',
+    roles: ['admin', 'manager'],
+  },
+  {
+    label: 'Profile',
+    description: 'Restaurant settings',
+    icon: Store,
+    route: '/app/profile',
+    color: 'text-gray-600',
+    bg: 'bg-gray-100',
+    roles: ['admin'],
   },
 ];
 
@@ -109,10 +155,23 @@ function formatCurrency(value: number): string {
 export function Dashboard() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  void dispatch; // dispatch available for future use
+  void dispatch;
 
   const name = useAppSelector(selectAuthName);
+  const role = useAppSelector(selectAuthRole) as UserRole | null;
+  const profile = useAppSelector(selectProfile);
   const lowStockIngredients = useAppSelector(selectLowStockIngredients);
+
+  const limits = profile?.subscription_limits;
+
+  const visibleCards = ALL_FEATURE_CARDS.filter((card) => {
+    if (card.roles && role && !card.roles.includes(role)) return false;
+    if (card.requiresDineIn && limits && !limits.dine_in_enabled) return false;
+    if (card.requiresCounter && limits && !limits.counter_enabled) return false;
+    if (card.requiresKitchen && limits && !limits.kitchen_dine_in && !limits.kitchen_counter) return false;
+    if (card.requiresInventory && limits && !limits.inventory) return false;
+    return true;
+  });
 
   const [sales, setSales] = useState<SalesSummary | null>(null);
   const [salesLoading, setSalesLoading] = useState(true);
@@ -207,8 +266,8 @@ export function Dashboard() {
       {/* Feature grid */}
       <div>
         <h2 className="mb-4 text-base font-semibold text-gray-700">Quick Access</h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {FEATURE_CARDS.map((card) => {
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {visibleCards.map((card) => {
             const Icon = card.icon;
             return (
               <button

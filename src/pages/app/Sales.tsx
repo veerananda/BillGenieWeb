@@ -140,7 +140,7 @@ export function Sales() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {p === 'today' ? 'Today' : 'This Month'}
+            {p === 'today' ? "Today's Sales" : 'Monthly Revenue'}
           </button>
         ))}
       </div>
@@ -162,7 +162,16 @@ export function Sales() {
       {/* Stat cards or skeleton */}
       {loading && !summary ? (
         <SkeletonCards />
-      ) : summary ? (
+      ) : !loading && (summary === null || summary.total_orders === 0) ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-100 bg-white py-16 text-center shadow-sm">
+          <p className="text-base font-semibold text-gray-700">
+            No sales recorded for {period === 'today' ? 'today' : 'this month'}
+          </p>
+          <p className="mt-1 text-sm text-gray-400">
+            Orders will appear here once customers place them
+          </p>
+        </div>
+      ) : summary && summary.total_orders > 0 ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           {stats.map((stat) => (
             <StatCard key={stat.label} {...stat} />
@@ -175,7 +184,7 @@ export function Sales() {
         <p className="mt-6 text-xs text-gray-400">
           Showing data for:{' '}
           <span className="font-medium capitalize text-gray-500">
-            {period === 'today' ? 'Today' : 'This Month'}
+            {period === 'today' ? "Today's Sales" : 'Monthly Revenue'}
           </span>
         </p>
       )}

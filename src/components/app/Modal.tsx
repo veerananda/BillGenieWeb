@@ -16,8 +16,14 @@ export function Modal({ open, onClose, title, children, maxWidth = 'md' }: Props
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    if (open) document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    if (open) {
+      document.addEventListener('keydown', handleKey);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = '';
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -25,22 +31,41 @@ export function Modal({ open, onClose, title, children, maxWidth = 'md' }: Props
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className={`w-full ${widths[maxWidth]} rounded-2xl bg-white shadow-xl`}>
-        {title && (
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+      {/*
+        Panel:
+        - Mobile: full-width sheet rising from bottom, rounded top corners, max 92vh tall
+        - sm+: centred dialog, rounded all corners, max 90vh tall
+        The header is shrink-0 (never scrolls away).
+        The body is flex-1 + min-h-0 + overflow-y-auto so it scrolls independently.
+      */}
+      <div
+        className={`
+          flex w-full flex-col bg-white shadow-xl
+          rounded-t-2xl sm:rounded-2xl
+          max-h-[92vh] sm:max-h-[90vh]
+          ${widths[maxWidth]}
+        `}
+      >
+        {/* Sticky header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
+          {title ? (
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-        <div className="p-6">{children}</div>
+          ) : (
+            <span />
+          )}
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
       </div>
     </div>
   );

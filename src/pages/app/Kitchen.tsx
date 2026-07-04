@@ -1,189 +1,212 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ChefHat, Clock, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { ChefHat, Check, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../services/api';
-import type { Order, OrderItem } from '../../services/api';
+import type { Order } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import {
-  selectActiveOrders,
-  setActiveOrders,
-  upsertActiveOrder,
-} from '../../store/ordersSlice';
+import { setActiveOrders } from '../../store/ordersSlice';
+import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { PageHeader } from '../../components/app/PageHeader';
-import { Badge } from '../../components/app/Badge';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface KotItem {
+  id: string;
+  orderId: string;
+  name: string;
+  quantity: number;
+  notes?: string;
+  status: string;
+  menuId: string;
+}
+
+interface KotTicket {
+  key: string;
+  kotNumber: number;
+  orderId: string;
+  tableLabel: string;
+  customerName: string;
+  serviceMode?: string;
+  firedAt: Date;
+  items: KotItem[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getElapsedMinutes(createdAt: string): number {
-  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000);
+function isActive(status: string) {
+  return status !== 'ready' && status !== 'served' && status !== 'completed';
 }
 
-function formatElapsed(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}h ${m}m`;
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
-type ItemStatus = 'pending' | 'cooking' | 'ready' | 'served';
-
-function getItemStatusVariant(
-  status: string
-): 'pending' | 'cooking' | 'ready' | 'served' | 'completed' | 'cancelled' {
-  if (status === 'cooking') return 'cooking';
-  if (status === 'ready') return 'ready';
-  if (status === 'served') return 'served';
-  return 'pending';
+function formatElapsed(d: Date): string {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins === 1) return '1 min ago';
+  return `${mins} mins ago`;
 }
 
-/** Returns border color based on aggregate item statuses */
-function getCardBorderClass(order: Order): string {
-  const statuses = order.items.map((i) => i.status);
-  const allReady = statuses.every((s) => s === 'ready' || s === 'served' || s === 'completed');
-  const anyCooking = statuses.some((s) => s === 'cooking');
-
-  if (allReady) return 'border-green-400';
-  if (anyCooking) return 'border-amber-400';
-  return 'border-gray-200';
+function resolveTableLabel(order: Order): string {
+  if (order.order_type === 'counter') {
+    const num = order.ticket_number ?? order.order_number;
+    const suffix =
+      order.service_mode === 'takeaway'
+        ? ' · Takeaway'
+        : order.service_mode === 'eat_here'
+        ? ' · Eat here'
+        : '';
+    return `Order #${num}${suffix}`;
+  }
+  return `Table ${order.table_number ?? '?'}`;
 }
 
-function hasActiveItems(order: Order): boolean {
-  return order.items.some(
-    (i) => i.status === 'pending' || i.status === 'cooking' || i.status === 'ready'
-  );
-}
+function buildTickets(
+  orders: Order[],
+  menuMap: Record<string, { name: string }>
+): KotTicket[] {
+  const tickets: KotTicket[] = [];
 
-function isOrderComplete(order: Order): boolean {
-  return order.items.every((i) => i.status === 'served' || i.status === 'completed');
-}
+  for (const order of orders) {
+    // Only skip cancelled. Completed counter orders still need kitchen prep.
+    if (order.status === 'cancelled') continue;
+    const activeItems = (order.items ?? []).filter((i) => isActive(i.status));
+    if (activeItems.length === 0) continue;
 
-// ─── Item Status Button ───────────────────────────────────────────────────────
-
-interface ItemActionProps {
-  orderId: string;
-  item: OrderItem;
-  onUpdate: (orderId: string, updatedItem: OrderItem) => void;
-}
-
-function ItemActionButton({ orderId, item, onUpdate }: ItemActionProps) {
-  const [loading, setLoading] = useState(false);
-
-  const nextStatus: Record<string, ItemStatus | null> = {
-    pending: 'cooking',
-    cooking: 'ready',
-    ready: 'served',
-    served: null,
-    completed: null,
-  };
-
-  const nextLabel: Record<string, string> = {
-    pending: 'Start Cooking',
-    cooking: 'Mark Ready',
-    ready: 'Served',
-  };
-
-  const next = nextStatus[item.status] ?? null;
-  if (!next) return null;
-
-  async function handleClick() {
-    if (!next) return;
-    setLoading(true);
-    try {
-      await apiClient.updateOrderItemStatus(orderId, item.id, next);
-      onUpdate(orderId, { ...item, status: next });
-    } catch {
-      // silently fail — the board will re-sync on next poll
-    } finally {
-      setLoading(false);
-    }
+    tickets.push({
+      key: order.id,
+      kotNumber: 0,
+      orderId: order.id,
+      tableLabel: resolveTableLabel(order),
+      customerName: order.customer_name || 'Guest',
+      serviceMode: order.service_mode,
+      firedAt: new Date(order.created_at),
+      items: activeItems.map((item) => ({
+        id: item.id,
+        orderId: order.id,
+        name: menuMap[item.menu_id]?.name ?? item.menu_item?.name ?? item.menu_id,
+        quantity: item.quantity,
+        notes: item.notes,
+        status: item.status,
+        menuId: item.menu_id,
+      })),
+    });
   }
 
-  const colorMap: Record<string, string> = {
-    pending: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
-    cooking: 'bg-green-100 text-green-700 hover:bg-green-200',
-    ready: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
-  };
+  // FIFO — oldest order first
+  tickets.sort((a, b) => a.firedAt.getTime() - b.firedAt.getTime());
+  tickets.forEach((t, i) => {
+    t.kotNumber = i + 1;
+  });
 
-  return (
-    <button
-      onClick={handleClick}
-      disabled={loading}
-      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${colorMap[item.status] ?? ''}`}
-    >
-      {loading ? <Spinner size="sm" /> : nextLabel[item.status]}
-    </button>
-  );
+  return tickets;
+}
+
+function buildPrepSummary(tickets: KotTicket[]) {
+  const map = new Map<string, { name: string; qty: number }>();
+  for (const t of tickets) {
+    for (const item of t.items) {
+      const key = item.menuId || item.name;
+      const ex = map.get(key);
+      if (ex) ex.qty += item.quantity;
+      else map.set(key, { name: item.name, qty: item.quantity });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── KOT Card ─────────────────────────────────────────────────────────────────
 
-interface KOTCardProps {
-  order: Order;
-  muted?: boolean;
-  onItemUpdate: (orderId: string, updatedItem: OrderItem) => void;
-}
+function KOTCard({
+  ticket,
+  onItemReady,
+}: {
+  ticket: KotTicket;
+  onItemReady: (orderId: string, itemId: string) => Promise<void>;
+}) {
+  const [readyAllLoading, setReadyAllLoading] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
 
-function KOTCard({ order, muted, onItemUpdate }: KOTCardProps) {
-  const elapsed = getElapsedMinutes(order.created_at);
-  const borderClass = muted ? 'border-gray-100' : getCardBorderClass(order);
-  const isUrgent = elapsed >= 15 && !muted;
+  async function handleItemReady(item: KotItem) {
+    setMarkingId(item.id);
+    try {
+      await onItemReady(item.orderId, item.id);
+    } catch {
+      // board re-syncs on next poll
+    } finally {
+      setMarkingId(null);
+    }
+  }
+
+  async function handleReadyAll() {
+    setReadyAllLoading(true);
+    try {
+      await Promise.all(ticket.items.map((item) => onItemReady(item.orderId, item.id)));
+    } catch {
+      // silent
+    } finally {
+      setReadyAllLoading(false);
+    }
+  }
 
   return (
-    <div
-      className={`flex flex-col rounded-2xl border-2 bg-white shadow-sm transition-all ${borderClass} ${muted ? 'opacity-50' : ''}`}
-    >
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm" style={{ borderLeftWidth: 4, borderLeftColor: '#1BAE76' }}>
       {/* Card header */}
       <div className="flex items-start justify-between border-b border-gray-100 px-4 py-3">
-        <div>
-          <p className="font-bold text-gray-900">Order #{order.order_number}</p>
-          <p className="mt-0.5 text-xs text-gray-500">
-            {order.order_type === 'counter' ? (
-              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                Counter
-              </span>
-            ) : (
-              <span>Table {order.table_number}</span>
-            )}
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="rounded bg-primary px-2 py-0.5 text-xs font-bold text-white">
+              KOT #{ticket.kotNumber}
+            </span>
+          </div>
+          <p className="text-lg font-bold text-gray-900">{ticket.tableLabel}</p>
+          <p className="mt-0.5 text-sm text-gray-500">{ticket.customerName}</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {formatElapsed(ticket.firedAt)} · Fired {formatTime(ticket.firedAt)}
           </p>
         </div>
-        <div
-          className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
-            isUrgent ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          <Clock className="h-3.5 w-3.5" />
-          {formatElapsed(elapsed)}
+        <div className="ml-3 flex shrink-0 flex-col items-end gap-2">
+          <span className="text-sm font-semibold text-gray-700">
+            {formatTime(ticket.firedAt)}
+          </span>
+          <button
+            onClick={handleReadyAll}
+            disabled={readyAllLoading}
+            className="flex items-center justify-center rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 disabled:opacity-50 transition-colors min-w-18"
+          >
+            {readyAllLoading ? <Spinner size="sm" className="text-white" /> : 'Ready all'}
+          </button>
         </div>
       </div>
 
-      {/* Items */}
-      <div className="flex-1 divide-y divide-gray-50 px-4">
-        {order.items.map((item) => (
-          <div key={item.id} className="flex items-center justify-between py-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-bold text-gray-700">
-                ×{item.quantity}
-              </span>
-              <span className="truncate text-sm font-medium text-gray-800">
-                {item.menu_item?.name ?? `Item ${item.menu_id.slice(0, 6)}`}
-              </span>
+      {/* Items — only active (pending/cooking) shown */}
+      <div className="flex flex-col gap-1.5 p-3">
+        {ticket.items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
               {item.notes && (
-                <span className="shrink-0 text-xs text-amber-600 italic">({item.notes})</span>
+                <p className="mt-0.5 text-xs italic text-gray-400">{item.notes}</p>
               )}
             </div>
-            <div className="ml-2 flex shrink-0 items-center gap-2">
-              <Badge variant={getItemStatusVariant(item.status)}>
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-              </Badge>
-              {!muted && (
-                <ItemActionButton
-                  orderId={order.id}
-                  item={item}
-                  onUpdate={onItemUpdate}
-                />
+            <span className="shrink-0 text-sm font-bold text-primary">{item.quantity}x</span>
+            <button
+              onClick={() => handleItemReady(item)}
+              disabled={markingId === item.id || readyAllLoading}
+              className="flex min-w-12 flex-col items-center rounded-lg bg-green-500 px-2.5 py-1.5 text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
+            >
+              {markingId === item.id ? (
+                <Spinner size="sm" className="text-white" />
+              ) : (
+                <Check className="h-4 w-4" />
               )}
-            </div>
+              <span className="mt-0.5 text-[9px] font-bold">Ready</span>
+            </button>
           </div>
         ))}
       </div>
@@ -195,25 +218,49 @@ function KOTCard({ order, muted, onItemUpdate }: KOTCardProps) {
 
 export function Kitchen() {
   const dispatch = useAppDispatch();
-  const activeOrders = useAppSelector(selectActiveOrders);
+  const menuItems = useAppSelector(selectMenuItems);
+  const menuHydrated = useAppSelector(selectMenuHydrated);
 
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+
+  // Fast name lookup: menu_item_id → {name}
+  const menuMap = useMemo(
+    () => Object.fromEntries(menuItems.map((m) => [m.id, { name: m.name }])),
+    [menuItems]
+  );
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await apiClient.listOrdersSummary('active');
-      dispatch(setActiveOrders(result.orders));
+      const [dineInRes, counterRes] = await Promise.all([
+        apiClient.listOrdersSummary('active'),
+        apiClient.listCounterOrdersToday().catch(() => ({ orders: [] as Order[], total: 0 })),
+        !menuHydrated
+          ? apiClient.listMenuItems().then((items) => dispatch(setMenuItems(items)))
+          : Promise.resolve(),
+      ]);
+
+      dispatch(setActiveOrders(dineInRes.orders));
+
+      // Counter orders: include regardless of payment status — items may still need cooking.
+      // Deduplicate by id in case a counter order also appears in the dine-in summary.
+      const dineInIds = new Set(dineInRes.orders.map((o) => o.id));
+      const counterOrders = (counterRes.orders ?? []).filter(
+        (o) => o.status !== 'cancelled' && !dineInIds.has(o.id)
+      );
+
+      setAllOrders([...dineInRes.orders, ...counterOrders]);
       setLastRefreshed(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load kitchen orders');
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, [dispatch, menuHydrated]);
 
   useEffect(() => {
     fetchOrders();
@@ -221,36 +268,37 @@ export function Kitchen() {
     return () => clearInterval(interval);
   }, [fetchOrders]);
 
-  function handleItemUpdate(orderId: string, updatedItem: OrderItem) {
-    const order = activeOrders.find((o) => o.id === orderId);
-    if (!order) return;
-    const updatedOrder: Order = {
-      ...order,
-      items: order.items.map((i) => (i.id === updatedItem.id ? updatedItem : i)),
-    };
-    dispatch(upsertActiveOrder(updatedOrder));
-  }
+  // Derive KOT tickets from current order state
+  const tickets = useMemo(() => buildTickets(allOrders, menuMap), [allOrders, menuMap]);
+  const prepSummary = useMemo(() => buildPrepSummary(tickets), [tickets]);
 
-  // Filter to orders with kitchen-relevant items
-  const kitchenOrders = activeOrders.filter((o) =>
-    o.items.some(
-      (i) => i.status === 'pending' || i.status === 'cooking' || i.status === 'ready'
-    )
+  // Stats
+  const statsKOTs = tickets.length;
+  const statsLines = tickets.reduce((s, t) => s + t.items.length, 0);
+  const statsPortions = tickets.reduce(
+    (s, t) => s + t.items.reduce((si, i) => si + i.quantity, 0),
+    0
   );
 
-  // Sort oldest first (most urgent)
-  const sorted = [...kitchenOrders].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  // Mark a single item ready — optimistic then API
+  const onItemReady = useCallback(
+    async (orderId: string, itemId: string) => {
+      setAllOrders((prev) =>
+        prev.map((o) =>
+          o.id !== orderId
+            ? o
+            : { ...o, items: o.items.map((i) => (i.id === itemId ? { ...i, status: 'ready' } : i)) }
+        )
+      );
+      await apiClient.updateOrderItemStatus(orderId, itemId, 'ready');
+    },
+    []
   );
-
-  const activeCards = sorted.filter(hasActiveItems);
-  const completedCards = sorted.filter(isOrderComplete);
 
   return (
     <div className="flex-1 p-6">
       <PageHeader
-        title="Kitchen"
-        subtitle="Live order board"
+        title="Kitchen Updates"
         action={
           <button
             onClick={fetchOrders}
@@ -265,8 +313,7 @@ export function Kitchen() {
 
       {lastRefreshed && (
         <p className="mb-4 text-xs text-gray-400">
-          Last updated {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-          {' · '}Auto-refreshes every 60 s
+          Last updated {formatTime(lastRefreshed)} · Auto-refreshes every 60 s
         </p>
       )}
 
@@ -279,49 +326,60 @@ export function Kitchen() {
         </div>
       )}
 
-      {loading && activeOrders.length === 0 ? (
+      {/* Stats bar — 3 large numbers */}
+      <div className="mb-5 grid grid-cols-3 divide-x divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+        <div className="flex flex-col items-center py-4">
+          <span className="text-2xl font-bold text-primary">{statsKOTs}</span>
+          <span className="mt-0.5 text-xs text-gray-500">KOTs in queue</span>
+        </div>
+        <div className="flex flex-col items-center py-4">
+          <span className="text-2xl font-bold text-amber-500">{statsLines}</span>
+          <span className="mt-0.5 text-xs text-gray-500">Lines to prepare</span>
+        </div>
+        <div className="flex flex-col items-center py-4">
+          <span className="text-2xl font-bold text-green-600">{statsPortions}</span>
+          <span className="mt-0.5 text-xs text-gray-500">Total portions</span>
+        </div>
+      </div>
+
+      {/* Batch prep chips */}
+      {prepSummary.length > 0 && (
+        <div className="mb-5">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">
+            Batch prep — cook by dish
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {prepSummary.map((entry) => (
+              <div
+                key={entry.name}
+                className="flex shrink-0 flex-col rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm min-w-24"
+              >
+                <p className="text-xs font-semibold leading-tight text-gray-800 line-clamp-2">
+                  {entry.name}
+                </p>
+                <span className="mt-1 text-lg font-extrabold text-primary">×{entry.qty}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && allOrders.length === 0 ? (
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" className="text-primary" />
         </div>
-      ) : activeCards.length === 0 && completedCards.length === 0 ? (
+      ) : tickets.length === 0 ? (
         <EmptyState
           icon={ChefHat}
-          title="No active orders — all caught up!"
-          description="New orders will appear here automatically."
+          title="No KOTs in kitchen"
+          description="Each save from dine-in or counter creates a numbered ticket in FIFO order"
         />
       ) : (
-        <div className="space-y-8">
-          {activeCards.length > 0 && (
-            <div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {activeCards.map((order) => (
-                  <KOTCard
-                    key={order.id}
-                    order={order}
-                    onItemUpdate={handleItemUpdate}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {completedCards.length > 0 && (
-            <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                All Served
-              </p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {completedCards.map((order) => (
-                  <KOTCard
-                    key={order.id}
-                    order={order}
-                    muted
-                    onItemUpdate={handleItemUpdate}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+        /* Single column KOT list — matches mobile */
+        <div className="mx-auto max-w-2xl space-y-3">
+          {tickets.map((ticket) => (
+            <KOTCard key={ticket.key} ticket={ticket} onItemReady={onItemReady} />
+          ))}
         </div>
       )}
     </div>

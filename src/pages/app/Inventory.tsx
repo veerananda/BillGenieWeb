@@ -214,13 +214,13 @@ function IngredientModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editTarget ? 'Edit Ingredient' : 'Add Ingredient'}
+      title={editTarget ? 'Edit Inventory' : 'Add Ingredient'}
       maxWidth="sm"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">
-            Name <span className="text-red-500">*</span>
+            Ingredient Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -251,7 +251,7 @@ function IngredientModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Current stock <span className="text-red-500">*</span>
+              Current Stock <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -267,7 +267,7 @@ function IngredientModal({
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Full stock <span className="text-red-500">*</span>
+              Full Stock <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -303,7 +303,7 @@ function IngredientModal({
             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
             {saving && <Spinner size="sm" className="text-white" />}
-            {editTarget ? 'Save changes' : 'Add ingredient'}
+            {editTarget ? 'Save' : 'Add ingredient'}
           </button>
         </div>
       </form>
@@ -343,7 +343,7 @@ function DeleteIngredientModal({
   }
 
   return (
-    <Modal open={!!ingredient} onClose={onClose} title="Delete ingredient" maxWidth="sm">
+    <Modal open={!!ingredient} onClose={onClose} title="Delete Ingredient" maxWidth="sm">
       <p className="text-sm text-gray-600">
         Are you sure you want to delete{' '}
         <span className="font-semibold text-gray-900">{ingredient?.name}</span>? This
@@ -567,7 +567,7 @@ function RestockRow({ item, onRestock }: RestockRowProps) {
             <Spinner size="sm" className="text-primary" />
           ) : (
             <>
-              {[10, 25, 50].map((qty) => (
+              {[1, 2, 5, 10].map((qty) => (
                 <button
                   key={qty}
                   onClick={() => doRestock(qty)}
@@ -609,9 +609,10 @@ function RestockRow({ item, onRestock }: RestockRowProps) {
           />
           <button
             type="submit"
-            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
           >
             <RefreshCw className="h-3.5 w-3.5" />
+            Add to stock
           </button>
           <button
             type="button"
@@ -642,10 +643,10 @@ function RestockTab({ ingredients, canRestock, onRestock }: RestockTabProps) {
           <Lock className="h-8 w-8 text-gray-400" />
         </div>
         <h3 className="text-base font-semibold text-gray-900">
-          Permission required
+          Access restricted
         </h3>
         <p className="mt-1 text-sm text-gray-500">
-          You don't have permission to restock inventory.
+          Ask your admin to enable stock refill permission for your account.
         </p>
       </div>
     );
@@ -655,8 +656,8 @@ function RestockTab({ ingredients, canRestock, onRestock }: RestockTabProps) {
     return (
       <EmptyState
         icon={Package}
-        title="No ingredients to restock"
-        description="Add ingredients first from the Ingredients tab."
+        title="No ingredients yet."
+        description="Admin can set up inventory in Ingredient Management."
       />
     );
   }

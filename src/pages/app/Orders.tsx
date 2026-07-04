@@ -19,11 +19,12 @@ import {
   upsertActiveOrder,
   removeActiveOrder,
 } from '../../store/ordersSlice';
-import { selectMenuItems, selectMenuCategories } from '../../store/menuSlice';
+import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import type { MenuItem } from '../../store/menuSlice';
 import type {
   RestaurantTable,
   Order,
+  OrderItem,
   CompletePaymentRequest,
   CreateOrderRequest,
 } from '../../services/api';
@@ -45,8 +46,8 @@ type PaymentMethod = 'cash' | 'upi';
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(n: number | undefined | null) {
+  return `₹${(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function orderStatusVariant(
@@ -63,6 +64,19 @@ function orderStatusVariant(
   return map[status] ?? 'pending';
 }
 
+function resolveItemTotal(item: OrderItem, menuMap: Map<string, MenuItem>): number {
+  if (item.total > 0) return item.total;
+  const price = item.unit_rate || item.menu_item?.price || menuMap.get(item.menu_id)?.price || 0;
+  return price * item.quantity;
+}
+
+function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
+  const items = order.items ?? [];
+  if (items.some((i) => i.status === 'ready')) return 'ready';
+  if (items.some((i) => i.status === 'cooking')) return 'cooking';
+  return null;
+}
+
 // ── Table card ─────────────────────────────────────────────────────────────────
 
 function TableCard({
@@ -75,12 +89,15 @@ function TableCard({
   onClick: () => void;
 }) {
   const occupied = table.is_occupied;
+  const derived = occupied && order ? getDerivedItemStatus(order) : null;
 
   return (
     <button
       onClick={onClick}
       className={`group flex w-full flex-col gap-3 rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-        occupied
+        derived === 'ready'
+          ? 'border-green-300 bg-green-50 hover:border-green-400'
+          : occupied
           ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
           : 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
       }`}
@@ -88,22 +105,120 @@ function TableCard({
       <div className="flex items-start justify-between gap-2">
         <span className="text-base font-bold text-gray-900">{table.name}</span>
         <Badge variant={occupied ? 'occupied' : 'vacant'}>
-          {occupied ? 'Occupied' : 'Vacant'}
+          {occupied ? 'In use' : 'Vacant'}
         </Badge>
       </div>
 
       {occupied && order ? (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <p className="text-xs text-gray-500">
             {order.items.length} item{order.items.length !== 1 ? 's' : ''}
           </p>
           <p className="text-sm font-semibold text-gray-900">{fmt(order.total)}</p>
-          <Badge variant={orderStatusVariant(order.status)}>{order.status}</Badge>
+          {derived === 'ready' ? (
+            <>
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                Ready to serve
+              </span>
+              <p className="text-xs font-medium text-green-600">Tap to serve</p>
+            </>
+          ) : derived === 'cooking' ? (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+              Cooking…
+            </span>
+          ) : (
+            <Badge variant={orderStatusVariant(order.status)}>{order.status}</Badge>
+          )}
         </div>
       ) : (
         <p className="text-xs text-gray-400">Tap to take an order</p>
       )}
     </button>
+  );
+}
+
+// ── Vacant table panel ────────────────────────────────────────────────────────
+
+function VacantTablePanel({
+  table,
+  onClose,
+  onMarkOccupied,
+  onAddItems,
+}: {
+  table: RestaurantTable;
+  onClose: () => void;
+  onMarkOccupied: () => Promise<void>;
+  onAddItems: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleMark = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await onMarkOccupied();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to mark table as occupied');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{table.name}</h2>
+            <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+              Vacant
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-1 flex-col gap-4 p-6">
+          <p className="text-sm text-gray-500">
+            This table is currently vacant. Mark it as occupied to reserve it, or add items to start a new order.
+          </p>
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="space-y-3 border-t border-gray-100 px-6 py-4">
+          <button
+            onClick={handleMark}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {loading ? <Spinner size="sm" className="text-white" /> : null}
+            Mark Occupied
+          </button>
+          <button
+            onClick={onAddItems}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            Add Items
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -115,19 +230,32 @@ function OrderDetailPanel({
   onClose,
   onOrderCancelled,
   onOrderCompleted,
+  onAddItems,
 }: {
   order: Order;
   table: RestaurantTable;
   onClose: () => void;
   onOrderCancelled: (orderId: string) => void;
   onOrderCompleted: (orderId: string, tableId: string) => void;
+  onAddItems?: () => void;
 }) {
   const dispatch = useAppDispatch();
+  const menuItems = useAppSelector(selectMenuItems);
+  const menuMap = new Map(menuItems.map((m) => [m.id, m]));
+
+  // Compute totals from items as fallback when API returns zeros
+  const computedSubtotal = order.items.reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
+  const displaySubtotal = order.sub_total > 0 ? order.sub_total : computedSubtotal;
+  const taxIsFromApi = order.tax_amount > 0;
+  const displayTax = taxIsFromApi ? order.tax_amount : parseFloat((displaySubtotal * 0.05).toFixed(2));
+  // When tax comes from API, trust the API total. When we computed tax ourselves, always add it to subtotal.
+  const displayTotal = taxIsFromApi && order.total > 0 ? order.total : displaySubtotal + displayTax;
 
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
+  const [discountAmount, setDiscountAmount] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
@@ -135,10 +263,45 @@ function OrderDetailPanel({
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
+  const [servingId, setServingId] = useState<string | null>(null);
+
+  const handleServe = async (itemId: string) => {
+    setServingId(itemId);
+    try {
+      const updatedOrder: Order = {
+        ...order,
+        items: order.items.map((i) => (i.id === itemId ? { ...i, status: 'served' } : i)),
+      };
+      dispatch(upsertActiveOrder(updatedOrder));
+      await apiClient.updateOrderItemStatus(order.id, itemId, 'served');
+    } catch (err) {
+      console.error('[Orders] mark served failed', err);
+    } finally {
+      setServingId(null);
+    }
+  };
+
+  // ── Kitchen status column ─────────────────────────────────────────────────
+  const showKitchenStatus = order.items.some(
+    (item) => item.status === 'cooking' || item.status === 'ready' || item.status === 'served'
+  );
+
+  // ── Discount / payment calculations ──────────────────────────────────────
+  const discountValue = parseFloat(discountAmount) || 0;
+  const effectiveTotal = Math.max(0, displayTotal - discountValue);
   const changeAmount =
     paymentMethod === 'cash' && amountReceived
-      ? Math.max(0, parseFloat(amountReceived) - order.total)
+      ? Math.max(0, parseFloat(amountReceived) - effectiveTotal)
       : 0;
+
+  const closePaymentModal = () => {
+    if (!paymentLoading) {
+      setPaymentOpen(false);
+      setDiscountAmount('');
+      setAmountReceived('');
+      setPaymentError(null);
+    }
+  };
 
   const handleCheckout = async () => {
     setCheckoutLoading(true);
@@ -156,7 +319,7 @@ function OrderDetailPanel({
     setPaymentError(null);
     if (paymentMethod === 'cash') {
       const received = parseFloat(amountReceived);
-      if (isNaN(received) || received < order.total) {
+      if (isNaN(received) || received < effectiveTotal) {
         setPaymentError('Amount received must be at least the order total.');
         return;
       }
@@ -164,6 +327,7 @@ function OrderDetailPanel({
 
     const payload: CompletePaymentRequest = {
       payment_method: paymentMethod,
+      ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
       ...(paymentMethod === 'cash'
         ? {
             amount_received: parseFloat(amountReceived),
@@ -237,18 +401,41 @@ function OrderDetailPanel({
                 <th className="pb-2">Item</th>
                 <th className="pb-2 text-center">Qty</th>
                 <th className="pb-2 text-right">Total</th>
+                {showKitchenStatus && <th className="pb-2 text-right">Status</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {order.items.map((item) => (
                 <tr key={item.id}>
                   <td className="py-2.5 text-gray-900">
-                    {item.menu_item?.name ?? 'Unknown item'}
+                    {item.menu_item?.name ?? menuMap.get(item.menu_id)?.name ?? 'Item'}
                   </td>
                   <td className="py-2.5 text-center text-gray-600">{item.quantity}</td>
                   <td className="py-2.5 text-right font-medium text-gray-900">
-                    {fmt(item.total)}
+                    {fmt(resolveItemTotal(item, menuMap))}
                   </td>
+                  {showKitchenStatus && (
+                    <td className="py-2.5 text-right">
+                      {item.status === 'ready' ? (
+                        <button
+                          onClick={() => handleServe(item.id)}
+                          disabled={servingId === item.id}
+                          className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                        >
+                          {servingId === item.id ? (
+                            <Spinner size="sm" className="text-white" />
+                          ) : (
+                            <CheckCircle className="h-3 w-3" />
+                          )}
+                          Serve
+                        </button>
+                      ) : (
+                        <Badge variant={orderStatusVariant(item.status)}>
+                          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                        </Badge>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -259,12 +446,12 @@ function OrderDetailPanel({
         <div className="border-t border-gray-100 px-6 py-4 space-y-1.5">
           <div className="flex justify-between text-sm text-gray-500">
             <span>Subtotal</span>
-            <span>{fmt(order.sub_total)}</span>
+            <span>{fmt(displaySubtotal)}</span>
           </div>
-          {order.tax_amount > 0 && (
+          {displayTax > 0 && (
             <div className="flex justify-between text-sm text-gray-500">
-              <span>Tax</span>
-              <span>{fmt(order.tax_amount)}</span>
+              <span>Tax (5%)</span>
+              <span>{fmt(displayTax)}</span>
             </div>
           )}
           {order.discount_amount && order.discount_amount > 0 ? (
@@ -275,25 +462,37 @@ function OrderDetailPanel({
           ) : null}
           <div className="flex justify-between border-t border-gray-100 pt-2 text-base font-bold text-gray-900">
             <span>Total</span>
-            <span>{fmt(order.total)}</span>
+            <span>{fmt(displayTotal)}</span>
           </div>
         </div>
 
         {/* Actions */}
         <div className="border-t border-gray-100 px-6 py-4 space-y-3">
           {order.status !== 'completed' && order.status !== 'cancelled' && (
-            <button
-              onClick={handleCheckout}
-              disabled={checkoutLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              {checkoutLoading ? (
-                <Spinner size="sm" className="text-white" />
-              ) : (
-                <CreditCard className="h-4 w-4" />
+            <>
+              <button
+                onClick={handleCheckout}
+                disabled={checkoutLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                {checkoutLoading ? (
+                  <Spinner size="sm" className="text-white" />
+                ) : (
+                  <CreditCard className="h-4 w-4" />
+                )}
+                Checkout
+              </button>
+
+              {onAddItems && (
+                <button
+                  onClick={onAddItems}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add items
+                </button>
               )}
-              Checkout
-            </button>
+            </>
           )}
 
           <button
@@ -307,7 +506,7 @@ function OrderDetailPanel({
       </div>
 
       {/* Payment modal */}
-      <Modal open={paymentOpen} onClose={() => !paymentLoading && setPaymentOpen(false)} title="Payment" maxWidth="sm">
+      <Modal open={paymentOpen} onClose={closePaymentModal} title="Payment" maxWidth="sm">
         <div className="space-y-5">
           {paymentError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -342,7 +541,33 @@ function OrderDetailPanel({
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
             <p className="text-xs text-gray-500">Order total</p>
-            <p className="text-2xl font-bold text-gray-900">{fmt(order.total)}</p>
+            <p className="text-2xl font-bold text-gray-900">{fmt(displayTotal)}</p>
+          </div>
+
+          {/* Discount */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Discount (optional)
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+              <input
+                type="number"
+                min={0}
+                max={displayTotal}
+                step="0.01"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                placeholder="0"
+                className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            {discountValue > 0 && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                Updated total:{' '}
+                <span className="font-semibold text-gray-900">{fmt(effectiveTotal)}</span>
+              </p>
+            )}
           </div>
 
           {paymentMethod === 'cash' && (
@@ -353,11 +578,11 @@ function OrderDetailPanel({
                 </label>
                 <input
                   type="number"
-                  min={order.total}
+                  min={effectiveTotal}
                   step="0.01"
                   value={amountReceived}
                   onChange={(e) => setAmountReceived(e.target.value)}
-                  placeholder={String(order.total)}
+                  placeholder={String(effectiveTotal)}
                   className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
@@ -378,7 +603,7 @@ function OrderDetailPanel({
 
           <div className="flex gap-3">
             <button
-              onClick={() => !paymentLoading && setPaymentOpen(false)}
+              onClick={closePaymentModal}
               disabled={paymentLoading}
               className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
@@ -445,10 +670,12 @@ function TakeOrderPanel({
   table,
   onClose,
   onOrderPlaced,
+  existingOrder,
 }: {
   table: RestaurantTable;
   onClose: () => void;
   onOrderPlaced: (order: Order, table: RestaurantTable) => void;
+  existingOrder?: Order;
 }) {
   const dispatch = useAppDispatch();
   const menuItems = useAppSelector(selectMenuItems);
@@ -507,22 +734,38 @@ function TakeOrderPanel({
     setPlaceError(null);
     setPlacing(true);
 
-    const orderData: CreateOrderRequest = {
-      table_id: table.id,
-      table_number: table.name,
-      order_type: 'dine_in',
-      customer_name: customerName.trim() || undefined,
-      items: cart.map((c) => ({ menu_item_id: c.menuItem.id, quantity: c.quantity })),
-    };
-
     try {
-      const newOrder = await apiClient.createOrder(orderData);
-      const updatedTable = await apiClient.setTableOccupied(table.id, newOrder.id);
-      dispatch(upsertActiveOrder(newOrder));
-      dispatch(upsertTable(updatedTable));
-      onOrderPlaced(newOrder, updatedTable);
+      if (existingOrder) {
+        // Add-items mode: append to existing order
+        const updatedOrder = await apiClient.addItemsToOrder(
+          existingOrder.id,
+          cart.map((c) => ({ menu_item_id: c.menuItem.id, quantity: c.quantity }))
+        );
+        dispatch(upsertActiveOrder(updatedOrder));
+        onOrderPlaced(updatedOrder, table);
+      } else {
+        // New order mode
+        const orderData: CreateOrderRequest = {
+          table_id: table.id,
+          table_number: table.name,
+          order_type: 'dine_in',
+          customer_name: customerName.trim() || undefined,
+          items: cart.map((c) => ({ menu_item_id: c.menuItem.id, quantity: c.quantity })),
+        };
+        const newOrder = await apiClient.createOrder(orderData);
+        const updatedTable = await apiClient.setTableOccupied(table.id, newOrder.id);
+        dispatch(upsertActiveOrder(newOrder));
+        dispatch(upsertTable(updatedTable));
+        onOrderPlaced(newOrder, updatedTable);
+      }
     } catch (err: unknown) {
-      setPlaceError(err instanceof Error ? err.message : 'Failed to place order');
+      setPlaceError(
+        err instanceof Error
+          ? err.message
+          : existingOrder
+          ? 'Failed to add items'
+          : 'Failed to place order'
+      );
     } finally {
       setPlacing(false);
     }
@@ -538,7 +781,9 @@ function TakeOrderPanel({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">New Order — {table.name}</h2>
+            <h2 className="text-lg font-bold text-gray-900">
+              {existingOrder ? `Add Items — ${table.name}` : `New Order — ${table.name}`}
+            </h2>
             <p className="text-xs text-gray-400">{cartCount} item{cartCount !== 1 ? 's' : ''} in cart</p>
           </div>
           <button
@@ -630,7 +875,7 @@ function TakeOrderPanel({
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <ShoppingCart className="h-4 w-4" />
-                  Cart
+                  Items in Order
                 </div>
               </div>
 
@@ -676,19 +921,21 @@ function TakeOrderPanel({
                 )}
               </div>
 
-              {/* Customer name */}
-              <div className="border-t border-gray-100 px-4 py-3">
-                <input
-                  type="text"
-                  placeholder="Customer name (optional)"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
+              {/* Customer name — only for new orders */}
+              {!existingOrder && (
+                <div className="border-t border-gray-100 px-4 py-3">
+                  <input
+                    type="text"
+                    placeholder="Customer name (optional)"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Total + place order */}
+            {/* Total + place / add order */}
             <div className="border-t border-gray-100 px-4 py-4 space-y-3">
               {placeError && (
                 <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -697,7 +944,7 @@ function TakeOrderPanel({
                 </div>
               )}
               <div className="flex justify-between text-sm font-bold text-gray-900">
-                <span>Total</span>
+                <span>Total Amount:</span>
                 <span>{fmt(cartTotal)}</span>
               </div>
               <button
@@ -710,7 +957,7 @@ function TakeOrderPanel({
                 ) : (
                   <CheckCircle className="h-4 w-4" />
                 )}
-                Place order
+                Save Order
               </button>
             </div>
           </div>
@@ -727,25 +974,52 @@ export function Orders() {
   const tables = useAppSelector(selectTables);
   const activeOrders = useAppSelector(selectActiveOrders);
 
+  const menuHydrated = useAppSelector(selectMenuHydrated);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Selected table / panel
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
-  const [panelMode, setPanelMode] = useState<'detail' | 'take-order' | null>(null);
+  const [panelMode, setPanelMode] = useState<'detail' | 'vacant' | 'take-order' | 'add-items' | null>(null);
 
-  // Load on mount
+  // Load tables, orders, and menu on mount
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    Promise.all([apiClient.getTables(), apiClient.listOrdersSummary('active')])
-      .then(([tablesData, ordersData]) => {
-        if (!cancelled) {
-          dispatch(setTables(tablesData));
-          dispatch(setActiveOrders(ordersData.orders));
-        }
+    const fetches: Promise<unknown>[] = [
+      apiClient.getTables(),
+      apiClient.listOrdersSummary('active'),
+    ];
+    if (!menuHydrated) {
+      fetches.push(apiClient.listMenuItems());
+    }
+
+    Promise.all(fetches)
+      .then(([tablesData, ordersData, menuData]) => {
+        if (cancelled) return;
+        const tables = tablesData as RestaurantTable[];
+        const orders = (ordersData as { orders: Order[] }).orders;
+
+        // Reconcile: if the API returns a table as vacant but an active order
+        // references it, upgrade it to occupied. Never downgrade an occupied
+        // table — trust the server's is_occupied flag for that direction.
+        const reconciledTables = tables.map((t) => {
+          if (t.is_occupied) return t; // already correct per server
+          const matchingOrder = orders.find(
+            (o) => o.table_id === t.id || o.id === t.current_order_id
+          );
+          if (matchingOrder) {
+            return { ...t, is_occupied: true, current_order_id: matchingOrder.id };
+          }
+          return t;
+        });
+
+        dispatch(setTables(reconciledTables));
+        dispatch(setActiveOrders(orders));
+        if (menuData) dispatch(setMenuItems(menuData as MenuItem[]));
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -758,7 +1032,7 @@ export function Orders() {
     return () => {
       cancelled = true;
     };
-  }, [dispatch]);
+  }, [dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helpers
   const getOrderForTable = useCallback(
@@ -771,7 +1045,7 @@ export function Orders() {
 
   const handleTableClick = (table: RestaurantTable) => {
     setSelectedTable(table);
-    setPanelMode(table.is_occupied ? 'detail' : 'take-order');
+    setPanelMode(table.is_occupied ? 'detail' : 'vacant');
   };
 
   const closePanel = useCallback(() => {
@@ -791,12 +1065,34 @@ export function Orders() {
     closePanel();
   }, [closePanel]);
 
+  // When "Add items" TakeOrderPanel closes or submits — return to detail view
+  const handleAddItemsDone = useCallback(() => {
+    setPanelMode('detail');
+  }, []);
+
+  const handleMarkOccupied = useCallback(async () => {
+    if (!selectedTable) return;
+    // Create an empty order to hold the table, matching mobile's handleMarkOccupied
+    const newOrder = await apiClient.createOrder({
+      order_type: 'dine_in',
+      table_number: selectedTable.name,
+      table_id: selectedTable.id,
+      items: [],
+    });
+    const updatedTable = await apiClient.setTableOccupied(selectedTable.id, newOrder.id);
+    dispatch(upsertActiveOrder(newOrder));
+    dispatch(upsertTable(updatedTable));
+    // Update local selection so getOrderForTable resolves correctly
+    setSelectedTable(updatedTable);
+    setPanelMode('detail');
+  }, [selectedTable, dispatch]);
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div>
       <PageHeader
-        title="Dine-in Orders"
+        title="Restaurant Tables"
         subtitle={`${occupiedCount} of ${tables.length} table${tables.length !== 1 ? 's' : ''} occupied`}
       />
 
@@ -827,6 +1123,16 @@ export function Orders() {
         </div>
       )}
 
+      {/* Vacant table slide-over */}
+      {selectedTable && panelMode === 'vacant' && (
+        <VacantTablePanel
+          table={selectedTable}
+          onClose={closePanel}
+          onMarkOccupied={handleMarkOccupied}
+          onAddItems={() => setPanelMode('take-order')}
+        />
+      )}
+
       {/* Order detail slide-over */}
       {selectedTable && panelMode === 'detail' && (() => {
         const order = getOrderForTable(selectedTable);
@@ -838,6 +1144,7 @@ export function Orders() {
             onClose={closePanel}
             onOrderCancelled={handleOrderCancelled}
             onOrderCompleted={handleOrderCompleted}
+            onAddItems={() => setPanelMode('add-items')}
           />
         );
       })()}
@@ -850,6 +1157,20 @@ export function Orders() {
           onOrderPlaced={handleOrderPlaced}
         />
       )}
+
+      {/* Add items slide-over */}
+      {selectedTable && panelMode === 'add-items' && (() => {
+        const order = getOrderForTable(selectedTable);
+        if (!order) return null;
+        return (
+          <TakeOrderPanel
+            table={selectedTable}
+            onClose={handleAddItemsDone}
+            onOrderPlaced={handleAddItemsDone}
+            existingOrder={order}
+          />
+        );
+      })()}
     </div>
   );
 }

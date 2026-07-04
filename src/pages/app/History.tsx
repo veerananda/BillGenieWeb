@@ -196,6 +196,38 @@ function OrderDetailModal({ order, open, onClose }: OrderDetailModalProps) {
   );
 }
 
+// ─── Period Chips ─────────────────────────────────────────────────────────────
+
+type Period = 'today' | 'yesterday' | 'week' | 'month';
+
+function periodDates(period: Period): { from: string; to: string } {
+  const today = new Date();
+  const to = isoDateString(today);
+  if (period === 'today') return { from: to, to };
+  if (period === 'yesterday') {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    const y = isoDateString(d);
+    return { from: y, to: y };
+  }
+  if (period === 'week') {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 6);
+    return { from: isoDateString(d), to };
+  }
+  // month
+  const d = new Date(today);
+  d.setDate(d.getDate() - 29);
+  return { from: isoDateString(d), to };
+}
+
+const PERIOD_CHIPS: { key: Period; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This Week' },
+  { key: 'month', label: 'This Month' },
+];
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function History() {
@@ -210,6 +242,7 @@ export function History() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [activePeriod, setActivePeriod] = useState<Period | null>(null);
 
   // Pending filter values (uncommitted until Search is clicked)
   const [pendingFrom, setPendingFrom] = useState(defaultFrom);
@@ -247,6 +280,17 @@ export function History() {
     setFrom(pendingFrom);
     setTo(pendingTo);
     setOrderType(pendingType);
+    setActivePeriod(null);
+    setPage(0);
+  }
+
+  function handlePeriodChip(period: Period) {
+    const { from: f, to: t } = periodDates(period);
+    setPendingFrom(f);
+    setPendingTo(t);
+    setFrom(f);
+    setTo(t);
+    setActivePeriod(period);
     setPage(0);
   }
 
@@ -257,6 +301,23 @@ export function History() {
   return (
     <div className="flex-1 p-6">
       <PageHeader title="Order History" />
+
+      {/* Period chips */}
+      <div className="mb-3 flex flex-wrap gap-2">
+        {PERIOD_CHIPS.map((chip) => (
+          <button
+            key={chip.key}
+            onClick={() => handlePeriodChip(chip.key)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              activePeriod === chip.key
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
 
       {/* Filter bar */}
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -332,11 +393,12 @@ export function History() {
               <thead className="border-b border-gray-100 bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Order #</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Ref</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Type</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Customer</th>
                   <th className="px-4 py-3 text-center font-semibold text-gray-600">Items</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-600">Total</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Payment</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
                 </tr>
               </thead>
@@ -349,7 +411,11 @@ export function History() {
                   >
                     <td className="px-4 py-3 text-gray-600">{formatDateShort(order.created_at)}</td>
                     <td className="px-4 py-3 font-mono font-semibold text-gray-900">
-                      #{order.order_number}
+                      {order.order_type === 'counter' && order.ticket_number
+                        ? `#${order.ticket_number}`
+                        : order.order_type === 'dine_in' && order.table_number
+                        ? `T${order.table_number}`
+                        : `#${order.order_number}`}
                     </td>
                     <td className="px-4 py-3 text-gray-700">
                       {order.order_type === 'counter' ? 'Counter' : 'Dine-in'}
@@ -360,6 +426,19 @@ export function History() {
                     <td className="px-4 py-3 text-center text-gray-700">{order.items.length}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
                       {formatCurrency(order.total)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {order.payment_method ? (
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          order.payment_method === 'upi'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}>
+                          {order.payment_method.toUpperCase()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={getStatusVariant(order.status)}>
@@ -387,7 +466,7 @@ export function History() {
                 <ChevronLeft className="h-4 w-4" />
                 Prev
               </button>
-              <span className="min-w-[2rem] text-center text-sm font-medium text-gray-700">
+              <span className="min-w-8 text-center text-sm font-medium text-gray-700">
                 {page + 1} / {Math.max(1, totalPages)}
               </span>
               <button
