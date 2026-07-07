@@ -29,6 +29,7 @@ export interface RegisterData {
   phone: string;
   password: string;
   login_id: string;
+  start_mode: 'trial' | 'paid';
   address?: string;
   city?: string;
   cuisine?: string;
@@ -102,6 +103,7 @@ export interface MenuItem {
   cost_price?: number;
   is_veg: boolean;
   is_available: boolean;
+  readily_available?: boolean;
 }
 
 export interface Ingredient {
@@ -128,7 +130,10 @@ export interface RestaurantProfile {
   cuisine: string;
   is_self_service: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
+  prices_include_gst?: boolean;
   subscription_end?: string;
+  subscription_phase?: string;
+  requires_plan_selection?: boolean;
   subscription_plan?: string;
   subscription_monthly_price?: number;
   subscription_config?: unknown;
@@ -145,12 +150,15 @@ export interface UpdateProfileRequest {
   upi_qr_code?: string;
   is_self_service?: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
+  prices_include_gst?: boolean;
 }
 
 export interface CompletePaymentRequest {
-  payment_method: 'cash' | 'upi';
+  payment_method: 'cash' | 'upi' | 'split';
   amount_received?: number;
   change_returned?: number;
+  cash_amount?: number;
+  upi_amount?: number;
   upi_transaction_id?: string;
   discount_amount?: number;
 }
@@ -199,6 +207,25 @@ export interface StaffMember {
   created_at?: string;
 }
 
+export interface MenuItemIngredient {
+  id: string;
+  restaurant_id?: string;
+  menu_item_id: string;
+  ingredient_id?: string;
+  name: string;
+  unit: string;
+  quantity_used: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RecipeIngredientInput {
+  ingredient_id?: string;
+  name: string;
+  unit: string;
+  quantity_used: number;
+}
+
 // ─── API Client ───────────────────────────────────────────────────────────────
 
 class APIClient {
@@ -235,7 +262,9 @@ class APIClient {
           }
         }
         this.logout();
-        throw new Error('Session expired. Please log in again.');
+        sessionStorage.setItem('logout_reason', 'device_conflict');
+        window.location.replace('/login');
+        throw new Error('Logged out.');
       }
 
       if (response.status === 402) {
@@ -521,6 +550,17 @@ class APIClient {
 
   async deleteIngredient(id: string): Promise<void> {
     await this.makeRequest(`/ingredients/${id}`, 'DELETE');
+  }
+
+  async listMenuItemIngredients(menuItemId?: string): Promise<MenuItemIngredient[]> {
+    const query = menuItemId ? `?menu_item_id=${encodeURIComponent(menuItemId)}` : '';
+    const r = await this.makeRequest(`/menu-item-ingredients${query}`);
+    return r?.menu_item_ingredients ?? [];
+  }
+
+  async setMenuItemIngredients(menuItemId: string, ingredients: RecipeIngredientInput[]): Promise<MenuItemIngredient[]> {
+    const r = await this.makeRequest(`/menu/${menuItemId}/ingredients`, 'PUT', { ingredients });
+    return r?.menu_item_ingredients ?? [];
   }
 }
 

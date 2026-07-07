@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChefHat, Check, RefreshCw } from 'lucide-react';
+import { ChefHat, Check, Wifi } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { setActiveOrders } from '../../store/ordersSlice';
+import {
+  setActiveOrders, setCounterOrders, patchOrderItemStatus,
+  selectActiveOrders, selectCounterOrders,
+} from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
+import wsService from '../../services/websocket';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +34,11 @@ interface KotTicket {
   serviceMode?: string;
   firedAt: Date;
   items: KotItem[];
+}
+
+interface MenuEntry {
+  name: string;
+  readily_available?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,14 +74,15 @@ function resolveTableLabel(order: Order): string {
 
 function buildTickets(
   orders: Order[],
-  menuMap: Record<string, { name: string }>
+  menuMap: Record<string, MenuEntry>
 ): KotTicket[] {
   const tickets: KotTicket[] = [];
 
   for (const order of orders) {
-    // Only skip cancelled. Completed counter orders still need kitchen prep.
     if (order.status === 'cancelled') continue;
-    const activeItems = (order.items ?? []).filter((i) => isActive(i.status));
+    const activeItems = (order.items ?? []).filter(
+      (i) => isActive(i.status) && !menuMap[i.menu_id]?.readily_available
+    );
     if (activeItems.length === 0) continue;
 
     tickets.push({
@@ -95,11 +105,8 @@ function buildTickets(
     });
   }
 
-  // FIFO — oldest order first
   tickets.sort((a, b) => a.firedAt.getTime() - b.firedAt.getTime());
-  tickets.forEach((t, i) => {
-    t.kotNumber = i + 1;
-  });
+  tickets.forEach((t, i) => { t.kotNumber = i + 1; });
 
   return tickets;
 }
@@ -124,17 +131,19 @@ function KOTCard({
   onItemReady,
 }: {
   ticket: KotTicket;
-  onItemReady: (orderId: string, itemId: string) => Promise<void>;
+  onItemReady: (orderId: string, itemId: string) => void;
 }) {
-  const [readyAllLoading, setReadyAllLoading] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [readyAllLoading, setReadyAllLoading] = useState(false);
 
   async function handleItemReady(item: KotItem) {
+    if (markingId || readyAllLoading) return;
     setMarkingId(item.id);
     try {
-      await onItemReady(item.orderId, item.id);
+      onItemReady(item.orderId, item.id); // optimistic (sync)
+      await apiClient.updateOrderItemStatus(item.orderId, item.id, 'ready');
     } catch {
-      // board re-syncs on next poll
+      // WS will eventually sync the correct state
     } finally {
       setMarkingId(null);
     }
@@ -142,8 +151,14 @@ function KOTCard({
 
   async function handleReadyAll() {
     setReadyAllLoading(true);
+    // Optimistic: mark all items ready immediately (sync)
+    ticket.items.forEach((item) => onItemReady(item.orderId, item.id));
     try {
-      await Promise.all(ticket.items.map((item) => onItemReady(item.orderId, item.id)));
+      await Promise.all(
+        ticket.items.map((item) =>
+          apiClient.updateOrderItemStatus(item.orderId, item.id, 'ready')
+        )
+      );
     } catch {
       // silent
     } finally {
@@ -152,7 +167,10 @@ function KOTCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm" style={{ borderLeftWidth: 4, borderLeftColor: '#1BAE76' }}>
+    <div
+      className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+      style={{ borderLeftWidth: 4, borderLeftColor: '#1BAE76' }}
+    >
       {/* Card header */}
       <div className="flex items-start justify-between border-b border-gray-100 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -174,14 +192,14 @@ function KOTCard({
           <button
             onClick={handleReadyAll}
             disabled={readyAllLoading}
-            className="flex items-center justify-center rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 disabled:opacity-50 transition-colors min-w-18"
+            className="flex min-w-18 items-center justify-center rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
           >
             {readyAllLoading ? <Spinner size="sm" className="text-white" /> : 'Ready all'}
           </button>
         </div>
       </div>
 
-      {/* Items — only active (pending/cooking) shown */}
+      {/* Items */}
       <div className="flex flex-col gap-1.5 p-3">
         {ticket.items.map((item) => (
           <div
@@ -218,19 +236,54 @@ function KOTCard({
 
 export function Kitchen() {
   const dispatch = useAppDispatch();
+
+  // Read from Redux — AppShell's WS handlers keep these slices live
+  const activeOrders = useAppSelector(selectActiveOrders);
+  const counterOrders = useAppSelector(selectCounterOrders);
+  const allOrders = useMemo(
+    () => [...activeOrders, ...counterOrders],
+    [activeOrders, counterOrders]
+  );
+
   const menuItems = useAppSelector(selectMenuItems);
   const menuHydrated = useAppSelector(selectMenuHydrated);
 
-  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [connected, setConnected] = useState(() => wsService.isConnected());
 
-  // Fast name lookup: menu_item_id → {name}
+  // Tick every minute to keep elapsed-time labels fresh
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Track WS connection status for the indicator
+  useEffect(() => {
+    setConnected(wsService.isConnected());
+    const unsub1 = wsService.on('connected', () => setConnected(true));
+    const unsub2 = wsService.on('disconnected', () => setConnected(false));
+    return () => { unsub1(); unsub2(); };
+  }, []);
+
   const menuMap = useMemo(
-    () => Object.fromEntries(menuItems.map((m) => [m.id, { name: m.name }])),
+    () =>
+      Object.fromEntries(
+        menuItems.map((m) => [m.id, { name: m.name, readily_available: m.readily_available }])
+      ) as Record<string, MenuEntry>,
     [menuItems]
   );
+
+  // ── Optimistic mark-ready — dispatches to Redux (AppShell's WS handler can't revert it due to max-status guard)
+  const onItemReady = useCallback(
+    (orderId: string, itemId: string) => {
+      dispatch(patchOrderItemStatus({ orderId, itemId, status: 'ready' }));
+    },
+    [dispatch]
+  );
+
+  // ── Initial data fetch — populates both Redux slices ──────────────────────
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -246,15 +299,11 @@ export function Kitchen() {
 
       dispatch(setActiveOrders(dineInRes.orders));
 
-      // Counter orders: include regardless of payment status — items may still need cooking.
-      // Deduplicate by id in case a counter order also appears in the dine-in summary.
       const dineInIds = new Set(dineInRes.orders.map((o) => o.id));
-      const counterOrders = (counterRes.orders ?? []).filter(
+      const todayCounterOrders = (counterRes.orders ?? []).filter(
         (o) => o.status !== 'cancelled' && !dineInIds.has(o.id)
       );
-
-      setAllOrders([...dineInRes.orders, ...counterOrders]);
-      setLastRefreshed(new Date());
+      dispatch(setCounterOrders(todayCounterOrders));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load kitchen orders');
     } finally {
@@ -262,17 +311,16 @@ export function Kitchen() {
     }
   }, [dispatch, menuHydrated]);
 
+  // Mount: fetch once — WS (via AppShell) keeps Redux live after that
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 60_000);
-    return () => clearInterval(interval);
   }, [fetchOrders]);
 
-  // Derive KOT tickets from current order state
+  // ── Derived state ─────────────────────────────────────────────────────────
+
   const tickets = useMemo(() => buildTickets(allOrders, menuMap), [allOrders, menuMap]);
   const prepSummary = useMemo(() => buildPrepSummary(tickets), [tickets]);
 
-  // Stats
   const statsKOTs = tickets.length;
   const statsLines = tickets.reduce((s, t) => s + t.items.length, 0);
   const statsPortions = tickets.reduce(
@@ -280,42 +328,17 @@ export function Kitchen() {
     0
   );
 
-  // Mark a single item ready — optimistic then API
-  const onItemReady = useCallback(
-    async (orderId: string, itemId: string) => {
-      setAllOrders((prev) =>
-        prev.map((o) =>
-          o.id !== orderId
-            ? o
-            : { ...o, items: o.items.map((i) => (i.id === itemId ? { ...i, status: 'ready' } : i)) }
-        )
-      );
-      await apiClient.updateOrderItemStatus(orderId, itemId, 'ready');
-    },
-    []
-  );
-
   return (
-    <div className="flex-1 p-6">
+    <div>
       <PageHeader
         title="Kitchen Updates"
         action={
-          <button
-            onClick={fetchOrders}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <Wifi className={`h-3.5 w-3.5 ${connected ? 'text-green-500' : 'text-red-400'}`} />
+            {connected ? 'Live' : 'Reconnecting…'}
+          </div>
         }
       />
-
-      {lastRefreshed && (
-        <p className="mb-4 text-xs text-gray-400">
-          Last updated {formatTime(lastRefreshed)} · Auto-refreshes every 60 s
-        </p>
-      )}
 
       {error && (
         <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -326,7 +349,7 @@ export function Kitchen() {
         </div>
       )}
 
-      {/* Stats bar — 3 large numbers */}
+      {/* Stats bar */}
       <div className="mb-5 grid grid-cols-3 divide-x divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
         <div className="flex flex-col items-center py-4">
           <span className="text-2xl font-bold text-primary">{statsKOTs}</span>
@@ -342,7 +365,7 @@ export function Kitchen() {
         </div>
       </div>
 
-      {/* Batch prep chips */}
+      {/* Batch prep — cook by dish */}
       {prepSummary.length > 0 && (
         <div className="mb-5">
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -372,10 +395,9 @@ export function Kitchen() {
         <EmptyState
           icon={ChefHat}
           title="No KOTs in kitchen"
-          description="Each save from dine-in or counter creates a numbered ticket in FIFO order"
+          description="Each order from dine-in or counter creates a numbered ticket in FIFO order"
         />
       ) : (
-        /* Single column KOT list — matches mobile */
         <div className="mx-auto max-w-2xl space-y-3">
           {tickets.map((ticket) => (
             <KOTCard key={ticket.key} ticket={ticket} onItemReady={onItemReady} />

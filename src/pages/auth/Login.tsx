@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, MonitorSmartphone } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { wsService } from '../../services/websocket';
 import { setAuth } from '../../store/authSlice';
@@ -18,6 +18,15 @@ export function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [logoutReason, setLogoutReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    const reason = sessionStorage.getItem('logout_reason');
+    if (reason) {
+      setLogoutReason(reason);
+      sessionStorage.removeItem('logout_reason');
+    }
+  }, []);
 
   if (isAuthenticated) {
     return <Navigate to="/app/dashboard" replace />;
@@ -47,11 +56,22 @@ export function Login() {
         <div className="rounded-2xl border border-border bg-white px-8 py-10 shadow-sm">
           {/* Logo */}
           <div className="flex flex-col items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary shadow-md">
-              <span className="text-xl font-bold text-white">B</span>
-            </div>
+            <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
             <span className="text-xl font-bold text-ink">BillGenie</span>
           </div>
+
+          {/* Device-conflict banner */}
+          {logoutReason === 'device_conflict' && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Logged in on another device</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  Your account was accessed from another device, so you were signed out here. Please log in again.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Heading */}
           <div className="mt-8 text-center">

@@ -14,7 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectAuthRole, selectAuthName, clearAuth } from '../../store/authSlice';
+import { selectAuthRole, selectAuthName, selectCanRestockInventory, clearAuth } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import apiClient from '../../services/api';
@@ -29,22 +29,23 @@ interface NavItem {
   label: string;
   to: string;
   icon: React.ElementType;
-  requiresAdmin?: boolean;
-  requiresAdminOrManager?: boolean;
-  subscriptionKey?: string;
+  roles?: string[];           // if set, only these roles can see it
+  subscriptionKey?: string;   // hide when subscription flag is false
+  inventoryAccess?: boolean;  // special combined inventory+role check
 }
 
+// Mirrors HomeScreen.tsx in the mobile app exactly.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', to: '/app/dashboard', icon: LayoutDashboard },
-  { label: 'Menu', to: '/app/menu', icon: UtensilsCrossed, requiresAdminOrManager: true },
-  { label: 'Orders', to: '/app/orders', icon: ClipboardList, subscriptionKey: 'dine_in_enabled' },
-  { label: 'Counter', to: '/app/counter', icon: ShoppingBag, subscriptionKey: 'counter_enabled' },
-  { label: 'Kitchen Updates', to: '/app/kitchen', icon: Flame, subscriptionKey: 'kitchen' },
-  { label: 'Sales', to: '/app/sales', icon: BarChart3, requiresAdmin: true },
-  { label: 'History', to: '/app/history', icon: Receipt, requiresAdminOrManager: true },
-  { label: 'Inventory', to: '/app/inventory', icon: Package, subscriptionKey: 'inventory' },
-  { label: 'Staff', to: '/app/staff', icon: Users, requiresAdmin: true },
-  { label: 'Profile', to: '/app/profile', icon: Store, requiresAdmin: true },
+  { label: 'Dashboard',          to: '/app/dashboard', icon: LayoutDashboard, roles: ['admin'] },
+  { label: 'Menu & Pricing',     to: '/app/menu',      icon: UtensilsCrossed, roles: ['admin', 'manager'] },
+  { label: 'Orders & Billing',   to: '/app/orders',    icon: ClipboardList,   roles: ['admin', 'manager', 'staff'], subscriptionKey: 'dine_in_enabled' },
+  { label: 'Counter / Takeaway', to: '/app/counter',   icon: ShoppingBag,     roles: ['admin', 'manager', 'staff'], subscriptionKey: 'counter_enabled' },
+  { label: 'Kitchen',            to: '/app/kitchen',   icon: Flame,           roles: ['admin', 'manager', 'chef'],  subscriptionKey: 'kitchen' },
+  { label: 'Sales Info',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
+  { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
+  { label: 'Inventory',          to: '/app/inventory', icon: Package,         inventoryAccess: true },
+  { label: 'Staff Mgmt',         to: '/app/staff',     icon: Users,           roles: ['admin'] },
+  { label: 'Restaurant Profile', to: '/app/profile',   icon: Store,           roles: ['admin', 'manager'] },
 ];
 
 interface Props {
@@ -57,18 +58,30 @@ export function Sidebar({ onClose }: Props) {
   const role = useAppSelector(selectAuthRole);
   const name = useAppSelector(selectAuthName);
   const profile = useAppSelector(selectProfile);
+  const canRestock = useAppSelector(selectCanRestockInventory);
 
   const limits = parseSubscriptionLimits(
-    (profile?.subscription_config as Record<string, unknown>) ?? null
+    (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
   );
 
   function isItemVisible(item: NavItem): boolean {
-    if (item.requiresAdmin && role !== 'admin') return false;
-    if (item.requiresAdminOrManager && role !== 'admin' && role !== 'manager') return false;
+    // Role gate
+    if (item.roles && role && !item.roles.includes(role)) return false;
+
+    // Subscription gates
     if (item.subscriptionKey === 'dine_in_enabled' && !limits.dine_in_enabled) return false;
     if (item.subscriptionKey === 'counter_enabled' && !limits.counter_enabled) return false;
     if (item.subscriptionKey === 'kitchen' && !limits.kitchen_dine_in && !limits.kitchen_counter) return false;
-    if (item.subscriptionKey === 'inventory' && !limits.inventory) return false;
+
+    // Inventory: subscription must be enabled, then role-specific access
+    if (item.inventoryAccess) {
+      if (!limits.inventory) return false;
+      // admin/manager/chef always have access; staff only if canRestock flag
+      if (role === 'admin' || role === 'manager' || role === 'chef') return true;
+      if (role === 'staff') return canRestock;
+      return false;
+    }
+
     return true;
   }
 
@@ -93,9 +106,7 @@ export function Sidebar({ onClose }: Props) {
     <aside className="flex h-full flex-col bg-white border-r border-gray-100">
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-100">
-        <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
-          <span className="text-white font-bold text-base">B</span>
-        </div>
+        <img src="/logo.png" alt="BillGenie" className="h-9 w-9 rounded-xl object-cover shrink-0" />
         <div className="min-w-0">
           <div className="font-semibold text-sm text-gray-900 truncate">{restaurantName}</div>
           <div className="text-xs text-gray-400">{roleLabel}</div>

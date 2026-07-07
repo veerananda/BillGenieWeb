@@ -45,8 +45,8 @@ export function Footer() {
               <h3 className="text-sm font-semibold text-ink">Contact</h3>
               <ul className="mt-3 space-y-2 text-sm text-ink-soft">
                 <li>
-                  <a href="mailto:hello@billgenie.app" className="hover:text-primary">
-                    hello@billgenie.app
+                  <a href="mailto:hello@thebillgenie.com" className="hover:text-primary">
+                    hello@thebillgenie.com
                   </a>
                 </li>
               </ul>

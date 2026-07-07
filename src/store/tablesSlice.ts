@@ -29,6 +29,21 @@ const tablesSlice = createSlice({
         state.tables.push(action.payload);
       }
     },
+    setTableOccupied(
+      state,
+      action: PayloadAction<{ tableId: string; isOccupied: boolean; currentOrderId?: string | null }>
+    ) {
+      const t = state.tables.find((t) => t.id === action.payload.tableId);
+      if (t) {
+        t.is_occupied = action.payload.isOccupied;
+        if (action.payload.currentOrderId !== undefined) {
+          t.current_order_id = action.payload.currentOrderId ?? undefined;
+        }
+        if (!action.payload.isOccupied) {
+          t.current_order_id = undefined;
+        }
+      }
+    },
     removeTable(state, action: PayloadAction<string>) {
       state.tables = state.tables.filter((t) => t.id !== action.payload);
     },
@@ -39,7 +54,7 @@ const tablesSlice = createSlice({
   },
 });
 
-export const { setTables, upsertTable, removeTable, clearTables } = tablesSlice.actions;
+export const { setTables, upsertTable, setTableOccupied, removeTable, clearTables } = tablesSlice.actions;
 
 export const selectTables = (state: RootState) => state.tables.tables;
 export const selectTablesHydrated = (state: RootState) => state.tables.hydrated;

@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Copy, CheckCircle2, Loader2, Minus, Plus, Eye, EyeOff } from 'lucide-react';
+import { Check, Copy, CheckCircle2, Loader2, Minus, Plus, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { wsService } from '../../services/websocket';
 import { setAuth } from '../../store/authSlice';
@@ -34,8 +34,20 @@ function generateLoginId(): string {
 
 // ── Step types ────────────────────────────────────────────────────────────────
 
+type StartMode = 'trial' | 'paid';
+
 interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
+
+const TRIAL_INCLUDES = [
+  '30-day free trial — full access, no credit card needed',
+  'Up to 10 dine-in tables',
+  'Menu management (unlimited items)',
+  'Order management & checkout',
+  'Sales reports & order history',
+  '2 staff accounts included',
+  'Kitchen display system',
+] as const;
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
 
@@ -395,6 +407,7 @@ export function Register() {
 
   const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '' });
   const [step2, setStep2] = useState<Step2>({ ownerName: '', email: '', phone: '' });
+  const [startMode, setStartMode] = useState<StartMode>('trial');
   const [subscription, setSubscription] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
   const [loginId] = useState(generateLoginId);
   const [password, setPassword] = useState('');
@@ -469,7 +482,8 @@ export function Register() {
         phone: step2.phone.trim(),
         login_id: loginId,
         password,
-        subscription,
+        start_mode: startMode,
+        subscription: startMode === 'paid' ? subscription : undefined,
       });
       dispatch(setAuth(response));
       wsService.connect();
@@ -491,9 +505,7 @@ export function Register() {
 
           {/* Logo */}
           <div className="flex flex-col items-center gap-2 mb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary shadow-md">
-              <span className="text-xl font-bold text-white">B</span>
-            </div>
+            <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
             <span className="text-xl font-bold text-gray-900">BillGenie</span>
             <div className="text-center">
               <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
@@ -551,9 +563,82 @@ export function Register() {
 
             {/* ── Step 2: Plan ── */}
             {step === 2 && (
-              <div className="space-y-0">
-                <PlanStep subscription={subscription} onChange={setSubscription} />
-                <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" className="mt-6" />
+              <div className="space-y-6">
+                {/* Start mode picker */}
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">How do you want to start?</p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    {/* Free trial card */}
+                    <button
+                      type="button"
+                      onClick={() => setStartMode('trial')}
+                      className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
+                        startMode === 'trial'
+                          ? 'border-primary bg-primary/5'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'trial' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                        <Sparkles size={18} />
+                      </div>
+                      <p className={`mt-3 text-sm font-bold ${startMode === 'trial' ? 'text-primary' : 'text-gray-900'}`}>
+                        Free trial
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">30 days, no card needed</p>
+                      {startMode === 'trial' && (
+                        <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
+                          <Check size={11} strokeWidth={3} className="text-white" />
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Subscribe now card */}
+                    <button
+                      type="button"
+                      onClick={() => setStartMode('paid')}
+                      className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
+                        startMode === 'paid'
+                          ? 'border-primary bg-primary/5'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'paid' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                        <CreditCard size={18} />
+                      </div>
+                      <p className={`mt-3 text-sm font-bold ${startMode === 'paid' ? 'text-primary' : 'text-gray-900'}`}>
+                        Subscribe now
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">Pick a plan &amp; start today</p>
+                      {startMode === 'paid' && (
+                        <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
+                          <Check size={11} strokeWidth={3} className="text-white" />
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Trial: feature list */}
+                {startMode === 'trial' && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">What's included</p>
+                    <ul className="mt-3 space-y-2">
+                      {TRIAL_INCLUDES.map((f) => (
+                        <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
+                          <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Paid: full plan picker */}
+                {startMode === 'paid' && (
+                  <PlanStep subscription={subscription} onChange={setSubscription} />
+                )}
+
+                <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />
               </div>
             )}
 

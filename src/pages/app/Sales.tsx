@@ -125,7 +125,7 @@ export function Sales() {
     : [];
 
   return (
-    <div className="flex-1 p-6">
+    <div>
       <PageHeader title="Sales" />
 
       {/* Period toggle */}

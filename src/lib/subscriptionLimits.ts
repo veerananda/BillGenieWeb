@@ -3,7 +3,7 @@
  */
 
 export interface SubscriptionLimits {
-  max_staff: number;
+  max_staff_and_chefs: number;
   max_managers: number;
   max_tables: number;
   dine_in_enabled: boolean;
@@ -15,16 +15,17 @@ export interface SubscriptionLimits {
 }
 
 export interface SubscriptionUsage {
-  staff_count: number;
-  manager_count: number;
-  table_count: number;
+  staff_and_chefs: number;
+  managers: number;
+  tables: number;
+  admins?: number;
 }
 
 export function parseSubscriptionLimits(
   config: Record<string, unknown> | null | undefined
 ): SubscriptionLimits {
   return {
-    max_staff: (config?.max_staff as number) ?? 2,
+    max_staff_and_chefs: (config?.max_staff_and_chefs as number) ?? 2,
     max_managers: (config?.max_managers as number) ?? 0,
     max_tables: (config?.max_tables as number) ?? 10,
     dine_in_enabled: (config?.dine_in_enabled as boolean) ?? true,
@@ -41,13 +42,13 @@ export function hasKitchenAccess(limits: SubscriptionLimits): boolean {
 }
 
 export function canAddStaff(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
-  return usage.staff_count < limits.max_staff;
+  return usage.staff_and_chefs < limits.max_staff_and_chefs;
 }
 
 export function canAddManager(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
-  return usage.manager_count < limits.max_managers;
+  return usage.managers < limits.max_managers;
 }
 
 export function canAddTable(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
-  return usage.table_count < limits.max_tables;
+  return usage.tables < limits.max_tables;
 }

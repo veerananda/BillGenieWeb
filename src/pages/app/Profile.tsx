@@ -27,6 +27,7 @@ interface ProfileForm {
   upi_qr_code: string;
   is_self_service: boolean;
   counter_service_modes: 'both' | 'eat_here' | 'takeaway' | '';
+  prices_include_gst: boolean;
 }
 
 function profileToForm(p: RestaurantProfile): ProfileForm {
@@ -40,6 +41,7 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     upi_qr_code: p.upi_qr_code ?? '',
     is_self_service: p.is_self_service ?? false,
     counter_service_modes: p.counter_service_modes ?? '',
+    prices_include_gst: p.prices_include_gst ?? false,
   };
 }
 
@@ -226,11 +228,21 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
         {
           label: 'Tables',
           value: usage
-            ? `${usage.table_count} / ${limits.max_tables}`
+            ? `${usage.tables} / ${limits.max_tables}`
             : String(limits.max_tables),
         },
-        { label: 'Staff', value: String(limits.max_staff) },
-        { label: 'Managers', value: String(limits.max_managers) },
+        {
+          label: 'Staff',
+          value: usage
+            ? `${usage.staff_and_chefs} / ${limits.max_staff_and_chefs}`
+            : String(limits.max_staff_and_chefs),
+        },
+        {
+          label: 'Managers',
+          value: usage
+            ? `${usage.managers} / ${limits.max_managers}`
+            : String(limits.max_managers),
+        },
         { label: 'History', value: limits.history_days === 730 ? '2 years' : '30 days' },
       ]
     : [];
@@ -348,6 +360,7 @@ export function Profile() {
     upi_qr_code: '',
     is_self_service: false,
     counter_service_modes: '',
+    prices_include_gst: false,
   });
 
   const [loading, setLoading] = useState(true);
@@ -450,6 +463,7 @@ export function Profile() {
           form.counter_service_modes !== ''
             ? (form.counter_service_modes as 'both' | 'eat_here' | 'takeaway')
             : undefined,
+        prices_include_gst: form.prices_include_gst,
       };
       const { restaurant } = await apiClient.updateRestaurantProfile(payload);
       dispatch(updateProfile(restaurant));
@@ -734,6 +748,23 @@ export function Profile() {
               }}
             />
           </Field>
+        </SectionCard>
+
+        {/* Section 2b: Billing & Tax */}
+        <SectionCard
+          title="Billing & Tax"
+          subtitle="Controls how GST is shown on customer bills"
+        >
+          <Toggle
+            checked={form.prices_include_gst}
+            onChange={(v) => set('prices_include_gst', v)}
+            label="Menu prices include GST"
+            description={
+              form.prices_include_gst
+                ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
+                : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
+            }
+          />
         </SectionCard>
 
         {/* Section 3: Service Mode */}

@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   BookOpen,
+  Zap,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
@@ -124,6 +125,7 @@ export function Menu() {
   const [itemPrice, setItemPrice] = useState('');
   const [itemVeg, setItemVeg] = useState(false);
   const [itemAvailable, setItemAvailable] = useState(true);
+  const [itemReadilyAvailable, setItemReadilyAvailable] = useState(false);
   const [itemModalError, setItemModalError] = useState('');
   const [itemModalLoading, setItemModalLoading] = useState(false);
 
@@ -272,6 +274,7 @@ export function Menu() {
     setItemPrice('');
     setItemVeg(false);
     setItemAvailable(true);
+    setItemReadilyAvailable(false);
     setItemModalError('');
     setItemModalOpen(true);
   }
@@ -283,6 +286,7 @@ export function Menu() {
     setItemPrice(String(item.price));
     setItemVeg(item.is_veg);
     setItemAvailable(item.is_available);
+    setItemReadilyAvailable(item.readily_available ?? false);
     setItemModalError('');
     setItemModalOpen(true);
   }
@@ -308,6 +312,7 @@ export function Menu() {
           price,
           is_veg: itemVeg,
           is_available: itemAvailable,
+          readily_available: itemReadilyAvailable,
         });
         dispatch(updateMenuItemAction(updated));
       } else {
@@ -316,6 +321,7 @@ export function Menu() {
           price,
           is_veg: itemVeg,
           is_available: itemAvailable,
+          readily_available: itemReadilyAvailable,
           category: itemModalCategory,
         });
         // Remove from local-only if it was empty
@@ -653,6 +659,19 @@ export function Menu() {
             <Toggle checked={itemAvailable} onChange={() => setItemAvailable((v) => !v)} />
           </div>
 
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-amber-500" />
+                <p className="text-sm font-medium text-gray-700">Ready to serve</p>
+              </div>
+              <Toggle checked={itemReadilyAvailable} onChange={() => setItemReadilyAvailable((v) => !v)} />
+            </div>
+            <p className="text-xs text-gray-400">
+              No kitchen prep needed (e.g. water bottle, packaged snacks). These items skip the kitchen queue.
+            </p>
+          </div>
+
           <div className="flex gap-3 pt-1">
             <button
               type="button"
@@ -781,6 +800,12 @@ function ItemRow({
             ₹{item.price.toLocaleString('en-IN')}
           </span>
           <VegBadge is_veg={item.is_veg} />
+          {item.readily_available && (
+            <span title="Ready to serve — skips kitchen" className="inline-flex items-center gap-0.5 text-xs text-amber-600">
+              <Zap size={10} />
+              Ready
+            </span>
+          )}
           {showCategory && (
             <span className="text-xs text-gray-400">{item.category}</span>
           )}

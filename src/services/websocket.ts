@@ -85,9 +85,12 @@ class WebSocketService {
 
     this.ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as { type: WSEvent; payload?: WSPayload };
-        if (data?.type) {
-          this.emit(data.type, data.payload ?? {});
+        // Backend sends: { type, room_id, timestamp, data: {...} }
+        // Mobile WS emits message.data — we do the same.
+        const message = JSON.parse(event.data) as { type: WSEvent; data?: WSPayload } & WSPayload;
+        console.log('[WS] message:', message.type, message.data ?? message);
+        if (message?.type) {
+          this.emit(message.type, message.data ?? {});
         }
       } catch {
         // ignore malformed messages
@@ -95,10 +98,12 @@ class WebSocketService {
     };
 
     this.ws.onerror = () => {
+      console.error('[WS] error — connection failed or dropped');
       this.connecting = false;
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
+      console.log('[WS] closed — code:', ev.code, 'clean:', ev.wasClean);
       this.connecting = false;
       this.stopPing();
       this.emit('disconnected');

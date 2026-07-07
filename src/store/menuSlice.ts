@@ -11,6 +11,7 @@ export interface MenuItem {
   cost_price?: number;
   is_veg: boolean;
   is_available: boolean;
+  readily_available?: boolean;
 }
 
 interface MenuState {

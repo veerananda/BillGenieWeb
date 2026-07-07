@@ -10,14 +10,19 @@ import {
   Banknote,
   CheckCircle,
   AlertTriangle,
+  ArrowLeftRight,
 } from 'lucide-react';
+import { calculateOrderTax } from '../../lib/orderTax';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectTables, setTables, upsertTable } from '../../store/tablesSlice';
+import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
+import { selectProfile } from '../../store/profileSlice';
+import { selectTables, setTables, upsertTable, setTableOccupied } from '../../store/tablesSlice';
 import {
   selectActiveOrders,
   setActiveOrders,
   upsertActiveOrder,
   removeActiveOrder,
+  patchOrderItemStatus,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import type { MenuItem } from '../../store/menuSlice';
@@ -29,6 +34,7 @@ import type {
   CreateOrderRequest,
 } from '../../services/api';
 import { apiClient } from '../../services/api';
+import wsService from '../../services/websocket';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -42,7 +48,7 @@ interface CartItem {
   quantity: number;
 }
 
-type PaymentMethod = 'cash' | 'upi';
+type PaymentMethod = 'cash' | 'upi' | 'split';
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
@@ -79,6 +85,15 @@ function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
 
 // ── Table card ─────────────────────────────────────────────────────────────────
 
+function billSubtotal(order: Order): number {
+  const fromItems = order.items.reduce((sum, item) => {
+    if (item.total > 0) return sum + item.total;
+    return sum + (item.unit_rate || 0) * item.quantity;
+  }, 0);
+  if (fromItems > 0) return fromItems;
+  return order.sub_total > 0 ? order.sub_total : order.total;
+}
+
 function TableCard({
   table,
   order,
@@ -91,45 +106,58 @@ function TableCard({
   const occupied = table.is_occupied;
   const derived = occupied && order ? getDerivedItemStatus(order) : null;
 
+  const readyCount = order?.items.filter((i) => i.status === 'ready').length ?? 0;
+
   return (
     <button
       onClick={onClick}
-      className={`group flex w-full flex-col gap-3 rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`group flex w-full flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         derived === 'ready'
-          ? 'border-green-300 bg-green-50 hover:border-green-400'
+          ? 'border-amber-400 bg-amber-50 hover:border-amber-500'
           : occupied
-          ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
-          : 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
+          ? 'border-red-400 bg-red-50 hover:border-red-500'
+          : 'border-gray-200 bg-white hover:border-gray-300'
       }`}
     >
+      {/* Badge row */}
       <div className="flex items-start justify-between gap-2">
-        <span className="text-base font-bold text-gray-900">{table.name}</span>
-        <Badge variant={occupied ? 'occupied' : 'vacant'}>
-          {occupied ? 'In use' : 'Vacant'}
+        <Badge variant={derived === 'ready' ? 'warning' : occupied ? 'occupied' : 'vacant'}>
+          {derived === 'ready' ? 'Ready' : occupied ? 'In use' : 'Vacant'}
         </Badge>
       </div>
 
+      {/* Table name */}
+      <span className="text-base font-bold text-gray-900">{table.name}</span>
+
+      {/* Content */}
       {occupied && order ? (
-        <div className="space-y-1.5">
-          <p className="text-xs text-gray-500">
-            {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-          </p>
-          <p className="text-sm font-semibold text-gray-900">{fmt(order.total)}</p>
+        <div className="space-y-1">
           {derived === 'ready' ? (
             <>
-              <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-                Ready to serve
-              </span>
-              <p className="text-xs font-medium text-green-600">Tap to serve</p>
+              <p className="text-xs font-bold text-red-600">
+                {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
+              </p>
             </>
-          ) : derived === 'cooking' ? (
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-              Cooking…
-            </span>
           ) : (
-            <Badge variant={orderStatusVariant(order.status)}>{order.status}</Badge>
+            <>
+              <p className="text-xs text-gray-500">
+                {order.items.length > 0
+                  ? (() => { const qty = order.items.reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
+                  : 'No items yet'}
+              </p>
+              {order.items.length > 0 && (
+                <p className="text-sm font-semibold text-primary">{fmt(billSubtotal(order))}</p>
+              )}
+              {derived === 'cooking' && (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Cooking…
+                </span>
+              )}
+            </>
           )}
         </div>
+      ) : occupied ? (
+        <p className="text-xs text-gray-500">Occupied</p>
       ) : (
         <p className="text-xs text-gray-400">Tap to take an order</p>
       )}
@@ -231,6 +259,7 @@ function OrderDetailPanel({
   onOrderCancelled,
   onOrderCompleted,
   onAddItems,
+  canCancel,
 }: {
   order: Order;
   table: RestaurantTable;
@@ -238,26 +267,36 @@ function OrderDetailPanel({
   onOrderCancelled: (orderId: string) => void;
   onOrderCompleted: (orderId: string, tableId: string) => void;
   onAddItems?: () => void;
+  canCancel: boolean;
 }) {
   const dispatch = useAppDispatch();
   const menuItems = useAppSelector(selectMenuItems);
+  const profile = useAppSelector(selectProfile);
   const menuMap = new Map(menuItems.map((m) => [m.id, m]));
 
-  // Compute totals from items as fallback when API returns zeros
+  // Compute totals — use GST setting from profile
+  const pricesIncludeGst = profile?.prices_include_gst ?? false;
   const computedSubtotal = order.items.reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
-  const displaySubtotal = order.sub_total > 0 ? order.sub_total : computedSubtotal;
-  const taxIsFromApi = order.tax_amount > 0;
-  const displayTax = taxIsFromApi ? order.tax_amount : parseFloat((displaySubtotal * 0.05).toFixed(2));
-  // When tax comes from API, trust the API total. When we computed tax ourselves, always add it to subtotal.
-  const displayTotal = taxIsFromApi && order.total > 0 ? order.total : displaySubtotal + displayTax;
+  // When prices include GST: gross = item prices as shown on menu (already GST-inclusive).
+  // order.sub_total from the API is the pre-tax base (backend already extracted GST), so using it
+  // here would double-extract GST. Always use computedSubtotal when prices include GST.
+  // When prices exclude GST: gross = pre-tax amount (API sub_total or computed fallback).
+  const gross = pricesIncludeGst
+    ? (computedSubtotal > 0 ? computedSubtotal : order.sub_total)
+    : (order.sub_total > 0 ? order.sub_total : computedSubtotal);
 
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [discountAmount, setDiscountAmount] = useState('');
+  const [upiTransactionId, setUpiTransactionId] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Split bill state
+  const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
+  const [splitCashPortion, setSplitCashPortion] = useState('');
+  const [splitCashGiven, setSplitCashGiven] = useState('');
 
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
@@ -286,33 +325,80 @@ function OrderDetailPanel({
     (item) => item.status === 'cooking' || item.status === 'ready' || item.status === 'served'
   );
 
-  // ── Discount / payment calculations ──────────────────────────────────────
+  // ── Group duplicate menu items by menu_id ────────────────────────────────
+  const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
+  const groupedItems = Object.values(
+    order.items.reduce<
+      Record<string, { menuId: string; name: string; quantity: number; total: number; status: string; ids: string[] }>
+    >((acc, item) => {
+      const key = item.menu_id;
+      const name = item.menu_item?.name ?? menuMap.get(item.menu_id)?.name ?? 'Item';
+      const itemTotal = resolveItemTotal(item, menuMap);
+      if (acc[key]) {
+        acc[key].quantity += item.quantity;
+        acc[key].total += itemTotal;
+        acc[key].ids.push(item.id);
+        // Show the least-advanced status so we don't hide pending work
+        if ((STATUS_RANK[item.status] ?? 0) < (STATUS_RANK[acc[key].status] ?? 0)) {
+          acc[key].status = item.status;
+        }
+      } else {
+        acc[key] = { menuId: key, name, quantity: item.quantity, total: itemTotal, status: item.status, ids: [item.id] };
+      }
+      return acc;
+    }, {})
+  );
+
+  // ── GST-aware totals ──────────────────────────────────────────────────────
   const discountValue = parseFloat(discountAmount) || 0;
-  const effectiveTotal = Math.max(0, displayTotal - discountValue);
+  const taxResult = calculateOrderTax(gross, discountValue, pricesIncludeGst);
+  const displaySubtotal = taxResult.subtotal;
+  const displayTax = taxResult.taxAmount;
+  const displayTotal = taxResult.finalAmount;
+  const effectiveTotal = displayTotal;
+
   const changeAmount =
     paymentMethod === 'cash' && amountReceived
       ? Math.max(0, parseFloat(amountReceived) - effectiveTotal)
       : 0;
+
+  // Split bill derived values
+  const splitCashPortionAmount = parseFloat(splitCashPortion) || 0;
+  const splitUpiAmount = Math.max(0, effectiveTotal - splitCashPortionAmount);
+  const splitCashGivenAmount = parseFloat(splitCashGiven) || 0;
+  const splitChange = Math.max(0, splitCashGivenAmount - splitCashPortionAmount);
+  const isSplitCashValid =
+    splitCashPortionAmount > 0 && splitUpiAmount > 0.01 && splitCashGivenAmount >= splitCashPortionAmount;
 
   const closePaymentModal = () => {
     if (!paymentLoading) {
       setPaymentOpen(false);
       setDiscountAmount('');
       setAmountReceived('');
+      setUpiTransactionId('');
       setPaymentError(null);
+      setSplitPhase('cash');
+      setSplitCashPortion('');
+      setSplitCashGiven('');
     }
   };
 
-  const handleCheckout = async () => {
-    setCheckoutLoading(true);
-    try {
-      await apiClient.startCheckout(order.id);
-      setPaymentOpen(true);
-    } catch (err: unknown) {
-      console.error('[Orders] startCheckout failed', err);
-    } finally {
-      setCheckoutLoading(false);
-    }
+  const handleCheckout = () => {
+    // Open the payment modal immediately; call startCheckout in the background
+    setPaymentOpen(true);
+    setPaymentError(null);
+    apiClient.startCheckout(order.id).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (msg.includes('no longer active')) {
+        setPaymentOpen(false);
+        onOrderCompleted(order.id, table.id);
+        return;
+      }
+      if (msg.includes('checkout already in progress')) {
+        setPaymentError('Another device is already checking out this table. Please wait.');
+      }
+      // For other errors keep the modal open — user can still attempt payment
+    });
   };
 
   const handlePayment = async () => {
@@ -324,17 +410,38 @@ function OrderDetailPanel({
         return;
       }
     }
+    if (paymentMethod === 'split' && splitPhase === 'cash') {
+      if (!isSplitCashValid) {
+        setPaymentError('Enter valid cash portion and cash received.');
+        return;
+      }
+      setSplitPhase('upi');
+      setPaymentError(null);
+      return;
+    }
 
-    const payload: CompletePaymentRequest = {
-      payment_method: paymentMethod,
-      ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
-      ...(paymentMethod === 'cash'
-        ? {
-            amount_received: parseFloat(amountReceived),
-            change_returned: changeAmount,
-          }
-        : {}),
-    };
+    let payload: CompletePaymentRequest;
+    if (paymentMethod === 'split') {
+      payload = {
+        payment_method: 'split',
+        cash_amount: splitCashPortionAmount,
+        upi_amount: splitUpiAmount,
+        amount_received: splitCashGivenAmount,
+        change_returned: splitChange,
+        ...(upiTransactionId.trim() ? { upi_transaction_id: upiTransactionId.trim() } : {}),
+        ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+      };
+    } else {
+      payload = {
+        payment_method: paymentMethod,
+        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : effectiveTotal,
+        change_returned: paymentMethod === 'cash' ? changeAmount : 0,
+        ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+        ...(paymentMethod === 'upi' && upiTransactionId.trim()
+          ? { upi_transaction_id: upiTransactionId.trim() }
+          : {}),
+      };
+    }
 
     setPaymentLoading(true);
     try {
@@ -405,24 +512,22 @@ function OrderDetailPanel({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {order.items.map((item) => (
-                <tr key={item.id}>
-                  <td className="py-2.5 text-gray-900">
-                    {item.menu_item?.name ?? menuMap.get(item.menu_id)?.name ?? 'Item'}
-                  </td>
+              {groupedItems.map((item) => (
+                <tr key={item.menuId}>
+                  <td className="py-2.5 text-gray-900">{item.name}</td>
                   <td className="py-2.5 text-center text-gray-600">{item.quantity}</td>
                   <td className="py-2.5 text-right font-medium text-gray-900">
-                    {fmt(resolveItemTotal(item, menuMap))}
+                    {fmt(item.total)}
                   </td>
                   {showKitchenStatus && (
                     <td className="py-2.5 text-right">
                       {item.status === 'ready' ? (
                         <button
-                          onClick={() => handleServe(item.id)}
-                          disabled={servingId === item.id}
+                          onClick={() => item.ids.forEach((id) => handleServe(id))}
+                          disabled={item.ids.some((id) => servingId === id)}
                           className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
                         >
-                          {servingId === item.id ? (
+                          {item.ids.some((id) => servingId === id) ? (
                             <Spinner size="sm" className="text-white" />
                           ) : (
                             <CheckCircle className="h-3 w-3" />
@@ -445,7 +550,7 @@ function OrderDetailPanel({
         {/* Totals */}
         <div className="border-t border-gray-100 px-6 py-4 space-y-1.5">
           <div className="flex justify-between text-sm text-gray-500">
-            <span>Subtotal</span>
+            <span>{taxResult.subtotalLabel}</span>
             <span>{fmt(displaySubtotal)}</span>
           </div>
           {displayTax > 0 && (
@@ -472,14 +577,9 @@ function OrderDetailPanel({
             <>
               <button
                 onClick={handleCheckout}
-                disabled={checkoutLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
               >
-                {checkoutLoading ? (
-                  <Spinner size="sm" className="text-white" />
-                ) : (
-                  <CreditCard className="h-4 w-4" />
-                )}
+                <CreditCard className="h-4 w-4" />
                 Checkout
               </button>
 
@@ -495,83 +595,142 @@ function OrderDetailPanel({
             </>
           )}
 
-          <button
-            onClick={() => setCancelConfirmOpen(true)}
-            disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
-            className="w-full rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
-          >
-            Cancel order
-          </button>
+          {canCancel && (
+            <button
+              onClick={() => setCancelConfirmOpen(true)}
+              disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
+              className="w-full rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+            >
+              Cancel order
+            </button>
+          )}
         </div>
       </div>
 
       {/* Payment modal */}
-      <Modal open={paymentOpen} onClose={closePaymentModal} title="Payment" maxWidth="sm">
-        <div className="space-y-5">
+      <Modal
+        open={paymentOpen}
+        onClose={closePaymentModal}
+        title={
+          paymentMethod === 'upi'
+            ? 'UPI Payment'
+            : paymentMethod === 'split'
+            ? splitPhase === 'upi'
+              ? 'Split — UPI Remainder'
+              : 'Split — Cash Portion'
+            : 'Cash Payment'
+        }
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
           {paymentError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {paymentError}
             </div>
           )}
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setPaymentMethod('cash')}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
-                paymentMethod === 'cash'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Banknote className="h-4 w-4" />
-              Cash
-            </button>
-            <button
-              onClick={() => setPaymentMethod('upi')}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
-                paymentMethod === 'upi'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <CreditCard className="h-4 w-4" />
-              UPI
-            </button>
+          {/* Payment method tabs */}
+          <div className="flex gap-2">
+            {([
+              { value: 'cash' as PaymentMethod, label: 'Cash', icon: <Banknote className="h-4 w-4" /> },
+              { value: 'upi' as PaymentMethod, label: 'UPI', icon: <CreditCard className="h-4 w-4" /> },
+              { value: 'split' as PaymentMethod, label: 'Split', icon: <ArrowLeftRight className="h-4 w-4" /> },
+            ] as const).map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => { setPaymentMethod(tab.value); setSplitPhase('cash'); setPaymentError(null); }}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl border py-2.5 text-sm font-medium transition-colors ${
+                  paymentMethod === tab.value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-            <p className="text-xs text-gray-500">Order total</p>
-            <p className="text-2xl font-bold text-gray-900">{fmt(displayTotal)}</p>
-          </div>
+          {/* ── UPI layout (matches mobile UPI Payment screen) ── */}
+          {paymentMethod === 'upi' && (
+            <div className="space-y-4">
+              {/* QR code or placeholder */}
+              {profile?.upi_qr_code ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-4">
+                  <img
+                    src={profile.upi_qr_code}
+                    alt="UPI QR Code"
+                    className="h-44 w-44 rounded-lg object-contain"
+                  />
+                  {profile.upi_id && (
+                    <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-400">
+                  Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
+                </div>
+              )}
 
-          {/* Discount */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Discount (optional)
-            </label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+              {/* Bill amount */}
+              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+                <p className="mb-1 text-xs font-medium text-gray-500">Bill Amount</p>
+                <p className="text-2xl font-bold text-primary">{fmt(displayTotal)}</p>
+              </div>
+
+              {/* Transaction ID */}
               <input
-                type="number"
-                min={0}
-                max={displayTotal}
-                step="0.01"
-                value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)}
-                placeholder="0"
-                className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                type="text"
+                value={upiTransactionId}
+                onChange={(e) => setUpiTransactionId(e.target.value)}
+                placeholder="Enter transaction ID after payment (optional)"
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
-            </div>
-            {discountValue > 0 && (
-              <p className="mt-1.5 text-xs text-gray-500">
-                Updated total:{' '}
-                <span className="font-semibold text-gray-900">{fmt(effectiveTotal)}</span>
-              </p>
-            )}
-          </div>
 
+              {/* Summary */}
+              <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Amount to Receive:</span>
+                  <span className="font-semibold text-gray-900">{fmt(displayTotal)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Transaction ID:</span>
+                  <span className="text-gray-500">{upiTransactionId.trim() || '—'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Cash layout ── */}
           {paymentMethod === 'cash' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Bill amount */}
+              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+                <p className="mb-1 text-xs font-medium text-gray-500">Bill Amount</p>
+                <p className="text-2xl font-bold text-primary">{fmt(displayTotal)}</p>
+              </div>
+
+              {/* Discount */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Discount (optional)
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={displayTotal}
+                    step="0.01"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Amount received */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
                   Amount received (₹)
@@ -586,28 +745,120 @@ function OrderDetailPanel({
                   className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
-              {amountReceived && !isNaN(parseFloat(amountReceived)) && changeAmount >= 0 && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                  <p className="text-xs text-emerald-600">Change to return</p>
-                  <p className="text-lg font-bold text-emerald-700">{fmt(changeAmount)}</p>
+
+              {/* Summary */}
+              <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-2">
+                {discountValue > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Discount:</span>
+                    <span className="font-semibold text-green-600">-{fmt(discountValue)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Amount to Receive:</span>
+                  <span className="font-semibold text-gray-900">{fmt(effectiveTotal)}</span>
                 </div>
-              )}
+                {amountReceived && !isNaN(parseFloat(amountReceived)) && (
+                  <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
+                    <span className="text-gray-600">Change to Return:</span>
+                    <span className={`font-semibold ${changeAmount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      {fmt(Math.max(0, changeAmount))}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {paymentMethod === 'upi' && (
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-              Confirm once UPI payment is received from the customer.
+          {/* ── Split bill layout ── */}
+          {paymentMethod === 'split' && splitPhase === 'cash' && (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+                <p className="mb-1 text-xs font-medium text-gray-500">Total Bill</p>
+                <p className="text-2xl font-bold text-primary">{fmt(effectiveTotal)}</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Cash portion (customer pays in cash)
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={effectiveTotal}
+                    step="0.01"
+                    value={splitCashPortion}
+                    onChange={(e) => setSplitCashPortion(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                {splitCashPortionAmount > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    UPI remainder: <span className="font-semibold text-primary">{fmt(splitUpiAmount)}</span>
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Cash received from customer
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                  <input
+                    type="number"
+                    min={splitCashPortionAmount}
+                    step="0.01"
+                    value={splitCashGiven}
+                    onChange={(e) => setSplitCashGiven(e.target.value)}
+                    placeholder={String(splitCashPortionAmount || 0)}
+                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                {splitCashGivenAmount > 0 && splitCashPortionAmount > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Change to return: <span className="font-semibold">{fmt(splitChange)}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {paymentMethod === 'split' && splitPhase === 'upi' && (
+            <div className="space-y-4">
+              {profile?.upi_qr_code ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-4">
+                  <img src={profile.upi_qr_code} alt="UPI QR" className="h-40 w-40 rounded-lg object-contain" />
+                  {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-400">
+                  Add a UPI ID in Restaurant Profile to enable QR codes.
+                </div>
+              )}
+              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+                <p className="mb-1 text-xs font-medium text-gray-500">UPI Amount</p>
+                <p className="text-2xl font-bold text-primary">{fmt(splitUpiAmount)}</p>
+                <p className="mt-1 text-xs text-gray-400">Cash portion paid: {fmt(splitCashPortionAmount)}</p>
+              </div>
+              <input
+                type="text"
+                value={upiTransactionId}
+                onChange={(e) => setUpiTransactionId(e.target.value)}
+                placeholder="Enter UPI transaction ID (optional)"
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           )}
 
           <div className="flex gap-3">
             <button
-              onClick={closePaymentModal}
+              onClick={paymentMethod === 'split' && splitPhase === 'upi' ? () => setSplitPhase('cash') : closePaymentModal}
               disabled={paymentLoading}
               className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Cancel
+              Back
             </button>
             <button
               onClick={handlePayment}
@@ -619,7 +870,7 @@ function OrderDetailPanel({
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              Confirm payment
+              {paymentMethod === 'split' && splitPhase === 'cash' ? 'Accept Cash & Pay UPI' : 'Confirm Payment'}
             </button>
           </div>
         </div>
@@ -973,8 +1224,11 @@ export function Orders() {
   const dispatch = useAppDispatch();
   const tables = useAppSelector(selectTables);
   const activeOrders = useAppSelector(selectActiveOrders);
-
   const menuHydrated = useAppSelector(selectMenuHydrated);
+  const role = useAppSelector(selectAuthRole);
+  const canCancelOrders = useAppSelector(selectCanCancelOrders);
+  // Admins and managers can always cancel; staff only if explicitly permitted
+  const canCancel = role === 'admin' || role === 'manager' || canCancelOrders;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -983,61 +1237,146 @@ export function Orders() {
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
   const [panelMode, setPanelMode] = useState<'detail' | 'vacant' | 'take-order' | 'add-items' | null>(null);
 
-  // Load tables, orders, and menu on mount
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+  // Shared fetch + reconcile logic — used by initial load and background poll
+  const fetchTablesAndOrders = useCallback(
+    async (opts: { showLoader: boolean; includeMenu: boolean }) => {
+      if (opts.showLoader) { setLoading(true); setError(null); }
+      try {
+        const promises: Promise<unknown>[] = [
+          apiClient.getTables(),
+          apiClient.listOrdersSummary('active'),
+        ];
+        if (opts.includeMenu) promises.push(apiClient.listMenuItems());
 
-    const fetches: Promise<unknown>[] = [
-      apiClient.getTables(),
-      apiClient.listOrdersSummary('active'),
-    ];
-    if (!menuHydrated) {
-      fetches.push(apiClient.listMenuItems());
-    }
+        const [tablesData, ordersData, menuData] = await Promise.all(promises);
+        const fetchedTables = tablesData as RestaurantTable[];
+        const fetchedOrders = (ordersData as { orders: Order[] }).orders;
 
-    Promise.all(fetches)
-      .then(([tablesData, ordersData, menuData]) => {
-        if (cancelled) return;
-        const tables = tablesData as RestaurantTable[];
-        const orders = (ordersData as { orders: Order[] }).orders;
-
-        // Reconcile: if the API returns a table as vacant but an active order
-        // references it, upgrade it to occupied. Never downgrade an occupied
-        // table — trust the server's is_occupied flag for that direction.
-        const reconciledTables = tables.map((t) => {
-          if (t.is_occupied) return t; // already correct per server
-          const matchingOrder = orders.find(
+        // Reconcile: upgrade vacant table when an active order references it
+        const reconciledTables = fetchedTables.map((t) => {
+          if (t.is_occupied) return t;
+          const match = fetchedOrders.find(
             (o) => o.table_id === t.id || o.id === t.current_order_id
           );
-          if (matchingOrder) {
-            return { ...t, is_occupied: true, current_order_id: matchingOrder.id };
-          }
-          return t;
+          return match ? { ...t, is_occupied: true, current_order_id: match.id } : t;
         });
 
         dispatch(setTables(reconciledTables));
-        dispatch(setActiveOrders(orders));
+        dispatch(setActiveOrders(fetchedOrders));
         if (menuData) dispatch(setMenuItems(menuData as MenuItem[]));
-      })
-      .catch((err: unknown) => {
-        if (!cancelled)
+      } catch (err: unknown) {
+        if (opts.showLoader)
           setError(err instanceof Error ? err.message : 'Failed to load data');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } finally {
+        if (opts.showLoader) setLoading(false);
+      }
+    },
+    [dispatch]
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Load tables, orders, and menu on mount — WS handles all subsequent updates
+  useEffect(() => {
+    fetchTablesAndOrders({ showLoader: true, includeMenu: !menuHydrated });
+  }, [fetchTablesAndOrders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Direct WS subscriptions — data IS the order/table object (backend: { type, data: {...} })
+  useEffect(() => {
+    const unsubs = [
+      wsService.on('order_created', (data) => {
+        if (data.id) {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+          const tableId = (data.table_id ?? data.tableId) as string | undefined;
+          if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: true, currentOrderId: data.id as string }));
+        }
+      }),
+      wsService.on('order_updated', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (!orderId) return;
+        const items = data.items as Order['items'] | undefined;
+        if (data.id && items?.length) {
+          // Full order included — upsert directly (upsertOrder guards against overwriting items)
+          dispatch(upsertActiveOrder(data as unknown as Order));
+        } else {
+          // Partial event (no items) — fetch fresh so we get the latest item statuses
+          apiClient.getOrder(orderId)
+            .then((fresh) => dispatch(upsertActiveOrder(fresh)))
+            .catch(() => {});
+        }
+      }),
+      wsService.on('order_status_changed', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (!orderId) return;
+        const items = data.items as Order['items'] | undefined;
+        if (data.id && items?.length) {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+        } else {
+          apiClient.getOrder(orderId)
+            .then((fresh) => dispatch(upsertActiveOrder(fresh)))
+            .catch(() => {});
+        }
+      }),
+      wsService.on('order_item_status_changed', (data) => {
+        const orderId = (data.order_id ?? data.id) as string | undefined;
+        const itemId = (data.item_id ?? data.itemId) as string | undefined;
+        const status = data.status as string | undefined;
+
+        // Patch the specific item immediately for instant feedback
+        if (orderId && itemId && status) {
+          dispatch(patchOrderItemStatus({ orderId, itemId, status }));
+        }
+
+        // If the event also carries a full items array, upsert the whole order
+        const items = data.items as Order['items'] | undefined;
+        if (data.id && items?.length) {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+        }
+      }),
+      wsService.on('order_completed', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (orderId) dispatch(removeActiveOrder(orderId));
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
+      }),
+      wsService.on('order_cancelled', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (orderId) dispatch(removeActiveOrder(orderId));
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
+      }),
+      wsService.on('table_status_changed', (data) => {
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId !== undefined) {
+          dispatch(setTableOccupied({ tableId, isOccupied: Boolean(data.is_occupied ?? data.isOccupied) }));
+        }
+        if (data.table) dispatch(upsertTable(data.table as unknown as RestaurantTable));
+      }),
+    ];
+    return () => unsubs.forEach((fn) => fn());
+  }, [dispatch]);
+
+  // Keep selectedTable in sync with Redux when WS updates arrive (table_status_changed etc.)
+  useEffect(() => {
+    if (!selectedTable) return;
+    const live = tables.find((t) => t.id === selectedTable.id);
+    if (live && live !== selectedTable) setSelectedTable(live);
+  }, [tables]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-close panel when the open order is completed/cancelled by another device
+  useEffect(() => {
+    if (!selectedTable || panelMode !== 'detail') return;
+    const orderStillActive = activeOrders.some((o) => o.id === selectedTable.current_order_id);
+    if (!orderStillActive) {
+      setSelectedTable(null);
+      setPanelMode(null);
+    }
+  }, [activeOrders, selectedTable, panelMode]);
 
   // Helpers
   const getOrderForTable = useCallback(
     (table: RestaurantTable): Order | undefined =>
-      activeOrders.find((o) => o.id === table.current_order_id),
+      activeOrders.find(
+        (o) => o.id === table.current_order_id || o.table_id === table.id
+      ),
     [activeOrders]
   );
 
@@ -1145,6 +1484,7 @@ export function Orders() {
             onOrderCancelled={handleOrderCancelled}
             onOrderCompleted={handleOrderCompleted}
             onAddItems={() => setPanelMode('add-items')}
+            canCancel={canCancel}
           />
         );
       })()}

@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Menu } from 'lucide-react';
+import { SubscriptionBanner } from './SubscriptionBanner';
 import { Sidebar } from './Sidebar';
 import { useAppDispatch } from '../../store/hooks';
 import { setProfile } from '../../store/profileSlice';
 import apiClient from '../../services/api';
 import wsService from '../../services/websocket';
-import { upsertActiveOrder, removeActiveOrder } from '../../store/ordersSlice';
-import { upsertTable } from '../../store/tablesSlice';
+import {
+  upsertActiveOrder, removeActiveOrder,
+  upsertCounterOrder, removeCounterOrder,
+  patchOrderItemStatus,
+} from '../../store/ordersSlice';
+import { setTableOccupied, upsertTable } from '../../store/tablesSlice';
 import { upsertInventoryIngredient } from '../../store/inventorySlice';
 import { updateMenuItem } from '../../store/menuSlice';
 import type { Order, RestaurantTable, MenuItem } from '../../services/api';
 import type { InventoryIngredient } from '../../store/inventorySlice';
+
+function isCounterOrder(data: Record<string, unknown>): boolean {
+  return data.order_type === 'counter' || data.orderType === 'counter';
+}
 
 export function AppShell() {
   const dispatch = useAppDispatch();
@@ -25,30 +34,87 @@ export function AppShell() {
 
     wsService.connect();
 
+    // Backend message format: { type, room_id, timestamp, data: {...} }
+    // wsService emits message.data as the payload — data IS the order/table/etc. object directly.
     const unsubscribe = [
-      wsService.on('order_created', (payload) => {
-        if (payload.order) dispatch(upsertActiveOrder(payload.order as Order));
+      // Order events — route to the correct Redux slice based on order_type
+      wsService.on('order_created', (data) => {
+        if (!data.id) return;
+        if (isCounterOrder(data)) {
+          dispatch(upsertCounterOrder(data as unknown as Order));
+        } else {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+          const tableId = (data.table_id ?? data.tableId) as string | undefined;
+          if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: true, currentOrderId: data.id as string }));
+        }
       }),
-      wsService.on('order_updated', (payload) => {
-        if (payload.order) dispatch(upsertActiveOrder(payload.order as Order));
+      wsService.on('order_updated', (data) => {
+        if (!data.id) return;
+        if (isCounterOrder(data)) {
+          dispatch(upsertCounterOrder(data as unknown as Order));
+        } else {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+        }
       }),
-      wsService.on('order_completed', (payload) => {
-        if (payload.order_id) dispatch(removeActiveOrder(payload.order_id as string));
+      wsService.on('order_status_changed', (data) => {
+        if (!data.id) return;
+        if (isCounterOrder(data)) {
+          dispatch(upsertCounterOrder(data as unknown as Order));
+        } else {
+          dispatch(upsertActiveOrder(data as unknown as Order));
+        }
       }),
-      wsService.on('order_cancelled', (payload) => {
-        if (payload.order_id) dispatch(removeActiveOrder(payload.order_id as string));
+      wsService.on('order_item_status_changed', (data) => {
+        if (data.id && (data as { items?: unknown[] }).items?.length) {
+          // Full order payload — route by order_type
+          if (isCounterOrder(data)) {
+            dispatch(upsertCounterOrder(data as unknown as Order));
+          } else {
+            dispatch(upsertActiveOrder(data as unknown as Order));
+          }
+        } else if (data.order_id && data.item_id && data.status) {
+          // Partial update — patchOrderItemStatus checks both slices
+          dispatch(patchOrderItemStatus({
+            orderId: data.order_id as string,
+            itemId: data.item_id as string,
+            status: data.status as string,
+          }));
+        }
       }),
-      wsService.on('order_item_status_changed', (payload) => {
-        if (payload.order) dispatch(upsertActiveOrder(payload.order as Order));
+      wsService.on('order_completed', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (!orderId) return;
+        dispatch(removeActiveOrder(orderId));
+        dispatch(removeCounterOrder(orderId));
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
       }),
-      wsService.on('table_status_changed', (payload) => {
-        if (payload.table) dispatch(upsertTable(payload.table as RestaurantTable));
+      wsService.on('order_cancelled', (data) => {
+        const orderId = (data.id ?? data.order_id) as string | undefined;
+        if (!orderId) return;
+        dispatch(removeActiveOrder(orderId));
+        dispatch(removeCounterOrder(orderId));
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
       }),
-      wsService.on('inventory_updated', (payload) => {
-        if (payload.ingredient) dispatch(upsertInventoryIngredient(payload.ingredient as InventoryIngredient));
+      // Table events — data has table_id + is_occupied (flat, not a table object)
+      wsService.on('table_status_changed', (data) => {
+        const tableId = (data.table_id ?? data.tableId) as string | undefined;
+        if (tableId !== undefined) {
+          const isOccupied = Boolean(data.is_occupied ?? data.isOccupied);
+          dispatch(setTableOccupied({ tableId, isOccupied }));
+        }
+        if (data.table) dispatch(upsertTable(data.table as unknown as RestaurantTable));
       }),
-      wsService.on('menu_updated', (payload) => {
-        if (payload.menu_item) dispatch(updateMenuItem(payload.menu_item as MenuItem));
+      // Inventory — data has ingredient fields directly
+      wsService.on('inventory_updated', (data) => {
+        const id = (data.ingredient_id ?? data.id) as string | undefined;
+        if (id) dispatch(upsertInventoryIngredient({ ...data, id } as unknown as InventoryIngredient));
+      }),
+      // Menu — data may wrap in menu_item or be the item directly
+      wsService.on('menu_updated', (data) => {
+        const item = (data.menu_item ?? data) as unknown as MenuItem;
+        if (item?.id) dispatch(updateMenuItem(item));
       }),
     ];
 
@@ -58,9 +124,9 @@ export function AppShell() {
   }, [dispatch]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex lg:w-60 lg:flex-col lg:shrink-0">
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Desktop sidebar — sticky so it stays in viewport while body scrolls */}
+      <div className="hidden lg:flex lg:w-60 lg:flex-col lg:shrink-0 lg:sticky lg:top-0 lg:h-screen">
         <Sidebar />
       </div>
 
@@ -77,10 +143,10 @@ export function AppShell() {
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile top bar */}
-        <header className="flex items-center gap-3 border-b border-gray-100 bg-white px-4 py-3 lg:hidden">
+      {/* Main content — grows naturally; body is the single scroll container */}
+      <div className="flex flex-1 flex-col">
+        {/* Mobile top bar — sticky so it stays at top while body scrolls */}
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-100 bg-white px-4 py-3 lg:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
@@ -90,7 +156,8 @@ export function AppShell() {
           <span className="font-semibold text-gray-900">BillGenie</span>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <SubscriptionBanner />
+        <main className="flex-1 p-4 lg:p-6">
           <Outlet />
         </main>
       </div>

@@ -735,13 +735,13 @@ export function Staff() {
   const [error, setError] = useState<string | null>(null);
 
   const staffCount =
-    usage?.staff_count ??
+    usage?.staff_and_chefs ??
     staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
   const managerCount =
-    usage?.manager_count ?? staff.filter((s) => s.role === 'manager').length;
+    usage?.managers ?? staff.filter((s) => s.role === 'manager').length;
 
   const staffSeatAvailable = limits
-    ? staffCount < limits.max_staff || managerCount < limits.max_managers
+    ? staffCount < limits.max_staff_and_chefs || managerCount < limits.max_managers
     : true;
 
   const [formOpen, setFormOpen] = useState(false);
@@ -787,7 +787,7 @@ export function Staff() {
         setFormOpen(false);
       }
     } else {
-      setStaff((prev) => prev.map((s) => (s.id === member.id ? member : s)));
+      setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, ...member } : s)));
       setFormOpen(false);
     }
   }
@@ -826,12 +826,12 @@ export function Staff() {
           <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Seat usage</span>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-              staffCount >= limits.max_staff
+              staffCount >= limits.max_staff_and_chefs
                 ? 'bg-red-100 text-red-700'
                 : 'bg-emerald-100 text-emerald-700'
             }`}
           >
-            Staff &amp; Chefs: {staffCount} / {limits.max_staff}
+            Staff &amp; Chefs: {staffCount} / {limits.max_staff_and_chefs}
           </span>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${

@@ -33,7 +33,7 @@ export function Navbar() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
         <NavLink to="/" className="flex items-center gap-2.5" onClick={() => setOpen(false)}>
-          <img src="/favicon.png" alt="" className="h-8 w-8 rounded-xl" />
+          <img src="/logo.png" alt="BillGenie" className="h-9 w-9 rounded-xl object-cover" />
           <span className="text-lg font-bold text-ink tracking-tight">BillGenie</span>
         </NavLink>
 

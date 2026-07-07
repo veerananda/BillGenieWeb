@@ -1,374 +1,352 @@
-import { useState, useEffect, useCallback } from 'react';
-import { History as HistoryIcon, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { History as HistoryIcon } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order } from '../../services/api';
+import { useAppSelector } from '../../store/hooks';
+import { selectProfile } from '../../store/profileSlice';
+import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { PageHeader } from '../../components/app/PageHeader';
-import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
+type HistoryPeriod = 'today' | 'yesterday' | 'week' | 'month';
+type OrderTypeTab = 'dine_in' | 'counter';
+
+const PAGE_SIZE = 50;
+
+const PERIODS: { key: HistoryPeriod; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'Last 7 days' },
+  { key: 'month', label: 'This month' },
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 20;
-
-function formatCurrency(amount: number): string {
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(n: number | null | undefined): string {
+  return `₹${Number(n || 0).toFixed(2)}`;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function formatDateShort(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function isoDateString(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function defaultFrom(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 7);
-  return isoDateString(d);
-}
-
-function defaultTo(): string {
-  return isoDateString(new Date());
-}
-
-function getStatusVariant(
-  status: string
-): 'pending' | 'cooking' | 'ready' | 'served' | 'completed' | 'cancelled' {
-  if (status === 'completed') return 'completed';
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'cooking') return 'cooking';
-  if (status === 'ready') return 'ready';
-  if (status === 'served') return 'served';
-  return 'pending';
-}
-
-type OrderType = 'all' | 'dine_in' | 'counter';
-
-// ─── Order Detail Modal ───────────────────────────────────────────────────────
-
-interface OrderDetailModalProps {
-  order: Order | null;
-  open: boolean;
-  onClose: () => void;
-}
-
-function OrderDetailModal({ order, open, onClose }: OrderDetailModalProps) {
-  if (!order) return null;
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Order #${order.order_number}`} maxWidth="lg">
-      <div className="space-y-5">
-        {/* Meta info */}
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl bg-gray-50 p-3">
-            <p className="text-xs text-gray-500">Status</p>
-            <div className="mt-1">
-              <Badge variant={getStatusVariant(order.status)}>
-                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-              </Badge>
-            </div>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-3">
-            <p className="text-xs text-gray-500">Type</p>
-            <p className="mt-1 font-medium text-gray-900">
-              {order.order_type === 'counter' ? 'Counter' : 'Dine-in'}
-              {order.service_mode && (
-                <span className="ml-1 text-gray-400">
-                  ({order.service_mode === 'takeaway' ? 'Takeaway' : 'Eat Here'})
-                </span>
-              )}
-            </p>
-          </div>
-          {order.customer_name && (
-            <div className="rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Customer</p>
-              <p className="mt-1 font-medium text-gray-900">{order.customer_name}</p>
-              {order.customer_phone && (
-                <p className="text-xs text-gray-400">{order.customer_phone}</p>
-              )}
-            </div>
-          )}
-          <div className="rounded-xl bg-gray-50 p-3">
-            <p className="text-xs text-gray-500">Placed At</p>
-            <p className="mt-1 font-medium text-gray-900">{formatDate(order.created_at)}</p>
-          </div>
-          {order.completed_at && (
-            <div className="rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Completed At</p>
-              <p className="mt-1 font-medium text-gray-900">{formatDate(order.completed_at)}</p>
-            </div>
-          )}
-          {order.payment_method && (
-            <div className="rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Payment</p>
-              <p className="mt-1 font-medium capitalize text-gray-900">{order.payment_method}</p>
-              {order.amount_received != null && (
-                <p className="text-xs text-gray-400">
-                  Received: {formatCurrency(order.amount_received)}
-                  {order.change_returned != null && order.change_returned > 0 && (
-                    <> · Change: {formatCurrency(order.change_returned)}</>
-                  )}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Items */}
-        <div>
-          <p className="mb-2 text-sm font-semibold text-gray-700">
-            Items ({order.items.length})
-          </p>
-          <div className="overflow-hidden rounded-xl border border-gray-100">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">Item</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500">Qty</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500">Rate</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {order.items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-2.5 text-gray-800">
-                      {item.menu_item?.name ?? `Item (${item.menu_id.slice(0, 6)})`}
-                      {item.notes && (
-                        <span className="ml-1 text-xs italic text-amber-600">({item.notes})</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-center text-gray-700">{item.quantity}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-700">
-                      {formatCurrency(item.unit_rate)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-900">
-                      {formatCurrency(item.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Totals */}
-        <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-1.5 text-sm">
-          <div className="flex justify-between text-gray-600">
-            <span>Subtotal</span>
-            <span>{formatCurrency(order.sub_total)}</span>
-          </div>
-          <div className="flex justify-between text-gray-600">
-            <span>Tax</span>
-            <span>{formatCurrency(order.tax_amount)}</span>
-          </div>
-          {order.discount_amount != null && order.discount_amount > 0 && (
-            <div className="flex justify-between text-green-600">
-              <span>Discount</span>
-              <span>−{formatCurrency(order.discount_amount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-gray-200 pt-1.5 font-bold text-gray-900">
-            <span>Total</span>
-            <span>{formatCurrency(order.total)}</span>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── Period Chips ─────────────────────────────────────────────────────────────
-
-type Period = 'today' | 'yesterday' | 'week' | 'month';
-
-function periodDates(period: Period): { from: string; to: string } {
+function getDateRange(period: HistoryPeriod): { from: string; to: string } {
   const today = new Date();
-  const to = isoDateString(today);
+  today.setHours(0, 0, 0, 0);
+  const to = isoDate(today);
   if (period === 'today') return { from: to, to };
   if (period === 'yesterday') {
     const d = new Date(today);
     d.setDate(d.getDate() - 1);
-    const y = isoDateString(d);
+    const y = isoDate(d);
     return { from: y, to: y };
   }
   if (period === 'week') {
     const d = new Date(today);
     d.setDate(d.getDate() - 6);
-    return { from: isoDateString(d), to };
+    return { from: isoDate(d), to };
   }
-  // month
-  const d = new Date(today);
-  d.setDate(d.getDate() - 29);
-  return { from: isoDateString(d), to };
+  // month = first day of current month
+  const d = new Date(today.getFullYear(), today.getMonth(), 1);
+  return { from: isoDate(d), to };
 }
 
-const PERIOD_CHIPS: { key: Period; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'week', label: 'This Week' },
-  { key: 'month', label: 'This Month' },
-];
+function isCounter(order: Order): boolean {
+  return order.order_type === 'counter';
+}
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function getCounterLabel(order: Order): string {
+  return String(order.ticket_number ?? order.order_number ?? '?');
+}
+
+function getOrderTitle(order: Order): string {
+  if (isCounter(order)) {
+    const mode = order.service_mode === 'takeaway' ? 'Takeaway' : 'Counter';
+    return `${mode} #${getCounterLabel(order)}`;
+  }
+  return `Table ${order.table_number}`;
+}
+
+function formatOrderTime(order: Order): string {
+  const raw = order.completed_at || order.updated_at || order.created_at;
+  if (!raw) return '';
+  return new Date(raw).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) return '';
+  return new Date(value).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+// ─── Receipt modal ────────────────────────────────────────────────────────────
+
+function ReceiptModal({ order, open, onClose }: { order: Order | null; open: boolean; onClose: () => void }) {
+  if (!order) return null;
+
+  const counter = isCounter(order);
+  const title = getOrderTitle(order);
+  const completedAt = order.completed_at || order.updated_at || order.created_at;
+  const payment = (order.payment_method || '').toUpperCase();
+
+  // On counter orders, skip generic placeholder names
+  const showCustomer = counter
+    ? !!order.customer_name && !['Takeaway', 'Counter', 'Self Service'].includes(order.customer_name)
+    : !!order.customer_name;
+
+  return (
+    <Modal open={open} onClose={onClose} maxWidth="md">
+      <div className="space-y-5">
+        {/* Receipt label */}
+        <p className="text-xs font-bold uppercase tracking-widest text-primary">Receipt</p>
+
+        {/* Order identity */}
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+          <p className="mt-1 text-sm text-gray-500">Order #{order.order_number}</p>
+          {completedAt && <p className="text-sm text-gray-500">{formatDateTime(completedAt)}</p>}
+          {showCustomer && <p className="text-sm text-gray-500">Customer: {order.customer_name}</p>}
+          {order.customer_phone && <p className="text-sm text-gray-500">Phone: {order.customer_phone}</p>}
+        </div>
+
+        <div className="border-t border-gray-100" />
+
+        {/* Line items */}
+        <div className="space-y-4">
+          {(order.items ?? []).map((item) => (
+            <div key={item.id} className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  {item.menu_item?.name ?? 'Item'}
+                  {item.notes && (
+                    <span className="ml-1 text-xs font-normal italic text-amber-600">({item.notes})</span>
+                  )}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {item.quantity} × {fmt(item.unit_rate)}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-gray-100" />
+
+        {/* Totals */}
+        <div className="space-y-2 text-sm">
+          {order.sub_total > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Subtotal</span>
+              <span className="text-gray-700">{fmt(order.sub_total)}</span>
+            </div>
+          )}
+          {Number(order.tax_amount) > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Tax</span>
+              <span className="text-gray-700">{fmt(order.tax_amount)}</span>
+            </div>
+          )}
+          {Number(order.discount_amount) > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Discount</span>
+              <span className="text-green-600">−{fmt(order.discount_amount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-gray-100 pt-2">
+            <span className="text-base font-bold text-gray-900">Total</span>
+            <span className="text-lg font-bold text-primary">{fmt(order.total)}</span>
+          </div>
+          {payment && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Payment</span>
+              <span className="font-semibold text-gray-700">{payment}</span>
+            </div>
+          )}
+          {payment === 'CASH' && Number(order.amount_received) > 0 && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Received</span>
+                <span className="text-gray-700">{fmt(order.amount_received)}</span>
+              </div>
+              {Number(order.change_returned) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Change</span>
+                  <span className="text-gray-700">{fmt(order.change_returned)}</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {order.notes && (
+          <>
+            <div className="border-t border-gray-100" />
+            <div>
+              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-400">Notes</p>
+              <p className="text-sm text-gray-700">{order.notes}</p>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Order card ───────────────────────────────────────────────────────────────
+
+function OrderCard({ order, onClick }: { order: Order; onClick: () => void }) {
+  const itemCount = order.items?.length ?? 0;
+  const payment = (order.payment_method || '').toUpperCase();
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-base font-bold text-gray-900">{getOrderTitle(order)}</span>
+        <span className="shrink-0 text-base font-bold text-primary">{fmt(order.total)}</span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5 text-sm text-gray-500">
+        <span>#{order.order_number}</span>
+        <span className="text-gray-300">·</span>
+        <span>{formatOrderTime(order)}</span>
+      </div>
+      <div className="mt-2.5 flex items-center justify-between">
+        <span className="text-sm text-gray-400">
+          {itemCount} item{itemCount !== 1 ? 's' : ''}
+        </span>
+        {payment && (
+          <span className="rounded-md bg-green-50 px-2 py-0.5 text-xs font-bold text-green-700">
+            {payment}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export function History() {
-  const [from, setFrom] = useState(defaultFrom);
-  const [to, setTo] = useState(defaultTo);
-  const [orderType, setOrderType] = useState<OrderType>('all');
-  const [page, setPage] = useState(0);
+  const profile = useAppSelector(selectProfile);
+  const limits = parseSubscriptionLimits(
+    (profile?.subscription_config as Record<string, unknown>) ?? null
+  );
+
+  const [period, setPeriod] = useState<HistoryPeriod>('today');
+  const [orderType, setOrderType] = useState<OrderTypeTab>('dine_in');
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [activePeriod, setActivePeriod] = useState<Period | null>(null);
 
-  // Pending filter values (uncommitted until Search is clicked)
-  const [pendingFrom, setPendingFrom] = useState(defaultFrom);
-  const [pendingTo, setPendingTo] = useState(defaultTo);
-  const [pendingType, setPendingType] = useState<OrderType>('all');
+  const fetchOrders = useCallback(
+    async (fromOffset: number) => {
+      const { from, to } = getDateRange(period);
+      const isReset = fromOffset === 0;
+      if (isReset) { setLoading(true); setError(null); setOrders([]); setTotal(0); }
+      else setLoadingMore(true);
 
-  const fetchHistory = useCallback(
-    async (f: string, t: string, type: OrderType, offset: number) => {
-      setLoading(true);
-      setError(null);
       try {
         const result = await apiClient.listOrderHistory({
-          from: f,
-          to: t,
-          order_type: type === 'all' ? undefined : type,
+          from,
+          to,
+          order_type: orderType,
           limit: PAGE_SIZE,
-          offset,
+          offset: fromOffset,
         });
-        setOrders(result.orders);
-        setTotal(result.total);
+        const next = result.orders ?? [];
+        setTotal(result.total ?? next.length);
+        setOrders((prev) => (isReset ? next : [...prev, ...next]));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load order history');
+        if (isReset) setError(err instanceof Error ? err.message : 'Failed to load history');
       } finally {
         setLoading(false);
+        setLoadingMore(false);
       }
     },
-    []
+    [period, orderType]
   );
 
   useEffect(() => {
-    fetchHistory(from, to, orderType, page * PAGE_SIZE);
-  }, [fetchHistory, from, to, orderType, page]);
+    fetchOrders(0);
+  }, [fetchOrders]);
 
-  function handleSearch() {
-    setFrom(pendingFrom);
-    setTo(pendingTo);
-    setOrderType(pendingType);
-    setActivePeriod(null);
-    setPage(0);
-  }
-
-  function handlePeriodChip(period: Period) {
-    const { from: f, to: t } = periodDates(period);
-    setPendingFrom(f);
-    setPendingTo(t);
-    setFrom(f);
-    setTo(t);
-    setActivePeriod(period);
-    setPage(0);
-  }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-  const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
-  const showingTo = Math.min((page + 1) * PAGE_SIZE, total);
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '';
 
   return (
-    <div className="flex-1 p-6">
+    <div>
       <PageHeader title="Order History" />
 
+      {/* Subscription banner */}
+      {limits.history_days <= 30 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Order history is limited to the last 30 days on your plan. Upgrade for up to 2 years of history.
+        </div>
+      )}
+
       {/* Period chips */}
-      <div className="mb-3 flex flex-wrap gap-2">
-        {PERIOD_CHIPS.map((chip) => (
+      <div className="mb-4 flex flex-wrap gap-2">
+        {PERIODS.map(({ key, label }) => (
           <button
-            key={chip.key}
-            onClick={() => handlePeriodChip(chip.key)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              activePeriod === chip.key
-                ? 'bg-primary text-white'
+            key={key}
+            onClick={() => setPeriod(key)}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+              period === key
+                ? 'border border-primary bg-primary/10 text-primary'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            {chip.label}
+            {label}
           </button>
         ))}
       </div>
 
-      {/* Filter bar */}
-      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">From</label>
-          <input
-            type="date"
-            value={pendingFrom}
-            onChange={(e) => setPendingFrom(e.target.value)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">To</label>
-          <input
-            type="date"
-            value={pendingTo}
-            onChange={(e) => setPendingTo(e.target.value)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Order Type</label>
-          <select
-            value={pendingType}
-            onChange={(e) => setPendingType(e.target.value as OrderType)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+      {/* Order type tabs — always visible so history is never gated */}
+      <div className="mb-6 flex gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+        {(['dine_in', 'counter'] as const).map((type) => (
+          <button
+            key={type}
+            onClick={() => setOrderType(type)}
+            className={`flex-1 rounded-xl py-3 text-sm font-semibold transition-colors ${
+              orderType === type
+                ? 'border-2 border-primary bg-primary/10 text-primary'
+                : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+            }`}
           >
-            <option value="all">All</option>
-            <option value="dine_in">Dine-in</option>
-            <option value="counter">Counter</option>
-          </select>
-        </div>
-        <button
-          onClick={handleSearch}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-primary/90 transition-colors"
-        >
-          <Search className="h-4 w-4" />
-          Search
-        </button>
+            {type === 'dine_in' ? 'Dine-in' : 'Counter'}
+          </button>
+        ))}
       </div>
 
       {/* Error */}
       {error && (
         <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}{' '}
-          <button
-            onClick={() => fetchHistory(from, to, orderType, page * PAGE_SIZE)}
-            className="font-semibold underline"
-          >
+          <button onClick={() => fetchOrders(0)} className="font-semibold underline">
             Retry
           </button>
         </div>
@@ -376,113 +354,44 @@ export function History() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
+        <div className="flex flex-col items-center justify-center gap-3 py-24">
           <Spinner size="lg" className="text-primary" />
+          <p className="text-sm text-gray-500">Loading orders...</p>
         </div>
       ) : orders.length === 0 ? (
         <EmptyState
           icon={HistoryIcon}
           title="No orders found"
-          description="Try adjusting the date range or order type filter."
+          description={`${periodLabel} · ${orderType === 'counter' ? 'Counter' : 'Dine-in'}`}
         />
       ) : (
         <>
-          {/* Table */}
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Ref</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Customer</th>
-                  <th className="px-4 py-3 text-center font-semibold text-gray-600">Items</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Total</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Payment</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {orders.map((order) => (
-                  <tr
-                    key={order.id}
-                    onClick={() => setSelectedOrder(order)}
-                    className="cursor-pointer hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="px-4 py-3 text-gray-600">{formatDateShort(order.created_at)}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-gray-900">
-                      {order.order_type === 'counter' && order.ticket_number
-                        ? `#${order.ticket_number}`
-                        : order.order_type === 'dine_in' && order.table_number
-                        ? `T${order.table_number}`
-                        : `#${order.order_number}`}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {order.order_type === 'counter' ? 'Counter' : 'Dine-in'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {order.customer_name ?? <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center text-gray-700">{order.items.length}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      {formatCurrency(order.total)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {order.payment_method ? (
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          order.payment_method === 'upi'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}>
-                          {order.payment_method.toUpperCase()}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={getStatusVariant(order.status)}>
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <OrderCard key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
+            ))}
           </div>
 
-          {/* Pagination */}
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              Showing <span className="font-medium">{showingFrom}–{showingTo}</span> of{' '}
-              <span className="font-medium">{total}</span> orders
-            </p>
-            <div className="flex items-center gap-2">
+          {/* Load more */}
+          {orders.length < total && (
+            <div className="mt-6 flex flex-col items-center gap-2">
               <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0 || loading}
-                className="flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+                onClick={() => fetchOrders(orders.length)}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-6 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
               >
-                <ChevronLeft className="h-4 w-4" />
-                Prev
+                {loadingMore && <Spinner size="sm" className="text-gray-400" />}
+                {loadingMore ? 'Loading…' : `Load more (${total - orders.length} remaining)`}
               </button>
-              <span className="min-w-8 text-center text-sm font-medium text-gray-700">
-                {page + 1} / {Math.max(1, totalPages)}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1 || loading}
-                className="flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <p className="text-xs text-gray-400">
+                Showing {orders.length} of {total} orders
+              </p>
             </div>
-          </div>
+          )}
         </>
       )}
 
-      <OrderDetailModal
+      <ReceiptModal
         order={selectedOrder}
         open={selectedOrder !== null}
         onClose={() => setSelectedOrder(null)}

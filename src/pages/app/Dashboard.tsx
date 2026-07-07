@@ -1,24 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  UtensilsCrossed,
-  ShoppingBag,
-  ChefHat,
-  BookOpen,
-  BarChart2,
-  Users,
   AlertTriangle,
-  ArrowRight,
   TrendingUp,
   ClipboardList,
   Calculator,
-  Package,
-  History,
-  Store,
 } from 'lucide-react';
-import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import { useAppSelector } from '../../store/hooks';
 import { selectAuthName, selectAuthRole } from '../../store/authSlice';
-import { selectProfile } from '../../store/profileSlice';
 import { selectLowStockIngredients } from '../../store/inventorySlice';
 import { apiClient } from '../../services/api';
 import { Spinner } from '../../components/app/Spinner';
@@ -31,106 +20,6 @@ interface SalesSummary {
 }
 
 type UserRole = 'admin' | 'manager' | 'staff' | 'chef';
-
-interface FeatureCard {
-  label: string;
-  description: string;
-  icon: React.ElementType;
-  route: string;
-  color: string;
-  bg: string;
-  roles?: UserRole[];
-  requiresDineIn?: boolean;
-  requiresCounter?: boolean;
-  requiresKitchen?: boolean;
-  requiresInventory?: boolean;
-}
-
-const ALL_FEATURE_CARDS: FeatureCard[] = [
-  {
-    label: 'Orders & Billing',
-    description: 'Tables, billing & checkout',
-    icon: UtensilsCrossed,
-    route: '/app/orders',
-    color: 'text-emerald-600',
-    bg: 'bg-emerald-50',
-    requiresDineIn: true,
-  },
-  {
-    label: 'Counter / Takeaway',
-    description: 'Takeaway & eat-here orders',
-    icon: ShoppingBag,
-    route: '/app/counter',
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
-    requiresCounter: true,
-  },
-  {
-    label: 'Kitchen',
-    description: 'Live KOT board',
-    icon: ChefHat,
-    route: '/app/kitchen',
-    color: 'text-orange-600',
-    bg: 'bg-orange-50',
-    roles: ['admin', 'manager', 'chef'],
-    requiresKitchen: true,
-  },
-  {
-    label: 'Menu & Pricing',
-    description: 'Manage menu & prices',
-    icon: BookOpen,
-    route: '/app/menu',
-    color: 'text-violet-600',
-    bg: 'bg-violet-50',
-    roles: ['admin', 'manager'],
-  },
-  {
-    label: 'Sales Info',
-    description: 'Revenue & reports',
-    icon: BarChart2,
-    route: '/app/sales',
-    color: 'text-rose-600',
-    bg: 'bg-rose-50',
-    roles: ['admin'],
-  },
-  {
-    label: 'Staff Mgmt',
-    description: 'Team management',
-    icon: Users,
-    route: '/app/staff',
-    color: 'text-teal-600',
-    bg: 'bg-teal-50',
-    roles: ['admin'],
-  },
-  {
-    label: 'Inventory',
-    description: 'Stock & ingredients',
-    icon: Package,
-    route: '/app/inventory',
-    color: 'text-amber-600',
-    bg: 'bg-amber-50',
-    roles: ['admin', 'manager', 'chef'],
-    requiresInventory: true,
-  },
-  {
-    label: 'Order History',
-    description: 'Past orders & receipts',
-    icon: History,
-    route: '/app/history',
-    color: 'text-indigo-600',
-    bg: 'bg-indigo-50',
-    roles: ['admin', 'manager'],
-  },
-  {
-    label: 'Profile',
-    description: 'Restaurant settings',
-    icon: Store,
-    route: '/app/profile',
-    color: 'text-gray-600',
-    bg: 'bg-gray-100',
-    roles: ['admin'],
-  },
-];
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -154,24 +43,20 @@ function formatCurrency(value: number): string {
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const dispatch = useAppDispatch();
-  void dispatch;
 
   const name = useAppSelector(selectAuthName);
   const role = useAppSelector(selectAuthRole) as UserRole | null;
-  const profile = useAppSelector(selectProfile);
   const lowStockIngredients = useAppSelector(selectLowStockIngredients);
 
-  const limits = profile?.subscription_limits;
-
-  const visibleCards = ALL_FEATURE_CARDS.filter((card) => {
-    if (card.roles && role && !card.roles.includes(role)) return false;
-    if (card.requiresDineIn && limits && !limits.dine_in_enabled) return false;
-    if (card.requiresCounter && limits && !limits.counter_enabled) return false;
-    if (card.requiresKitchen && limits && !limits.kitchen_dine_in && !limits.kitchen_counter) return false;
-    if (card.requiresInventory && limits && !limits.inventory) return false;
-    return true;
-  });
+  // Dashboard is admin-only — redirect other roles to their first relevant page
+  useEffect(() => {
+    if (!role) return;
+    if (role === 'admin') return;
+    if (role === 'manager') { navigate('/app/orders', { replace: true }); return; }
+    if (role === 'chef') { navigate('/app/kitchen', { replace: true }); return; }
+    // staff
+    navigate('/app/orders', { replace: true });
+  }, [role, navigate]);
 
   const [sales, setSales] = useState<SalesSummary | null>(null);
   const [salesLoading, setSalesLoading] = useState(true);
@@ -261,34 +146,6 @@ export function Dashboard() {
             </div>
           );
         })}
-      </div>
-
-      {/* Feature grid */}
-      <div>
-        <h2 className="mb-4 text-base font-semibold text-gray-700">Quick Access</h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {visibleCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <button
-                key={card.route}
-                onClick={() => navigate(card.route)}
-                className="group flex flex-col items-center gap-3 rounded-2xl border border-gray-100 bg-white p-5 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${card.bg} transition-transform group-hover:scale-110`}
-                >
-                  <Icon className={`h-6 w-6 ${card.color}`} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">{card.label}</p>
-                  <p className="mt-0.5 text-xs text-gray-400">{card.description}</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-gray-300 transition-colors group-hover:text-gray-500" />
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Low stock banner */}

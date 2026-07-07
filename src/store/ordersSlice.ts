@@ -15,11 +15,27 @@ const initialState: OrdersState = {
   hydrated: false,
 };
 
+// Higher rank = more advanced status; prevents WS events from reverting optimistic updates
+const STATUS_RANK: Record<string, number> = {
+  pending: 0, cooking: 1, ready: 2, served: 3, completed: 4,
+};
+
 function upsertOrder(list: Order[], incoming: Order): Order[] {
   const index = list.findIndex((o) => o.id === incoming.id);
   if (index >= 0) {
     const updated = [...list];
-    updated[index] = { ...updated[index], ...incoming };
+    const existing = updated[index];
+    // Max-status merge: WS partial payloads must not revert a locally-optimistic 'ready' item
+    const mergedItems = incoming.items?.length
+      ? incoming.items.map((inc) => {
+          const loc = existing.items.find((i) => i.id === inc.id);
+          if (!loc) return inc;
+          return (STATUS_RANK[inc.status] ?? 0) >= (STATUS_RANK[loc.status] ?? 0)
+            ? inc
+            : { ...inc, status: loc.status };
+        })
+      : existing.items;
+    updated[index] = { ...existing, ...incoming, items: mergedItems } as Order;
     return updated;
   }
   return [...list, incoming];
@@ -48,6 +64,24 @@ const ordersSlice = createSlice({
     removeCounterOrder(state, action: PayloadAction<string>) {
       state.counterOrders = state.counterOrders.filter((o) => o.id !== action.payload);
     },
+    patchOrderItemStatus(
+      state,
+      action: PayloadAction<{ orderId: string; itemId: string; status: string }>
+    ) {
+      const { orderId, itemId, status } = action.payload;
+      const incomingRank = STATUS_RANK[status] ?? 0;
+      // Patch whichever slice contains the order; apply max-status guard
+      for (const list of [state.activeOrders, state.counterOrders]) {
+        const order = list.find((o) => o.id === orderId);
+        if (order) {
+          const item = order.items.find((i) => i.id === itemId);
+          if (item && incomingRank >= (STATUS_RANK[item.status] ?? 0)) {
+            item.status = status;
+          }
+          return;
+        }
+      }
+    },
     clearOrders(state) {
       state.activeOrders = [];
       state.counterOrders = [];
@@ -63,6 +97,7 @@ export const {
   setCounterOrders,
   upsertCounterOrder,
   removeCounterOrder,
+  patchOrderItemStatus,
   clearOrders,
 } = ordersSlice.actions;
 
