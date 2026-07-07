@@ -290,7 +290,7 @@ export function Kitchen() {
     setError(null);
     try {
       const [dineInRes, counterRes] = await Promise.all([
-        apiClient.listOrdersSummary('active'),
+        apiClient.listOrders('active', 100),
         apiClient.listCounterOrdersToday().catch(() => ({ orders: [] as Order[], total: 0 })),
         !menuHydrated
           ? apiClient.listMenuItems().then((items) => dispatch(setMenuItems(items)))
