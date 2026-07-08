@@ -89,7 +89,13 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!open) { setEditingPlan(false); setQuote(null); return; }
+    if (!open) {
+      setEditingPlan(false);
+      setQuote(null);
+      setPaying(false);
+      setError(null);
+      return;
+    }
     loadQuote();
   }, [open, loadQuote]);
 

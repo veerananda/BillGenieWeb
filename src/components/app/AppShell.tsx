@@ -189,7 +189,8 @@ export function AppShell() {
         const tableId = (data.table_id ?? data.tableId) as string | undefined;
         if (tableId !== undefined) {
           const isOccupied = Boolean(data.is_occupied ?? data.isOccupied);
-          dispatch(setTableOccupied({ tableId, isOccupied }));
+          const currentOrderId = (data.current_order_id ?? data.currentOrderId) as string | null | undefined;
+          dispatch(setTableOccupied({ tableId, isOccupied, currentOrderId: currentOrderId ?? null }));
         }
         if (data.table) dispatch(upsertTable(data.table as unknown as RestaurantTable));
       }),
