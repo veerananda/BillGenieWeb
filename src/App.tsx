@@ -21,6 +21,9 @@ import { History } from './pages/app/History';
 import { Staff } from './pages/app/Staff';
 import { Profile } from './pages/app/Profile';
 import { Inventory } from './pages/app/Inventory';
+import { PrivacyPolicy } from './pages/PrivacyPolicy';
+import { TermsOfService } from './pages/TermsOfService';
+import { Contact } from './pages/Contact';
 
 function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -39,6 +42,9 @@ function App() {
       <Route path="/" element={<MarketingLayout><Home /></MarketingLayout>} />
       <Route path="/features" element={<MarketingLayout><Features /></MarketingLayout>} />
       <Route path="/pricing" element={<MarketingLayout><Pricing /></MarketingLayout>} />
+      <Route path="/privacy" element={<MarketingLayout><PrivacyPolicy /></MarketingLayout>} />
+      <Route path="/terms" element={<MarketingLayout><TermsOfService /></MarketingLayout>} />
+      <Route path="/contact" element={<MarketingLayout><Contact /></MarketingLayout>} />
 
       {/* Auth pages */}
       <Route path="/login" element={<Login />} />
