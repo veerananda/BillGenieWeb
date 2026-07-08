@@ -6,6 +6,7 @@ import { Features } from './pages/Features';
 import { Pricing } from './pages/Pricing';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
+import { ResetPassword } from './pages/auth/ResetPassword';
 import { ProtectedRoute } from './components/app/ProtectedRoute';
 import { AppShell } from './components/app/AppShell';
 import { Dashboard } from './pages/app/Dashboard';
@@ -40,6 +41,7 @@ function App() {
       {/* Auth pages */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Protected app */}
       <Route

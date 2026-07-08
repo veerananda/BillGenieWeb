@@ -301,6 +301,13 @@ class APIClient {
     return payload;
   }
 
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    return this.makeRequest('/auth/reset-password', 'POST', {
+      token,
+      new_password: newPassword,
+    });
+  }
+
   logout(): void {
     [TOKEN_KEY, REFRESH_TOKEN_KEY, RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY].forEach((k) =>
       localStorage.removeItem(k)
