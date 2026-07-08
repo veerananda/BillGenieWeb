@@ -270,9 +270,11 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
 
 import {
   BASIC_MONTHLY_PRICE, PRICING, MIN_TABLES_DINE_IN, INCLUDED_TABLES_BASIC,
-  MAX_TABLES, TABLE_STAFF_BUNDLE_SIZE, TABLE_STAFF_BUNDLE_PRICE,
+  MAX_TABLES, TABLE_STAFF_BUNDLE_SIZE,
   ADDON_OPTIONS, type OperationMode,
 } from '../../data/pricing';
+
+const TABLE_STAFF_BUNDLE_PRICE = PRICING.table_staff_bundle;
 
 function PlanPicker({ value, onChange }: { value: SubscriptionSelection; onChange: (s: SubscriptionSelection) => void }) {
   function set(patch: Partial<SubscriptionSelection>) {
