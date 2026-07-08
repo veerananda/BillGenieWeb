@@ -42,6 +42,26 @@ export function Footer() {
               </ul>
             </div>
             <div>
+              <h3 className="text-sm font-semibold text-ink">Legal</h3>
+              <ul className="mt-3 space-y-2 text-sm text-ink-soft">
+                <li>
+                  <Link to="/privacy" className="hover:text-primary">
+                    Privacy Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/terms" className="hover:text-primary">
+                    Terms of Service
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/contact" className="hover:text-primary">
+                    Contact
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
               <h3 className="text-sm font-semibold text-ink">Contact</h3>
               <ul className="mt-3 space-y-2 text-sm text-ink-soft">
                 <li>
@@ -54,8 +74,19 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-10 border-t border-border pt-6 text-xs text-ink-muted">
-          © {new Date().getFullYear()} BillGenie. All rights reserved.
+        <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
+          <span>© {new Date().getFullYear()} BillGenie. All rights reserved.</span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link to="/privacy" className="hover:text-primary">
+              Privacy
+            </Link>
+            <Link to="/terms" className="hover:text-primary">
+              Terms
+            </Link>
+            <Link to="/contact" className="hover:text-primary">
+              Contact
+            </Link>
+          </div>
         </div>
       </div>
     </footer>
