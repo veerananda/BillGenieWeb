@@ -54,6 +54,17 @@ export interface AuthResponse {
   code?: string;
 }
 
+export interface RegisterResponse {
+  restaurant_id: string;
+  restaurant_code: string;
+  email: string;
+  login_id: string;
+  requires_email_verification: boolean;
+  is_email_verified: boolean;
+  verification_email_sent: boolean;
+  message: string;
+}
+
 export interface Order {
   id: string;
   restaurant_id: string;
@@ -294,11 +305,8 @@ class APIClient {
     return payload;
   }
 
-  async register(data: RegisterData): Promise<AuthResponse> {
-    const response = await this.makeRequest('/auth/register', 'POST', data);
-    const payload: AuthResponse = response?.data ?? response;
-    this.storeAuthData(payload);
-    return payload;
+  async register(data: RegisterData): Promise<RegisterResponse> {
+    return this.makeRequest('/auth/register', 'POST', data);
   }
 
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
@@ -306,6 +314,24 @@ class APIClient {
       token,
       new_password: newPassword,
     });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    const query = `token=${encodeURIComponent(token)}`;
+    return this.makeRequest(`/auth/verify-email?${query}`, 'POST');
+  }
+
+  async getVerificationStatus(
+    restaurantId: string,
+    email: string
+  ): Promise<{ is_email_verified: boolean }> {
+    const query = `restaurant_id=${encodeURIComponent(restaurantId)}&email=${encodeURIComponent(email)}`;
+    return this.makeRequest(`/auth/verification-status?${query}`, 'GET');
+  }
+
+  async resendVerificationEmail(restaurantId: string, email: string): Promise<{ message: string }> {
+    const query = `restaurant_id=${encodeURIComponent(restaurantId)}&email=${encodeURIComponent(email)}`;
+    return this.makeRequest(`/auth/resend-verification?${query}`, 'POST');
   }
 
   logout(): void {
