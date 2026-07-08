@@ -481,13 +481,10 @@ export function Register() {
         start_mode: startMode,
         subscription: startMode === 'paid' ? subscription : undefined,
       });
-      navigate('/verify-email-pending', {
+      navigate('/login', {
         replace: true,
         state: {
-          restaurantId: response.restaurant_id,
-          email: response.email,
-          loginId: response.login_id,
-          restaurantCode: response.restaurant_code,
+          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}.`,
         },
       });
     } catch (err) {

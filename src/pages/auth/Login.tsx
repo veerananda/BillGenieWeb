@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, MonitorSmartphone } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { wsService } from '../../services/websocket';
@@ -11,7 +11,11 @@ import { selectIsAuthenticated } from '../../store/authSlice';
 export function Login() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+
+  const registrationNotice =
+    (location.state as { registrationMessage?: string } | null)?.registrationMessage ?? null;
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -59,6 +63,13 @@ export function Login() {
             <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
             <span className="text-xl font-bold text-ink">BillGenie</span>
           </div>
+
+          {/* Registration notice */}
+          {registrationNotice && (
+            <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-ink">
+              {registrationNotice}
+            </div>
+          )}
 
           {/* Device-conflict banner */}
           {logoutReason === 'device_conflict' && (
