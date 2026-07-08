@@ -128,6 +128,32 @@ class WebSocketService {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  resetReconnectAttempts(): void {
+    this.reconnectAttempts = 0;
+  }
+
+  /** Close the current socket and open a fresh one — mirrors mobile's forceReconnect. */
+  async forceReconnect(): Promise<void> {
+    this.shouldReconnect = true;
+    this.resetReconnectAttempts();
+    this.clearReconnectTimer();
+    this.stopPing();
+
+    if (this.ws) {
+      const old = this.ws;
+      this.ws = null;
+      this.connecting = false;
+      old.onopen = null;
+      old.onmessage = null;
+      old.onerror = null;
+      old.onclose = null;
+      old.close();
+    }
+
+    this.connecting = false;
+    this.connect();
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
     this.reconnectAttempts++;

@@ -128,6 +128,41 @@ export interface Ingredient {
   updated_at: string;
 }
 
+export interface SubscriptionRenewalQuote {
+  billing_cycle: 'monthly' | 'annual';
+  subtotal_inr: number;
+  gst_inr: number;
+  total_inr: number;
+  amount_paise: number;
+  line_items: { id: string; label: string; amount: number }[];
+  subscription_end?: string;
+  is_expired?: boolean;
+  days_remaining?: number;
+  subscription_phase?: string;
+  requires_plan_selection?: boolean;
+  requires_payment?: boolean;
+  current_selection?: import('../data/pricing').SubscriptionSelection;
+}
+
+export interface SubscriptionRenewalOrder {
+  key_id: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  billing_cycle: 'monthly' | 'annual';
+  total_inr: number;
+  subtotal_inr: number;
+  gst_inr: number;
+  dev_mode?: boolean;
+}
+
+export interface SubscriptionVerifyResult {
+  subscription_end: string;
+  message: string;
+}
+
 export interface RestaurantProfile {
   id: string;
   name: string;
@@ -594,6 +629,33 @@ class APIClient {
   async setMenuItemIngredients(menuItemId: string, ingredients: RecipeIngredientInput[]): Promise<MenuItemIngredient[]> {
     const r = await this.makeRequest(`/menu/${menuItemId}/ingredients`, 'PUT', { ingredients });
     return r?.menu_item_ingredients ?? [];
+  }
+
+  // ── Subscription / Payment ─────────────────────────────────────────────────
+
+  async getSubscriptionRenewalQuote(
+    selection?: import('../data/pricing').SubscriptionSelection
+  ): Promise<SubscriptionRenewalQuote> {
+    if (selection) {
+      return this.makeRequest('/subscription/renewal-quote', 'POST', { selection });
+    }
+    return this.makeRequest('/subscription/renewal-quote', 'GET');
+  }
+
+  async createSubscriptionRenewalOrder(
+    selection?: import('../data/pricing').SubscriptionSelection
+  ): Promise<SubscriptionRenewalOrder> {
+    const body = selection ? { selection } : undefined;
+    return this.makeRequest('/subscription/create-order', 'POST', body);
+  }
+
+  async verifySubscriptionPayment(data: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    selection?: import('../data/pricing').SubscriptionSelection;
+  }): Promise<SubscriptionVerifyResult> {
+    return this.makeRequest('/subscription/verify-payment', 'POST', data);
   }
 }
 

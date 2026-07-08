@@ -7,11 +7,14 @@ import { useAppDispatch } from '../../store/hooks';
 import { setProfile } from '../../store/profileSlice';
 import apiClient from '../../services/api';
 import wsService from '../../services/websocket';
+import { store } from '../../store';
 import {
   upsertActiveOrder, removeActiveOrder,
   upsertCounterOrder, removeCounterOrder,
   patchOrderItemStatus,
+  setActiveOrders, setCounterOrders,
 } from '../../store/ordersSlice';
+import { setTables } from '../../store/tablesSlice';
 import { setTableOccupied, upsertTable } from '../../store/tablesSlice';
 import { upsertInventoryIngredient } from '../../store/inventorySlice';
 import { updateMenuItem } from '../../store/menuSlice';
@@ -41,6 +44,27 @@ export function AppShell() {
   const dispatch = useAppDispatch();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Catch-up HTTP refetch after WS downtime — mirrors mobile's syncCoordinator.
+  // Called on WS reconnect and on browser tab becoming visible again.
+  function runCatchUpSync() {
+    if (!apiClient.isAuthenticated()) return;
+    Promise.allSettled([
+      apiClient.listOrders('active', 100),
+      apiClient.getTables(),
+    ]).then(([ordersRes, tablesRes]) => {
+      if (ordersRes.status === 'fulfilled') {
+        const all = ordersRes.value?.orders ?? [];
+        const dineIn = all.filter((o) => o.order_type !== 'counter');
+        const counter = all.filter((o) => o.order_type === 'counter');
+        store.dispatch(setActiveOrders(dineIn));
+        store.dispatch(setCounterOrders(counter));
+      }
+      if (tablesRes.status === 'fulfilled') {
+        store.dispatch(setTables(tablesRes.value as RestaurantTable[]));
+      }
+    });
+  }
+
   // Bootstrap: fetch profile + connect WS
   useEffect(() => {
     apiClient.getRestaurantProfile().then((profile) => {
@@ -48,6 +72,24 @@ export function AppShell() {
     }).catch(() => {});
 
     wsService.connect();
+
+    // Catch-up on WS reconnect (mirrors mobile syncCoordinator)
+    const unsubWsConnect = wsService.on('connected' as Parameters<typeof wsService.on>[0], () => {
+      runCatchUpSync();
+    });
+
+    // Catch-up when browser tab becomes visible (mirrors mobile AppState 'active')
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (!wsService.isConnected()) {
+          apiClient.refreshAccessToken().catch(() => {}).finally(() => {
+            wsService.forceReconnect();
+          });
+        }
+        runCatchUpSync();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Backend message: { type, room_id, timestamp, data: {...} }
     // wsService emits message.data as payload.
@@ -167,6 +209,8 @@ export function AppShell() {
 
     return () => {
       unsubscribe.forEach((fn) => fn());
+      unsubWsConnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [dispatch]);
 
