@@ -102,6 +102,8 @@ export interface OrderItem {
   total: number;
   status: string;
   notes?: string;
+  sub_id?: string;
+  created_at?: string;
   menu_item?: { id: string; name: string; category?: string; price?: number };
 }
 

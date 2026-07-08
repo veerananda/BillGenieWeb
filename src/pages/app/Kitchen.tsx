@@ -29,6 +29,7 @@ interface KotTicket {
   key: string;
   kotNumber: number;
   orderId: string;
+  isAddOn: boolean;
   tableLabel: string;
   customerName: string;
   serviceMode?: string;
@@ -40,6 +41,8 @@ interface MenuEntry {
   name: string;
   readily_available?: boolean;
 }
+
+const LEGACY_SUB_PREFIX = '__legacy__';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,28 +75,39 @@ function resolveTableLabel(order: Order): string {
   return `Table ${order.table_number ?? '?'}`;
 }
 
+/**
+ * Mirrors mobile kitchenHelpers.buildKotTickets:
+ * Groups items by order.id + item.sub_id so each "kitchen fire" (add-on batch)
+ * produces its own KOT card. Items without a sub_id share a legacy fallback key.
+ */
 function buildTickets(
   orders: Order[],
   menuMap: Record<string, MenuEntry>
 ): KotTicket[] {
-  const tickets: KotTicket[] = [];
+  // Map of `${orderId}:${subId}` → ticket accumulator
+  const ticketMap = new Map<string, Omit<KotTicket, 'kotNumber' | 'isAddOn'> & { firedAtMs: number }>();
 
   for (const order of orders) {
-    if (order.status === 'cancelled') continue;
+    if (!order?.id) continue;
+    if (order.status === 'cancelled' || order.status === 'completed') continue;
+
     const activeItems = (order.items ?? []).filter(
       (i) => isActive(i.status) && !menuMap[i.menu_id]?.readily_available
     );
     if (activeItems.length === 0) continue;
 
-    tickets.push({
-      key: order.id,
-      kotNumber: 0,
-      orderId: order.id,
-      tableLabel: resolveTableLabel(order),
-      customerName: order.customer_name || 'Guest',
-      serviceMode: order.service_mode,
-      firedAt: new Date(order.created_at),
-      items: activeItems.map((item) => ({
+    const tableLabel = resolveTableLabel(order);
+    const orderFiredMs = new Date(order.created_at).getTime();
+
+    for (const item of activeItems) {
+      const rawSubId = String(item.sub_id ?? '').trim();
+      const subId = rawSubId || `${LEGACY_SUB_PREFIX}${order.id}`;
+      const key = `${order.id}:${subId}`;
+      const itemFiredMs = item.created_at
+        ? new Date(item.created_at).getTime()
+        : orderFiredMs;
+
+      const kotItem: KotItem = {
         id: item.id,
         orderId: order.id,
         name: menuMap[item.menu_id]?.name ?? item.menu_item?.name ?? item.menu_id,
@@ -101,14 +115,50 @@ function buildTickets(
         notes: item.notes,
         status: item.status,
         menuId: item.menu_id,
-      })),
-    });
+      };
+
+      const existing = ticketMap.get(key);
+      if (existing) {
+        existing.items.push(kotItem);
+        existing.firedAtMs = Math.min(existing.firedAtMs, itemFiredMs);
+      } else {
+        ticketMap.set(key, {
+          key,
+          orderId: order.id,
+          tableLabel,
+          customerName: order.customer_name || 'Guest',
+          serviceMode: order.service_mode,
+          firedAt: new Date(itemFiredMs),
+          firedAtMs: itemFiredMs,
+          items: [kotItem],
+        });
+      }
+    }
   }
 
-  tickets.sort((a, b) => a.firedAt.getTime() - b.firedAt.getTime());
-  tickets.forEach((t, i) => { t.kotNumber = i + 1; });
+  // Sort FIFO by earliest item timestamp
+  const sorted = Array.from(ticketMap.values()).sort((a, b) => {
+    if (a.firedAtMs !== b.firedAtMs) return a.firedAtMs - b.firedAtMs;
+    return a.key.localeCompare(b.key);
+  });
 
-  return tickets;
+  // Track first sub_id per order to mark subsequent ones as ADD-ON
+  const firstSubByOrder = new Map<string, string>();
+  for (const t of sorted) {
+    if (!firstSubByOrder.has(t.orderId)) firstSubByOrder.set(t.orderId, t.key);
+  }
+
+  return sorted.map((t, i) => ({
+    key: t.key,
+    kotNumber: i + 1,
+    orderId: t.orderId,
+    isAddOn: firstSubByOrder.get(t.orderId) !== t.key,
+    tableLabel: t.tableLabel,
+    customerName: t.customerName,
+    serviceMode: t.serviceMode,
+    firedAt: t.firedAt,
+    items: t.items,
+  }));
 }
 
 function buildPrepSummary(tickets: KotTicket[]) {
@@ -168,8 +218,13 @@ function KOTCard({
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
-      style={{ borderLeftWidth: 4, borderLeftColor: '#1BAE76' }}
+      className="overflow-hidden rounded-xl bg-white shadow-sm"
+      style={{
+        borderWidth: 1,
+        borderColor: ticket.isAddOn ? '#f59e0b' : '#e5e7eb',
+        borderLeftWidth: 4,
+        borderLeftColor: ticket.isAddOn ? '#f59e0b' : '#1BAE76',
+      }}
     >
       {/* Card header */}
       <div className="flex items-start justify-between border-b border-gray-100 px-4 py-3">
@@ -178,6 +233,11 @@ function KOTCard({
             <span className="rounded bg-primary px-2 py-0.5 text-xs font-bold text-white">
               KOT #{ticket.kotNumber}
             </span>
+            {ticket.isAddOn && (
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                ADD-ON
+              </span>
+            )}
           </div>
           <p className="text-lg font-bold text-gray-900">{ticket.tableLabel}</p>
           <p className="mt-0.5 text-sm text-gray-500">{ticket.customerName}</p>
