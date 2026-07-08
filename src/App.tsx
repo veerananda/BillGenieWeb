@@ -7,6 +7,8 @@ import { Pricing } from './pages/Pricing';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
 import { ResetPassword } from './pages/auth/ResetPassword';
+import { VerifyEmail } from './pages/auth/VerifyEmail';
+import { EmailVerificationPending } from './pages/auth/EmailVerificationPending';
 import { ProtectedRoute } from './components/app/ProtectedRoute';
 import { AppShell } from './components/app/AppShell';
 import { Dashboard } from './pages/app/Dashboard';
@@ -42,6 +44,8 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/verify-email-pending" element={<EmailVerificationPending />} />
 
       {/* Protected app */}
       <Route
