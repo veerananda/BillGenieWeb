@@ -3,9 +3,6 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, Copy, CheckCircle2, Loader2, Minus, Plus, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
 import { apiClient } from '../../services/api';
-import { wsService } from '../../services/websocket';
-import { setAuth } from '../../store/authSlice';
-import { useAppDispatch } from '../../store/hooks';
 import {
   ADDON_OPTIONS,
   BASIC_FEATURES,
@@ -395,7 +392,6 @@ function PlanStep({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function Register() {
-  const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(0);
@@ -485,9 +481,15 @@ export function Register() {
         start_mode: startMode,
         subscription: startMode === 'paid' ? subscription : undefined,
       });
-      dispatch(setAuth(response));
-      wsService.connect();
-      navigate('/app/dashboard', { replace: true });
+      navigate('/verify-email-pending', {
+        replace: true,
+        state: {
+          restaurantId: response.restaurant_id,
+          email: response.email,
+          loginId: response.login_id,
+          restaurantCode: response.restaurant_code,
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
