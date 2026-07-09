@@ -36,7 +36,7 @@ export function BillShareQrModal({ open, billUrl, loading = false, onClose }: Bi
     <Modal open={open} onClose={onClose} title="Customer bill QR" maxWidth="sm">
       <div className="space-y-4 text-center">
         <p className="text-sm text-gray-600">
-          Ask the customer to scan this QR to review and download the bill. Collect payment with UPI after they confirm.
+          Ask the customer to scan this QR to review and download the bill as PDF. The link stays active for 1 hour.
         </p>
 
         <div className="mx-auto flex min-h-[252px] min-w-[252px] items-center justify-center rounded-2xl bg-gray-50 p-4">
