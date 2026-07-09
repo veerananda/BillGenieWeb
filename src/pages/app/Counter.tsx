@@ -13,6 +13,7 @@ import {
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { selectProfile } from '../../store/profileSlice';
+import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -356,6 +357,10 @@ interface NewOrderPanelProps {
 
 function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelProps) {
   const profile = useAppSelector(selectProfile);
+  const counterKitchenEnabled = useMemo(
+    () => parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined).kitchen_counter,
+    [profile?.subscription_limits]
+  );
   const counterModes = profile?.counter_service_modes ?? 'both';
   const defaultMode: ServiceMode = counterModes === 'takeaway' ? 'takeaway' : 'eat_here';
 
@@ -504,7 +509,9 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
             {trackingUrl ? (
               <div className="mt-6 w-full rounded-2xl bg-primary/5 p-5">
                 <p className="mb-3 text-sm font-semibold text-gray-700">
-                  Customer scans to track order
+                  {counterKitchenEnabled
+                    ? 'Customer scans to track order and view bill'
+                    : 'Customer scans to view and download bill'}
                 </p>
                 <div className="flex justify-center">
                   <div className="rounded-xl bg-white p-3 shadow-sm">
@@ -512,7 +519,9 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
-                  Status updates live — red, orange, or green when ready
+                  {counterKitchenEnabled
+                    ? 'Status updates live — bill summary and download appear below on the page'
+                    : 'Bill summary and download are shown on the page after scanning'}
                 </p>
               </div>
             ) : (
