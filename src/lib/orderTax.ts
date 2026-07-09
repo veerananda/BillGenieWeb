@@ -35,3 +35,11 @@ export function calculateOrderTax(
     };
   }
 }
+
+export function subtotalLabel(pricesIncludeGst: boolean): string {
+  return pricesIncludeGst ? 'Subtotal (excl. GST)' : 'Subtotal';
+}
+
+export function taxLabel(taxRate = TAX_RATE): string {
+  return `GST (${Math.round(taxRate * 100)}%)`;
+}

@@ -12,8 +12,10 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   QrCode,
+  Printer,
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
+import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
@@ -421,6 +423,26 @@ function OrderDetailPanel({
     }
   };
 
+  const handlePrintBill = () => {
+    const html = buildCustomerBillFromOrder(
+      order,
+      profile,
+      {
+        subtotal: displaySubtotal,
+        taxAmount: displayTax,
+        discountValue: discountValue || order.discount_amount || 0,
+        finalAmount: displayTotal,
+        pricesIncludeGst,
+      },
+      groupedItems.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        total: item.total,
+      })),
+    );
+    printBillHtml(html);
+  };
+
   const handlePayment = async () => {
     setPaymentError(null);
     if (paymentMethod === 'cash') {
@@ -596,6 +618,25 @@ function OrderDetailPanel({
           {order.status !== 'completed' && order.status !== 'cancelled' && (
             <>
               <button
+                type="button"
+                onClick={handleOpenBillShare}
+                disabled={billShareLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+              >
+                {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
+                Customer bill QR
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintBill}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Printer className="h-4 w-4" />
+                Print bill
+              </button>
+
+              <button
                 onClick={handleCheckout}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
               >
@@ -657,6 +698,15 @@ function OrderDetailPanel({
           >
             {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
             Customer bill QR
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrintBill}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <Printer className="h-4 w-4" />
+            Print bill
           </button>
 
           {/* Payment method tabs */}
