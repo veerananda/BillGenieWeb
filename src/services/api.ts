@@ -496,6 +496,15 @@ class APIClient {
     } catch { /* best-effort */ }
   }
 
+  async createBillShare(
+    id: string,
+    discountAmount = 0,
+  ): Promise<{ bill_token: string; bill_url: string; expires_at?: string }> {
+    return this.makeRequest(`/orders/${id}/bill-share`, 'POST', {
+      discount_amount: discountAmount,
+    });
+  }
+
   async updateOrderItemStatus(orderId: string, itemId: string, status: 'pending' | 'cooking' | 'ready' | 'served'): Promise<void> {
     await this.makeRequest(`/orders/${orderId}/items/${itemId}/status`, 'PUT', { status });
   }

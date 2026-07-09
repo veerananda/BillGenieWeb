@@ -11,6 +11,7 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowLeftRight,
+  QrCode,
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -38,6 +39,7 @@ import wsService from '../../services/websocket';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
+import { BillShareQrModal } from '../../components/app/BillShareQrModal';
 import { Badge } from '../../components/app/Badge';
 import { EmptyState } from '../../components/app/EmptyState';
 
@@ -292,6 +294,9 @@ function OrderDetailPanel({
   const [upiTransactionId, setUpiTransactionId] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [billShareOpen, setBillShareOpen] = useState(false);
+  const [billShareUrl, setBillShareUrl] = useState<string | null>(null);
+  const [billShareLoading, setBillShareLoading] = useState(false);
 
   // Split bill state
   const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
@@ -399,6 +404,21 @@ function OrderDetailPanel({
       }
       // For other errors keep the modal open — user can still attempt payment
     });
+  };
+
+  const handleOpenBillShare = async () => {
+    setBillShareOpen(true);
+    setBillShareLoading(true);
+    setBillShareUrl(null);
+    try {
+      const response = await apiClient.createBillShare(order.id, discountValue);
+      setBillShareUrl(response.bill_url);
+    } catch (err: unknown) {
+      setBillShareOpen(false);
+      setPaymentError(err instanceof Error ? err.message : 'Could not create customer bill link');
+    } finally {
+      setBillShareLoading(false);
+    }
   };
 
   const handlePayment = async () => {
@@ -628,6 +648,16 @@ function OrderDetailPanel({
               {paymentError}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={handleOpenBillShare}
+            disabled={billShareLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+          >
+            {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
+            Customer bill QR
+          </button>
 
           {/* Payment method tabs */}
           <div className="flex gap-2">
@@ -875,6 +905,13 @@ function OrderDetailPanel({
           </div>
         </div>
       </Modal>
+
+      <BillShareQrModal
+        open={billShareOpen}
+        billUrl={billShareUrl}
+        loading={billShareLoading}
+        onClose={() => setBillShareOpen(false)}
+      />
 
       {/* Cancel confirm modal */}
       <Modal
