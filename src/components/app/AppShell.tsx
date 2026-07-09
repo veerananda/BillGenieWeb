@@ -17,7 +17,7 @@ import {
 import { setTables } from '../../store/tablesSlice';
 import { setTableOccupied, upsertTable } from '../../store/tablesSlice';
 import { upsertInventoryIngredient } from '../../store/inventorySlice';
-import { updateMenuItem } from '../../store/menuSlice';
+import { addMenuItem, updateMenuItem, removeMenuItem } from '../../store/menuSlice';
 import type { Order, RestaurantTable, MenuItem } from '../../services/api';
 import type { InventoryIngredient } from '../../store/inventorySlice';
 import type { AppDispatch } from '../../store';
@@ -203,8 +203,15 @@ export function AppShell() {
 
       // Menu
       wsService.on('menu_updated', (data) => {
+        const action = String(data.action || 'updated').toLowerCase();
+        if (action === 'deleted') {
+          const id = (data.menu_item_id ?? data.menuItemId) as string | undefined;
+          if (id) dispatch(removeMenuItem(id));
+          return;
+        }
         const item = (data.menu_item ?? data) as unknown as MenuItem;
-        if (item?.id) dispatch(updateMenuItem(item));
+        if (!item?.id) return;
+        dispatch(action === 'created' ? addMenuItem(item) : updateMenuItem(item));
       }),
     ];
 
