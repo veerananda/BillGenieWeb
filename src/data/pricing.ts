@@ -20,6 +20,9 @@ export const TABLES_PER_MANAGER = 15;
 export const BASIC_MONTHLY_PRICE = 799;
 export const ANNUAL_MULTIPLIER = 10; // 10 months = 12 months (2 free)
 
+/** Fixed trial length — keep in sync with restaurant-api TrialDurationDays & mobile TRIAL_DURATION_DAYS */
+export const TRIAL_DURATION_DAYS = 15;
+
 export const PRICING = {
   extra_staff: 99,
   extra_manager: 149,
@@ -117,8 +120,8 @@ export const BASIC_FEATURES = [
   'Dine-in or counter (pick one) — staff sync, no kitchen screen',
   'Menu & staff management',
   'Sales summary',
-  'Order history — last 30 days',
-  '30-day free trial',
+  `Order history — last 30 days`,
+  `${TRIAL_DURATION_DAYS}-day free trial`,
 ] as const;
 
 // ── Math helpers ─────────────────────────────────────────────────────────────
