@@ -596,6 +596,16 @@ function OrderDetailPanel({
           {order.status !== 'completed' && order.status !== 'cancelled' && (
             <>
               <button
+                type="button"
+                onClick={handleOpenBillShare}
+                disabled={billShareLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+              >
+                {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
+                Customer bill QR
+              </button>
+
+              <button
                 onClick={handleCheckout}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
               >
