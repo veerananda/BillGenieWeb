@@ -8,6 +8,7 @@ import {
   BASIC_FEATURES,
   BASIC_MONTHLY_PRICE,
   PRICING,
+  TRIAL_DURATION_DAYS,
   INCLUDED_TABLES_BASIC,
   MIN_TABLES_DINE_IN,
   MAX_TABLES,
@@ -37,7 +38,7 @@ interface Step1 { restaurantName: string; cuisine: string; city: string; address
 interface Step2 { ownerName: string; email: string; phone: string; }
 
 const TRIAL_INCLUDES = [
-  '30-day free trial — full access, no credit card needed',
+  `${TRIAL_DURATION_DAYS}-day free trial — full access, no credit card needed`,
   'Up to 10 dine-in tables',
   'Menu management (unlimited items)',
   'Order management & checkout',
@@ -232,7 +233,7 @@ function PlanStep({
             <span className="text-base font-bold text-gray-900">Basic</span>
             <span className="text-base font-bold text-gray-900">{formatInr(BASIC_MONTHLY_PRICE)}<span className="text-xs font-normal text-gray-500">/mo</span></span>
           </div>
-          <p className="mt-1 text-xs text-gray-500">Includes after 30-day free trial:</p>
+          <p className="mt-1 text-xs text-gray-500">Includes after {TRIAL_DURATION_DAYS}-day free trial:</p>
           <ul className="mt-2 space-y-1">
             {BASIC_FEATURES.map((f) => (
               <li key={f} className="flex items-start gap-1.5 text-xs text-gray-600">
@@ -374,7 +375,7 @@ function PlanStep({
             ≈ {formatInr(quote.annual_monthly_equivalent)}/mo · Save {formatInr(quote.annual_savings)} vs monthly
           </p>
         ) : (
-          <p className="mt-1 text-xs text-gray-500">30-day free trial · prices sum as you select features</p>
+          <p className="mt-1 text-xs text-gray-500">{TRIAL_DURATION_DAYS}-day free trial · prices sum as you select features</p>
         )}
         <div className="mt-2 space-y-0.5">
           {quote.line_items.filter((li) => li.amount > 0).map((li) => (
@@ -508,7 +509,7 @@ export function Register() {
             <span className="text-xl font-bold text-gray-900">BillGenie</span>
             <div className="text-center">
               <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
-              <p className="mt-1 text-sm text-gray-500">30-day free trial — no credit card required</p>
+              <p className="mt-1 text-sm text-gray-500">{TRIAL_DURATION_DAYS}-day free trial — no credit card required</p>
             </div>
           </div>
 
@@ -583,7 +584,7 @@ export function Register() {
                       <p className={`mt-3 text-sm font-bold ${startMode === 'trial' ? 'text-primary' : 'text-gray-900'}`}>
                         Free trial
                       </p>
-                      <p className="mt-1 text-xs text-gray-500">30 days, no card needed</p>
+                      <p className="mt-1 text-xs text-gray-500">{TRIAL_DURATION_DAYS} days, no card needed</p>
                       {startMode === 'trial' && (
                         <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
                           <Check size={11} strokeWidth={3} className="text-white" />

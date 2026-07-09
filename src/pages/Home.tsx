@@ -3,12 +3,12 @@ import { ArrowRight, CheckCircle2, Zap, ShieldCheck, Clock } from 'lucide-react'
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FeatureCard } from '../components/FeatureCard';
 import { HOME_HIGHLIGHTS } from '../data/features';
-import { BASIC_FEATURES, BASIC_MONTHLY_PRICE, formatInr } from '../data/pricing';
+import { BASIC_FEATURES, BASIC_MONTHLY_PRICE, TRIAL_DURATION_DAYS, formatInr } from '../data/pricing';
 
 const TRUST_ITEMS = [
   { icon: Zap, label: 'Set up in under 10 minutes' },
   { icon: ShieldCheck, label: 'No credit card required' },
-  { icon: Clock, label: '30-day free trial' },
+  { icon: Clock, label: `${TRIAL_DURATION_DAYS}-day free trial` },
 ];
 
 export function Home() {
@@ -41,7 +41,7 @@ export function Home() {
               to="/register"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg active:scale-95"
             >
-              Start your 30-day free trial
+              Start your {TRIAL_DURATION_DAYS}-day free trial
               <ArrowRight size={18} />
             </Link>
             <Link
@@ -133,7 +133,7 @@ export function Home() {
               {formatInr(BASIC_MONTHLY_PRICE)}
               <span className="text-base font-medium text-ink-soft">/month</span>
             </h2>
-            <p className="mt-2 text-ink-soft">Everything you need to get started, with a 30-day free trial.</p>
+            <p className="mt-2 text-ink-soft">Everything you need to get started, with a {TRIAL_DURATION_DAYS}-day free trial.</p>
             <ul className="mt-6 space-y-3">
               {BASIC_FEATURES.slice(0, 4).map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-ink-soft">
@@ -174,7 +174,7 @@ export function Home() {
             Ready to simplify your billing?
           </h2>
           <p className="mt-3 text-white/70">
-            Start a 30-day free trial — no credit card required.
+            Start a {TRIAL_DURATION_DAYS}-day free trial — no credit card required.
           </p>
           <Link
             to="/register"
