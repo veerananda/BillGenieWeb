@@ -4,7 +4,7 @@
  * Changes: AsyncStorage → localStorage, EXPO_PUBLIC_* → VITE_*, no RN dependencies
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://billgenie-api.fly.dev';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://billgenie-api.fly.dev';
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';

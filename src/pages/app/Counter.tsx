@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag, ArrowLeftRight,
+  Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag,
+  ArrowLeftRight, Banknote, Smartphone,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
-import { apiClient } from '../../services/api';
-import type { Order, MenuItem } from '../../services/api';
+import { apiClient, API_BASE_URL } from '../../services/api';
+import type { Order, MenuItem, CompletePaymentRequest } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
   selectCounterOrders,
@@ -14,11 +14,17 @@ import {
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { calculateOrderTotals } from '../../lib/orderCalculations';
+import { subtotalLabel, taxLabel } from '../../lib/orderTax';
+import { hasUpiPaymentConfigured } from '../../lib/upiPayment';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
+import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
+import { TrackingQrModal } from '../../components/app/TrackingQrModal';
+import { QRCodeSVG } from 'qrcode.react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,10 +41,6 @@ type PaymentMethod = 'cash' | 'upi' | 'split';
 type DietFilter = 'all' | 'veg' | 'non_veg';
 type DiscountType = 'amount' | 'percent';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const TAX_RATE = 0.05;
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -51,19 +53,15 @@ function getStatusVariant(status: string): 'pending' | 'completed' | 'cancelled'
   return 'pending';
 }
 
-function calcTotals(cart: CartItem[], discountType: DiscountType, discountValue: string) {
-  const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
-  const rawDiscount = parseFloat(discountValue) || 0;
-  const discountAmt = discountType === 'percent'
-    ? Math.min(subtotal, (subtotal * rawDiscount) / 100)
-    : Math.min(subtotal, rawDiscount);
-  const afterDiscount = subtotal - discountAmt;
-  const tax = +(afterDiscount * TAX_RATE).toFixed(2);
-  const total = +(afterDiscount + tax).toFixed(2);
-  return { subtotal, discountAmt, afterDiscount, tax, total };
+function resolveTrackingUrl(data: {
+  tracking_url?: string;
+  tracking_token?: string;
+} | null | undefined): string | null {
+  if (!data) return null;
+  if (data.tracking_url) return data.tracking_url;
+  if (data.tracking_token) return `${API_BASE_URL}/t/${data.tracking_token}`;
+  return null;
 }
-
-// ─── Veg dot ─────────────────────────────────────────────────────────────────
 
 function VegDot({ isVeg }: { isVeg: boolean }) {
   return (
@@ -74,8 +72,6 @@ function VegDot({ isVeg }: { isVeg: boolean }) {
     />
   );
 }
-
-// ─── Item row (browse view — add-only, qty managed in Your Order) ────────────
 
 function ItemRow({
   item, qty, onAdd,
@@ -106,346 +102,64 @@ function ItemRow({
   );
 }
 
-// ─── Checkout Modal ───────────────────────────────────────────────────────────
-
-interface CheckoutModalProps {
-  open: boolean;
+function OrderSummaryBlock({
+  cart,
+  subtotal,
+  taxAmount,
+  discountValue,
+  finalAmount,
+  pricesIncludeGst,
+  ticketNumber,
+}: {
   cart: CartItem[];
-  ticketNumber: number | null;
-  serviceMode: ServiceMode;
-  onClose: () => void;
-  onSuccess: (order: Order, trackingUrl: string | null) => void;
-}
-
-function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSuccess }: CheckoutModalProps) {
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [discountType, setDiscountType] = useState<DiscountType>('amount');
-  const [discountValue, setDiscountValue] = useState('');
-  const [method, setMethod] = useState<PaymentMethod>('cash');
-  const [cashReceived, setCashReceived] = useState('');
-  const [upiTxnId, setUpiTxnId] = useState('');
-  const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
-  const [splitCashPortion, setSplitCashPortion] = useState('');
-  const [splitCashGiven, setSplitCashGiven] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setCustomerName('');
-      setCustomerPhone('');
-      setDiscountType('amount');
-      setDiscountValue('');
-      setMethod('cash');
-      setCashReceived('');
-      setUpiTxnId('');
-      setSplitPhase('cash');
-      setSplitCashPortion('');
-      setSplitCashGiven('');
-      setError(null);
-    }
-  }, [open]);
-
-  const { subtotal, discountAmt, tax, total } = calcTotals(cart, discountType, discountValue);
-  const cashGiven = parseFloat(cashReceived) || 0;
-  const changeDue = Math.max(0, cashGiven - total);
-
-  // Split derived values
-  const splitCashPortionAmount = parseFloat(splitCashPortion) || 0;
-  const splitUpiAmount = Math.max(0, total - splitCashPortionAmount);
-  const splitCashGivenAmount = parseFloat(splitCashGiven) || 0;
-  const splitChange = Math.max(0, splitCashGivenAmount - splitCashPortionAmount);
-  const isSplitCashValid =
-    splitCashPortionAmount > 0 && splitUpiAmount > 0.01 && splitCashGivenAmount >= splitCashPortionAmount;
-
-  const canPay =
-    method === 'upi' ||
-    (method === 'cash' && cashGiven >= total) ||
-    (method === 'split' && splitPhase === 'upi');
-
-  async function handlePay() {
-    // Split — first phase: collect cash portion, then move to UPI phase
-    if (method === 'split' && splitPhase === 'cash') {
-      if (!isSplitCashValid) {
-        setError('Enter a valid cash portion and amount received.');
-        return;
-      }
-      setSplitPhase('upi');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const order = await apiClient.createOrder({
-        order_type: 'counter',
-        service_mode: serviceMode,
-        customer_name: customerName.trim() || undefined,
-        customer_phone: customerPhone.trim() || undefined,
-        items: cart.map((c) => ({ menu_item_id: c.menuItemId, quantity: c.quantity })),
-      });
-      await apiClient.startCheckout(order.id);
-      const result = await apiClient.completeOrderWithPayment(order.id,
-        method === 'split'
-          ? {
-              payment_method: 'split',
-              cash_amount: splitCashPortionAmount,
-              upi_amount: splitUpiAmount,
-              amount_received: splitCashGivenAmount,
-              change_returned: splitChange,
-            }
-          : {
-              payment_method: method,
-              amount_received: method === 'cash' ? cashGiven : undefined,
-              change_returned: method === 'cash' ? changeDue : undefined,
-              upi_transaction_id: method === 'upi' ? upiTxnId.trim() || undefined : undefined,
-            }
-      );
-      const trackingUrl =
-        result.tracking_url ??
-        (result.tracking_token
-          ? `https://billgenie-api.fly.dev/t/${result.tracking_token}`
-          : null);
-      onSuccess(result.order, trackingUrl);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  subtotal: number;
+  taxAmount: number;
+  discountValue: number;
+  finalAmount: number;
+  pricesIncludeGst: boolean;
+  ticketNumber?: number | null;
+}) {
   return (
-    <Modal open={open} onClose={onClose} title="Checkout" maxWidth="sm">
-      <div className="space-y-5">
-        {/* Order summary */}
-        <div className="rounded-xl bg-gray-50 p-4 space-y-2">
-          {cart.map((c) => (
-            <div key={c.menuItemId} className="flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <VegDot isVeg={c.isVeg} />
-                <span className="text-sm text-gray-700 truncate">{c.name}</span>
-                <span className="shrink-0 text-xs text-gray-400">×{c.quantity}</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 ml-3 shrink-0">
-                {fmt(c.price * c.quantity)}
-              </span>
-            </div>
-          ))}
-          <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
-            <div className="flex justify-between text-sm text-gray-600">
-              <span>Subtotal</span>
-              <span>{fmt(subtotal)}</span>
-            </div>
-            {discountAmt > 0 && (
-              <div className="flex justify-between text-sm text-green-600">
-                <span>Discount</span>
-                <span>−{fmt(discountAmt)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-sm text-gray-600">
-              <span>Tax (5%)</span>
-              <span>{fmt(tax)}</span>
-            </div>
-            <div className="flex justify-between text-base font-bold text-gray-900 pt-1 border-t border-gray-200">
-              <span>Total</span>
-              <span>{fmt(total)}</span>
-            </div>
+    <div className="rounded-xl bg-gray-50 p-4 space-y-2">
+      {cart.map((c) => (
+        <div key={c.menuItemId} className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <VegDot isVeg={c.isVeg} />
+            <span className="text-sm text-gray-700 truncate">{c.name}</span>
+            <span className="shrink-0 text-xs text-gray-400">×{c.quantity}</span>
           </div>
-          {ticketNumber !== null && (
-            <div className="flex items-center gap-1 text-xs text-gray-400 pt-1">
-              <Ticket className="h-3.5 w-3.5" />
-              Ticket #{ticketNumber}
-            </div>
-          )}
+          <span className="text-sm font-medium text-gray-900 ml-3 shrink-0">
+            {fmt(c.price * c.quantity)}
+          </span>
         </div>
-
-        {/* Customer */}
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-gray-700">
-            Customer{' '}
-            <span className="text-xs font-normal text-gray-400">(optional)</span>
-          </p>
-          <input
-            type="text"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Customer name"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          <input
-            type="tel"
-            value={customerPhone}
-            onChange={(e) => setCustomerPhone(e.target.value)}
-            placeholder="Phone number"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+      ))}
+      <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>{subtotalLabel(pricesIncludeGst)}</span>
+          <span>{fmt(subtotal)}</span>
         </div>
-
-        {/* Discount */}
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-gray-700">
-            Discount{' '}
-            <span className="text-xs font-normal text-gray-400">(optional)</span>
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setDiscountType('amount')}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                discountType === 'amount'
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              <Tag className="h-3.5 w-3.5" />
-              Amount (₹)
-            </button>
-            <button
-              onClick={() => setDiscountType('percent')}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                discountType === 'percent'
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              <Percent className="h-3.5 w-3.5" />
-              Percent (%)
-            </button>
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>{taxLabel()}</span>
+          <span>{fmt(taxAmount)}</span>
+        </div>
+        {discountValue > 0 && (
+          <div className="flex justify-between text-sm text-green-600">
+            <span>Discount</span>
+            <span>−{fmt(discountValue)}</span>
           </div>
-          <input
-            type="number"
-            value={discountValue}
-            onChange={(e) => setDiscountValue(e.target.value)}
-            placeholder={discountType === 'amount' ? 'Discount amount' : 'Discount %'}
-            min="0"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-
-        {/* Payment method */}
-        <div className="space-y-3">
-          <p className="text-sm font-semibold text-gray-700">Payment Method</p>
-          <div className="flex rounded-xl border border-gray-200 p-1">
-            {([
-              { key: 'cash', label: 'Cash' },
-              { key: 'upi', label: 'UPI' },
-              { key: 'split', label: 'Split', icon: true },
-            ] as { key: PaymentMethod; label: string; icon?: boolean }[]).map((m) => (
-              <button
-                key={m.key}
-                onClick={() => { setMethod(m.key); setSplitPhase('cash'); }}
-                className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-                  method === m.key
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {m.icon && <ArrowLeftRight className="h-3.5 w-3.5" />}
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {method === 'cash' && (
-            <div className="space-y-2">
-              <input
-                type="number"
-                value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
-                placeholder={`Amount received (min ${fmt(total)})`}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-              {cashGiven > 0 && (
-                <div className="flex items-center justify-between rounded-xl bg-green-50 px-4 py-3">
-                  <span className="text-sm font-medium text-green-700">Change Due</span>
-                  <span className="text-lg font-bold text-green-700">{fmt(changeDue)}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {method === 'upi' && (
-            <input
-              type="text"
-              value={upiTxnId}
-              onChange={(e) => setUpiTxnId(e.target.value)}
-              placeholder="UPI transaction ID (optional)"
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          )}
-
-          {method === 'split' && splitPhase === 'cash' && (
-            <div className="space-y-2">
-              <p className="text-xs text-gray-500">Enter the cash portion of the total {fmt(total)}</p>
-              <input
-                type="number"
-                value={splitCashPortion}
-                onChange={(e) => setSplitCashPortion(e.target.value)}
-                placeholder="Cash portion (₹)"
-                min="0"
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-              {splitCashPortionAmount > 0 && splitUpiAmount > 0 && (
-                <div className="flex items-center justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
-                  <span className="text-blue-700">UPI remainder</span>
-                  <span className="font-bold text-blue-700">{fmt(splitUpiAmount)}</span>
-                </div>
-              )}
-              <input
-                type="number"
-                value={splitCashGiven}
-                onChange={(e) => setSplitCashGiven(e.target.value)}
-                placeholder={splitCashPortionAmount > 0 ? `Cash received (min ${fmt(splitCashPortionAmount)})` : 'Cash received'}
-                min="0"
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-              {splitCashGivenAmount > 0 && splitChange > 0 && (
-                <div className="flex items-center justify-between rounded-xl bg-green-50 px-4 py-3">
-                  <span className="text-sm font-medium text-green-700">Change Due</span>
-                  <span className="text-lg font-bold text-green-700">{fmt(splitChange)}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {method === 'split' && splitPhase === 'upi' && (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">Cash paid</span>
-                  <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">UPI due</span>
-                  <span className="font-bold text-blue-900">{fmt(splitUpiAmount)}</span>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">Collect {fmt(splitUpiAmount)} via UPI, then confirm payment.</p>
-              <button
-                type="button"
-                onClick={() => setSplitPhase('cash')}
-                className="text-sm text-primary hover:underline"
-              >
-                ← Back to cash entry
-              </button>
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
         )}
-
-        <button
-          onClick={handlePay}
-          disabled={(method === 'split' ? (splitPhase === 'cash' ? !isSplitCashValid : false) : !canPay) || loading || cart.length === 0}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 transition-opacity"
-        >
-          {loading && <Spinner size="sm" className="text-white" />}
-          {method === 'split' && splitPhase === 'cash' ? 'Next: UPI Payment' : 'Complete Payment'}
-        </button>
+        <div className="flex justify-between text-base font-bold text-gray-900 pt-1 border-t border-gray-200">
+          <span>Total</span>
+          <span>{fmt(finalAmount)}</span>
+        </div>
       </div>
-    </Modal>
+      {ticketNumber != null && (
+        <div className="flex items-center gap-1 text-xs text-gray-400 pt-1">
+          <Ticket className="h-3.5 w-3.5" />
+          Ticket #{ticketNumber}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -466,6 +180,7 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
   );
   const counterModes = profile?.counter_service_modes ?? 'both';
   const defaultMode: ServiceMode = counterModes === 'takeaway' ? 'takeaway' : 'eat_here';
+  const pricesIncludeGst = profile?.prices_include_gst ?? false;
 
   const [serviceMode, setServiceMode] = useState<ServiceMode>(defaultMode);
   const [search, setSearch] = useState('');
@@ -473,9 +188,36 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [ticketNumber, setTicketNumber] = useState<number | null>(null);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [discountType, setDiscountType] = useState<DiscountType>('amount');
+  const [discountValue, setDiscountValue] = useState('');
+
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [showSplitCashModal, setShowSplitCashModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+
+  const [cashReceived, setCashReceived] = useState('');
+  const [upiTxnId, setUpiTxnId] = useState('');
+  const [splitCashPortion, setSplitCashPortion] = useState('');
+  const [splitCashGiven, setSplitCashGiven] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [successTicket, setSuccessTicket] = useState<number | null>(null);
   const [trackingUrl, setTrackingUrl] = useState<string | null>(null);
+  const [lastPaymentSummary, setLastPaymentSummary] = useState<string | null>(null);
+
+  const resetPaymentFields = useCallback(() => {
+    setCashReceived('');
+    setUpiTxnId('');
+    setSplitCashPortion('');
+    setSplitCashGiven('');
+    setError(null);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -485,13 +227,21 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       setSelectedCategory(null);
       setSuccessTicket(null);
       setTrackingUrl(null);
-      setCheckoutOpen(false);
+      setLastPaymentSummary(null);
+      setShowCheckout(false);
+      setShowCashModal(false);
+      setShowUpiModal(false);
+      setShowSplitCashModal(false);
       setServiceMode(defaultMode);
+      setCustomerName('');
+      setCustomerPhone('');
+      setDiscountType('amount');
+      setDiscountValue('');
+      resetPaymentFields();
       apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => setTicketNumber(null));
     }
-  }, [open, defaultMode]);
+  }, [open, defaultMode, resetPaymentFields]);
 
-  // Build category list from menu items
   const categories = useMemo(() => {
     const map = new Map<string, MenuItem[]>();
     menuItems.filter((m) => m.is_available).forEach((m) => {
@@ -501,7 +251,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     return Array.from(map.entries()).map(([name, items]) => ({ name, items }));
   }, [menuItems]);
 
-  // Apply diet filter to categories
   const filteredCategories = useMemo(() => {
     if (dietFilter === 'all') return categories;
     return categories
@@ -512,7 +261,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       .filter((cat) => cat.items.length > 0);
   }, [categories, dietFilter]);
 
-  // Search results
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
@@ -524,12 +272,30 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     });
   }, [menuItems, search, dietFilter]);
 
-  // Items for the selected category (with diet filter applied)
   const categoryItems = useMemo(() => {
     if (!selectedCategory) return [];
     const cat = filteredCategories.find((c) => c.name === selectedCategory);
     return cat?.items ?? [];
   }, [filteredCategories, selectedCategory]);
+
+  const orderTotals = useMemo(
+    () => calculateOrderTotals(cart, discountValue, discountType, { pricesIncludeGst }),
+    [cart, discountValue, discountType, pricesIncludeGst]
+  );
+  const { subtotal, taxAmount, discountValue: discountAmt, finalAmount } = orderTotals;
+
+  const cashGiven = parseFloat(cashReceived) || 0;
+  const changeDue = Math.max(0, cashGiven - finalAmount);
+  const splitCashPortionAmount = parseFloat(splitCashPortion) || 0;
+  const splitUpiAmount = Math.max(0, finalAmount - splitCashPortionAmount);
+  const splitCashGivenAmount = parseFloat(splitCashGiven) || 0;
+  const splitChange = Math.max(0, splitCashGivenAmount - splitCashPortionAmount);
+  const activeUpiAmount = paymentMethod === 'split' ? splitUpiAmount : finalAmount;
+  const isSplitCashValid =
+    splitCashPortionAmount > 0 && splitUpiAmount > 0.01 && splitCashGivenAmount >= splitCashPortionAmount;
+
+  const totalItems = cart.reduce((s, c) => s + c.quantity, 0);
+  const showModeToggle = counterModes === 'both';
 
   function getQty(id: string) {
     return cart.find((c) => c.menuItemId === id)?.quantity ?? 0;
@@ -550,37 +316,138 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     );
   }
 
-  const { subtotal, tax, total } = calcTotals(cart, 'amount', '');
-  const totalItems = cart.reduce((s, c) => s + c.quantity, 0);
-  const showModeToggle = counterModes === 'both';
+  async function saveOrder(payment: CompletePaymentRequest, summary: string) {
+    setProcessing(true);
+    setError(null);
+    try {
+      const createdOrder = await apiClient.createOrder({
+        order_type: 'counter',
+        service_mode: serviceMode,
+        customer_name: customerName.trim() || undefined,
+        customer_phone: customerPhone.trim() || undefined,
+        items: cart.map((c) => ({ menu_item_id: c.menuItemId, quantity: c.quantity })),
+      });
 
-  function handleCheckoutSuccess(order: Order, url: string | null) {
-    setCheckoutOpen(false);
-    setSuccessTicket(order.ticket_number ?? ticketNumber);
-    setTrackingUrl(url);
-    onCreated(order);
+      const result = await apiClient.completeOrderWithPayment(createdOrder.id, payment);
+      const paidOrder: Order = {
+        ...result.order,
+        tracking_token: result.tracking_token ?? result.order.tracking_token,
+        tracking_url: resolveTrackingUrl(result) ?? resolveTrackingUrl(result.order) ?? result.order.tracking_url,
+      };
+      const ticket =
+        result.ticket_number ??
+        paidOrder.ticket_number ??
+        createdOrder.ticket_number ??
+        createdOrder.order_number ??
+        ticketNumber ??
+        0;
+
+      const url =
+        resolveTrackingUrl(result) ??
+        resolveTrackingUrl(paidOrder) ??
+        resolveTrackingUrl(createdOrder);
+
+      setShowCheckout(false);
+      setShowCashModal(false);
+      setShowUpiModal(false);
+      setShowSplitCashModal(false);
+      setSuccessTicket(ticket);
+      setTrackingUrl(url);
+      setLastPaymentSummary(summary);
+      onCreated(paidOrder);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Payment failed');
+      throw err;
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function handleCashPayment() {
+    if (cashGiven < finalAmount) {
+      setError(`Please enter amount ≥ ${fmt(finalAmount)}`);
+      return;
+    }
+    await saveOrder(
+      {
+        payment_method: 'cash',
+        amount_received: cashGiven,
+        change_returned: changeDue,
+      } as CompletePaymentRequest,
+      `Change: ${fmt(changeDue)}`
+    ).catch(() => undefined);
+  }
+
+  async function handleUpiPayment() {
+    if (paymentMethod !== 'split' && !upiTxnId.trim()) {
+      setError('Please enter UPI transaction ID.');
+      return;
+    }
+    if (paymentMethod === 'split' && !isSplitCashValid) {
+      setError('Split payment incomplete.');
+      return;
+    }
+
+    const summary =
+      paymentMethod === 'split'
+        ? `Cash: ${fmt(splitCashPortionAmount)} | UPI: ${fmt(splitUpiAmount)}`
+        : `Amount paid: ${fmt(finalAmount)}`;
+
+    await saveOrder(
+      paymentMethod === 'split'
+        ? {
+            payment_method: 'split',
+            cash_amount: splitCashPortionAmount,
+            upi_amount: splitUpiAmount,
+            amount_received: splitCashGivenAmount,
+            change_returned: splitChange,
+            upi_transaction_id: upiTxnId.trim() || undefined,
+          }
+        : {
+            payment_method: 'upi',
+            amount_received: finalAmount,
+            upi_transaction_id: upiTxnId.trim(),
+          },
+      summary
+    ).catch(() => undefined);
   }
 
   function handleNextOrder() {
     setSuccessTicket(null);
     setTrackingUrl(null);
+    setLastPaymentSummary(null);
     setCart([]);
     setSearch('');
     setSelectedCategory(null);
+    resetPaymentFields();
     apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => null);
+  }
+
+  function openUpiModal(method: PaymentMethod) {
+    setPaymentMethod(method);
+    setShowCheckout(false);
+    if (!hasUpiPaymentConfigured(profile)) {
+      setError('Add a UPI ID in Restaurant Profile to show a payment QR with the exact amount.');
+    }
+    setTimeout(() => setShowUpiModal(true), 150);
   }
 
   if (!open) return null;
 
+  const summaryProps = {
+    cart,
+    subtotal,
+    taxAmount,
+    discountValue: discountAmt,
+    finalAmount,
+    pricesIncludeGst,
+    ticketNumber,
+  };
+
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
-
-      {/* Panel */}
       <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col bg-white shadow-2xl">
-
-        {/* Header */}
         <div className="flex shrink-0 items-start justify-between border-b border-gray-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">New Counter Order</h2>
@@ -600,7 +467,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
           </button>
         </div>
 
-        {/* Success state */}
         {successTicket !== null ? (
           <div className="flex flex-1 flex-col items-center overflow-y-auto p-8 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
@@ -608,6 +474,9 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
             </div>
             <p className="text-sm font-medium text-green-600">Payment Complete!</p>
             <h3 className="mt-1 text-2xl font-bold text-gray-900">Ticket #{successTicket}</h3>
+            {lastPaymentSummary ? (
+              <p className="mt-2 text-sm text-gray-600">{lastPaymentSummary}</p>
+            ) : null}
 
             {trackingUrl ? (
               <div className="mt-6 w-full rounded-2xl bg-primary/5 p-5">
@@ -618,18 +487,16 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                 </p>
                 <div className="flex justify-center">
                   <div className="rounded-xl bg-white p-3 shadow-sm">
-                    <QRCodeSVG value={trackingUrl} size={180} />
+                    <QRCodeSVG value={trackingUrl} size={200} />
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
                   {counterKitchenEnabled
-                    ? 'Status updates live — bill summary and download appear below on the page'
+                    ? 'Status updates live — bill summary and download appear on the page after scanning'
                     : 'Bill summary and download are shown on the page after scanning'}
                 </p>
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-gray-500">Order placed successfully</p>
-            )}
+            ) : null}
 
             <button
               onClick={handleNextOrder}
@@ -640,7 +507,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
           </div>
         ) : (
           <>
-            {/* Service mode toggle */}
             {showModeToggle && (
               <div className="shrink-0 flex gap-2 border-b border-gray-100 px-6 py-3">
                 {(['eat_here', 'takeaway'] as ServiceMode[]).map((m) => (
@@ -659,7 +525,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
               </div>
             )}
 
-            {/* Search + diet filter */}
             <div className="shrink-0 border-b border-gray-100 px-4 py-3 space-y-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -701,28 +566,18 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
               </div>
             </div>
 
-            {/* Scrollable content */}
             <div className="min-h-0 flex-1 overflow-y-auto">
-
-              {/* Search results */}
               {search.trim() ? (
                 <div className="divide-y divide-gray-50 px-4">
                   {searchResults.length === 0 ? (
                     <p className="py-8 text-center text-sm text-gray-500">No items found</p>
                   ) : (
                     searchResults.map((item) => (
-                      <ItemRow
-                        key={item.id}
-                        item={item}
-                        qty={getQty(item.id)}
-                        onAdd={() => addItem(item)}
-                      />
+                      <ItemRow key={item.id} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
                     ))
                   )}
                 </div>
-
               ) : selectedCategory ? (
-                /* Category item list */
                 <div>
                   <button
                     onClick={() => setSelectedCategory(null)}
@@ -731,69 +586,42 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                     <ChevronLeft className="h-4 w-4" />
                     Back to categories
                   </button>
-                  <p className="px-4 pb-2 text-base font-semibold text-gray-900">
-                    {selectedCategory}
-                  </p>
+                  <p className="px-4 pb-2 text-base font-semibold text-gray-900">{selectedCategory}</p>
                   <div className="divide-y divide-gray-50 px-4">
-                    {categoryItems.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-gray-500">
-                        No {dietFilter !== 'all' ? (dietFilter === 'veg' ? 'veg' : 'non-veg') : ''} items in this category
-                      </p>
-                    ) : (
-                      categoryItems.map((item) => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          qty={getQty(item.id)}
-                          onAdd={() => addItem(item)}
-                        />
-                      ))
-                    )}
+                    {categoryItems.map((item) => (
+                      <ItemRow key={item.id} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
+                    ))}
                   </div>
                 </div>
-
               ) : (
-                /* Category grid */
                 <div className="p-4">
-                  {filteredCategories.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-gray-500">
-                      No categories available
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      {filteredCategories.map((cat) => {
-                        const inCartCount = cart
-                          .filter((c) => {
-                            const mi = menuItems.find((m) => m.id === c.menuItemId);
-                            return mi?.category === cat.name;
-                          })
-                          .reduce((s, c) => s + c.quantity, 0);
-                        return (
-                          <button
-                            key={cat.name}
-                            onClick={() => setSelectedCategory(cat.name)}
-                            className="relative flex flex-col items-center justify-center rounded-xl bg-primary px-3 py-3 text-center transition-opacity hover:opacity-90 active:opacity-75"
-                          >
-                            {inCartCount > 0 && (
-                              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-primary ring-2 ring-white">
-                                {inCartCount}
-                              </span>
-                            )}
-                            <p className="text-sm font-bold leading-tight text-white">
-                              {cat.name}
-                            </p>
-                            <p className="mt-0.5 text-xs text-white/70">
-                              {cat.items.length} item{cat.items.length !== 1 ? 's' : ''}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <div className="grid grid-cols-3 gap-2">
+                    {filteredCategories.map((cat) => {
+                      const inCartCount = cart
+                        .filter((c) => menuItems.find((m) => m.id === c.menuItemId)?.category === cat.name)
+                        .reduce((s, c) => s + c.quantity, 0);
+                      return (
+                        <button
+                          key={cat.name}
+                          onClick={() => setSelectedCategory(cat.name)}
+                          className="relative flex flex-col items-center justify-center rounded-xl bg-primary px-3 py-3 text-center transition-opacity hover:opacity-90"
+                        >
+                          {inCartCount > 0 && (
+                            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-primary ring-2 ring-white">
+                              {inCartCount}
+                            </span>
+                          )}
+                          <p className="text-sm font-bold leading-tight text-white">{cat.name}</p>
+                          <p className="mt-0.5 text-xs text-white/70">
+                            {cat.items.length} item{cat.items.length !== 1 ? 's' : ''}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              {/* Order items (always visible below browse area) */}
               {cart.length > 0 && (
                 <div className="border-t border-gray-100 mt-2 pb-2">
                   <p className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -807,23 +635,13 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                           <span className="truncate text-sm text-gray-800">{c.name}</span>
                         </div>
                         <div className="ml-3 flex shrink-0 items-center gap-2">
-                          <span className="text-xs text-gray-500">
-                            {fmt(c.price * c.quantity)}
-                          </span>
+                          <span className="text-xs text-gray-500">{fmt(c.price * c.quantity)}</span>
                           <div className="flex items-center gap-0.5 rounded-lg bg-primary/10">
-                            <button
-                              onClick={() => changeQty(c.menuItemId, -1)}
-                              className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20"
-                            >
+                            <button onClick={() => changeQty(c.menuItemId, -1)} className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20">
                               <Minus className="h-3 w-3" />
                             </button>
-                            <span className="w-4 text-center text-xs font-bold text-primary">
-                              {c.quantity}
-                            </span>
-                            <button
-                              onClick={() => changeQty(c.menuItemId, 1)}
-                              className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20"
-                            >
+                            <span className="w-4 text-center text-xs font-bold text-primary">{c.quantity}</span>
+                            <button onClick={() => changeQty(c.menuItemId, 1)} className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20">
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
@@ -835,23 +653,22 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
               )}
             </div>
 
-            {/* Cart footer */}
             {cart.length > 0 && (
               <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Subtotal</span>
+                  <span>{subtotalLabel(pricesIncludeGst)}</span>
                   <span>{fmt(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Tax (5%)</span>
-                  <span>{fmt(tax)}</span>
+                  <span>{taxLabel()}</span>
+                  <span>{fmt(taxAmount)}</span>
                 </div>
                 <div className="flex justify-between border-t border-gray-100 pt-2 text-base font-bold text-gray-900">
                   <span>Total</span>
-                  <span>{fmt(total)}</span>
+                  <span>{fmt(finalAmount)}</span>
                 </div>
                 <button
-                  onClick={() => setCheckoutOpen(true)}
+                  onClick={() => setShowCheckout(true)}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90 transition-colors"
                 >
                   Proceed to Checkout
@@ -861,16 +678,242 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
             )}
           </>
         )}
-
-        <CheckoutModal
-          open={checkoutOpen}
-          cart={cart}
-          ticketNumber={ticketNumber}
-          serviceMode={serviceMode}
-          onClose={() => setCheckoutOpen(false)}
-          onSuccess={handleCheckoutSuccess}
-        />
       </div>
+
+      {/* Checkout review — pick payment method (matches mobile) */}
+      <Modal open={showCheckout} onClose={() => setShowCheckout(false)} title="Checkout" maxWidth="sm">
+        <div className="space-y-5">
+          <OrderSummaryBlock {...summaryProps} />
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-gray-700">
+              Customer <span className="text-xs font-normal text-gray-400">(optional)</span>
+            </p>
+            <input
+              type="text"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="Customer name"
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <input
+              type="tel"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              placeholder="Phone number"
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-gray-700">
+              Discount <span className="text-xs font-normal text-gray-400">(optional)</span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDiscountType('amount')}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  discountType === 'amount' ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-600'
+                }`}
+              >
+                <Tag className="h-3.5 w-3.5" /> Amount (₹)
+              </button>
+              <button
+                onClick={() => setDiscountType('percent')}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  discountType === 'percent' ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-600'
+                }`}
+              >
+                <Percent className="h-3.5 w-3.5" /> Percent (%)
+              </button>
+            </div>
+            <input
+              type="number"
+              value={discountValue}
+              onChange={(e) => setDiscountValue(e.target.value)}
+              placeholder={discountType === 'amount' ? 'Discount amount' : 'Discount %'}
+              min="0"
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-gray-700">Payment Method</p>
+            <button
+              onClick={() => {
+                setPaymentMethod('cash');
+                setShowCheckout(false);
+                resetPaymentFields();
+                setTimeout(() => setShowCashModal(true), 150);
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
+            >
+              <Banknote className="h-4 w-4" /> Pay by Cash
+            </button>
+            <button
+              onClick={() => {
+                resetPaymentFields();
+                openUpiModal('upi');
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
+            >
+              <Smartphone className="h-4 w-4" /> Pay by UPI
+            </button>
+            <button
+              onClick={() => {
+                setPaymentMethod('split');
+                resetPaymentFields();
+                setShowCheckout(false);
+                setTimeout(() => setShowSplitCashModal(true), 150);
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
+            >
+              <ArrowLeftRight className="h-4 w-4" /> Split payment
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Cash payment */}
+      <Modal
+        open={showCashModal}
+        onClose={() => { setShowCashModal(false); setTimeout(() => setShowCheckout(true), 150); }}
+        title="Enter Cash Received"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+            <p className="text-xs font-medium text-gray-500">Bill Amount</p>
+            <p className="text-2xl font-bold text-primary">{fmt(finalAmount)}</p>
+          </div>
+          <input
+            type="number"
+            value={cashReceived}
+            onChange={(e) => setCashReceived(e.target.value)}
+            placeholder={`Amount received (min ${fmt(finalAmount)})`}
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+          {cashGiven > 0 && (
+            <div className="flex items-center justify-between rounded-xl bg-green-50 px-4 py-3">
+              <span className="text-sm font-medium text-green-700">Change Due</span>
+              <span className="text-lg font-bold text-green-700">{fmt(changeDue)}</span>
+            </div>
+          )}
+          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+          <button
+            onClick={() => void handleCashPayment()}
+            disabled={processing || cashGiven < finalAmount}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
+          >
+            {processing && <Spinner size="sm" className="text-white" />}
+            Payment Complete
+          </button>
+        </div>
+      </Modal>
+
+      {/* Split — cash portion */}
+      <Modal
+        open={showSplitCashModal}
+        onClose={() => { setShowSplitCashModal(false); setTimeout(() => setShowCheckout(true), 150); }}
+        title="Split — Cash Portion"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
+            <p className="text-xs font-medium text-gray-500">Total Bill</p>
+            <p className="text-2xl font-bold text-primary">{fmt(finalAmount)}</p>
+          </div>
+          <input
+            type="number"
+            value={splitCashPortion}
+            onChange={(e) => setSplitCashPortion(e.target.value)}
+            placeholder="Cash portion (₹)"
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+          {splitCashPortionAmount > 0 && splitUpiAmount > 0 && (
+            <div className="flex justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
+              <span className="text-blue-700">UPI remainder</span>
+              <span className="font-bold text-blue-700">{fmt(splitUpiAmount)}</span>
+            </div>
+          )}
+          <input
+            type="number"
+            value={splitCashGiven}
+            onChange={(e) => setSplitCashGiven(e.target.value)}
+            placeholder={splitCashPortionAmount > 0 ? `Cash received (min ${fmt(splitCashPortionAmount)})` : 'Cash received'}
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+          {splitChange > 0 && (
+            <div className="flex justify-between rounded-xl bg-green-50 px-4 py-3 text-sm">
+              <span className="text-green-700">Change Due</span>
+              <span className="font-bold text-green-700">{fmt(splitChange)}</span>
+            </div>
+          )}
+          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+          <button
+            onClick={() => {
+              if (!isSplitCashValid) {
+                setError('Enter a valid cash portion and amount received.');
+                return;
+              }
+              setShowSplitCashModal(false);
+              openUpiModal('split');
+            }}
+            disabled={!isSplitCashValid}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
+          >
+            Accept cash & pay UPI
+          </button>
+        </div>
+      </Modal>
+
+      {/* UPI payment (full or split remainder) */}
+      <Modal
+        open={showUpiModal}
+        onClose={() => {
+          setShowUpiModal(false);
+          setUpiTxnId('');
+          if (paymentMethod === 'split') {
+            setTimeout(() => setShowSplitCashModal(true), 150);
+          } else {
+            setTimeout(() => setShowCheckout(true), 150);
+          }
+        }}
+        title={paymentMethod === 'split' ? 'UPI — remaining balance' : 'UPI Payment'}
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <UpiPaymentDisplay profile={profile} amount={activeUpiAmount} transactionNote="Counter order" />
+
+          {paymentMethod === 'split' && (
+            <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-blue-700">Cash portion paid</span>
+                <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
+              </div>
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={upiTxnId}
+            onChange={(e) => setUpiTxnId(e.target.value)}
+            placeholder="UPI transaction ID"
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+
+          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+
+          <button
+            onClick={() => void handleUpiPayment()}
+            disabled={processing || (paymentMethod !== 'split' && !upiTxnId.trim())}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
+          >
+            {processing && <Spinner size="sm" className="text-white" />}
+            Payment Complete
+          </button>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -879,13 +922,20 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
 
 export function Counter() {
   const dispatch = useAppDispatch();
+  const profile = useAppSelector(selectProfile);
   const counterOrders = useAppSelector(selectCounterOrders);
   const menuItems = useAppSelector(selectMenuItems);
   const menuHydrated = useAppSelector(selectMenuHydrated);
 
+  const counterKitchenEnabled = useMemo(
+    () => parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined).kitchen_counter,
+    [profile?.subscription_limits]
+  );
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -918,6 +968,10 @@ export function Counter() {
   function handleOrderCreated(order: Order) {
     dispatch(upsertCounterOrder(order));
   }
+
+  const selectedTrackingUrl = selectedOrder ? resolveTrackingUrl(selectedOrder) : null;
+  const selectedTicket =
+    selectedOrder?.ticket_number ?? selectedOrder?.order_number ?? null;
 
   return (
     <div>
@@ -973,7 +1027,11 @@ export function Counter() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {sorted.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={order.id}
+                  onClick={() => setSelectedOrder(order)}
+                  className="cursor-pointer hover:bg-gray-50 transition-colors"
+                >
                   <td className="px-4 py-3 font-mono font-semibold text-gray-900">
                     {order.ticket_number !== undefined
                       ? `#${order.ticket_number}`
@@ -982,9 +1040,7 @@ export function Counter() {
                   <td className="px-4 py-3 text-gray-700">
                     {order.customer_name ?? <span className="text-gray-400">—</span>}
                     {order.customer_phone && (
-                      <span className="ml-1 text-xs text-gray-400">
-                        {order.customer_phone}
-                      </span>
+                      <span className="ml-1 text-xs text-gray-400">{order.customer_phone}</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -1018,6 +1074,21 @@ export function Counter() {
         onClose={() => setPanelOpen(false)}
         onCreated={handleOrderCreated}
         menuItems={menuItems}
+      />
+
+      <TrackingQrModal
+        open={selectedOrder !== null}
+        onClose={() => setSelectedOrder(null)}
+        title="Order tracking QR"
+        confirmLabel="Close"
+        ticketNumber={selectedTicket}
+        trackingUrl={selectedTrackingUrl}
+        kitchenEnabled={counterKitchenEnabled}
+        paymentSummary={
+          selectedOrder
+            ? `${fmt(selectedOrder.total)} · ${selectedOrder.payment_method?.toUpperCase() ?? 'Paid'}`
+            : null
+        }
       />
     </div>
   );
