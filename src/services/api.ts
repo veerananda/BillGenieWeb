@@ -353,6 +353,20 @@ class APIClient {
     });
   }
 
+  async forgotPassword(identifier: string): Promise<{ message: string }> {
+    return this.makeRequest('/auth/forgot-password', 'POST', { identifier });
+  }
+
+  async requestLoginRecovery(identifier: string): Promise<{ message: string }> {
+    const response = await this.makeRequest('/auth/forgot-login-id', 'POST', { identifier });
+    return response?.data ?? response;
+  }
+
+  async verifyLoginRecovery(identifier: string, otp: string): Promise<{ login_id: string; message: string }> {
+    const response = await this.makeRequest('/auth/verify-login-recovery', 'POST', { identifier, otp });
+    return response?.data ?? response;
+  }
+
   async verifyEmail(token: string): Promise<{ message: string }> {
     const query = `token=${encodeURIComponent(token)}`;
     return this.makeRequest(`/auth/verify-email?${query}`, 'POST');

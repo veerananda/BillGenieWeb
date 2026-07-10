@@ -167,16 +167,28 @@ export function Login() {
             </button>
           </form>
 
-          {/* Footer link */}
-          <p className="mt-6 text-center text-sm text-ink-soft">
-            Don&apos;t have an account?{' '}
-            <Link
-              to="/register"
-              className="font-semibold text-primary hover:text-primary-dark transition"
-            >
-              Start free trial →
-            </Link>
-          </p>
+          {/* Footer links */}
+          <div className="mt-6 space-y-3 text-center text-sm text-ink-soft">
+            <p>
+              <Link to="/forgot-login" className="font-medium text-ink-soft hover:text-primary transition">
+                Forgot login number?
+              </Link>
+            </p>
+            <p>
+              <Link to="/forgot-password" className="font-medium text-ink-soft hover:text-primary transition">
+                Forgot password?
+              </Link>
+            </p>
+            <p>
+              Don&apos;t have an account?{' '}
+              <Link
+                to="/register"
+                className="font-semibold text-primary hover:text-primary-dark transition"
+              >
+                Start free trial →
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -1468,6 +1468,14 @@ export function Orders() {
   );
 
   const occupiedCount = tables.filter((t) => t.is_occupied).length;
+  const vacantCount = tables.length - occupiedCount;
+
+  const [tableFilter, setTableFilter] = useState<'all' | 'occupied' | 'vacant'>('all');
+  const filteredTables = tables.filter((t) => {
+    if (tableFilter === 'occupied') return t.is_occupied;
+    if (tableFilter === 'vacant') return !t.is_occupied;
+    return true;
+  });
 
   const handleTableClick = (table: RestaurantTable) => {
     setSelectedTable(table);
@@ -1537,16 +1545,48 @@ export function Orders() {
           description="Add tables in Settings to start taking dine-in orders."
         />
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {tables.map((table) => (
-            <TableCard
-              key={table.id}
-              table={table}
-              order={getOrderForTable(table)}
-              onClick={() => handleTableClick(table)}
+        <>
+          <div className="mb-4 flex rounded-2xl border border-gray-100 bg-white p-1.5 shadow-sm">
+            {(
+              [
+                { id: 'all' as const, label: `All (${tables.length})` },
+                { id: 'occupied' as const, label: `In use (${occupiedCount})` },
+                { id: 'vacant' as const, label: `Empty (${vacantCount})` },
+              ]
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setTableFilter(opt.id)}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
+                  tableFilter === opt.id
+                    ? 'border-2 border-primary bg-primary/10 text-primary'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {filteredTables.length === 0 ? (
+            <EmptyState
+              icon={UtensilsCrossed}
+              title={tableFilter === 'occupied' ? 'No tables in use' : 'No empty tables'}
+              description="Try a different filter."
             />
-          ))}
-        </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {filteredTables.map((table) => (
+                <TableCard
+                  key={table.id}
+                  table={table}
+                  order={getOrderForTable(table)}
+                  onClick={() => handleTableClick(table)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Vacant table slide-over */}

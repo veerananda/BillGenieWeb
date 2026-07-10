@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag,
+  Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag, ArrowLeftRight,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiClient } from '../../services/api';
@@ -31,7 +31,7 @@ interface CartItem {
 }
 
 type ServiceMode = 'eat_here' | 'takeaway';
-type PaymentMethod = 'cash' | 'upi';
+type PaymentMethod = 'cash' | 'upi' | 'split';
 type DietFilter = 'all' | 'veg' | 'non_veg';
 type DiscountType = 'amount' | 'percent';
 
@@ -125,6 +125,9 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [upiTxnId, setUpiTxnId] = useState('');
+  const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
+  const [splitCashPortion, setSplitCashPortion] = useState('');
+  const [splitCashGiven, setSplitCashGiven] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,6 +140,9 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
       setMethod('cash');
       setCashReceived('');
       setUpiTxnId('');
+      setSplitPhase('cash');
+      setSplitCashPortion('');
+      setSplitCashGiven('');
       setError(null);
     }
   }, [open]);
@@ -144,9 +150,31 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
   const { subtotal, discountAmt, tax, total } = calcTotals(cart, discountType, discountValue);
   const cashGiven = parseFloat(cashReceived) || 0;
   const changeDue = Math.max(0, cashGiven - total);
-  const canPay = method === 'upi' || cashGiven >= total;
+
+  // Split derived values
+  const splitCashPortionAmount = parseFloat(splitCashPortion) || 0;
+  const splitUpiAmount = Math.max(0, total - splitCashPortionAmount);
+  const splitCashGivenAmount = parseFloat(splitCashGiven) || 0;
+  const splitChange = Math.max(0, splitCashGivenAmount - splitCashPortionAmount);
+  const isSplitCashValid =
+    splitCashPortionAmount > 0 && splitUpiAmount > 0.01 && splitCashGivenAmount >= splitCashPortionAmount;
+
+  const canPay =
+    method === 'upi' ||
+    (method === 'cash' && cashGiven >= total) ||
+    (method === 'split' && splitPhase === 'upi');
 
   async function handlePay() {
+    // Split — first phase: collect cash portion, then move to UPI phase
+    if (method === 'split' && splitPhase === 'cash') {
+      if (!isSplitCashValid) {
+        setError('Enter a valid cash portion and amount received.');
+        return;
+      }
+      setSplitPhase('upi');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -158,12 +186,22 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
         items: cart.map((c) => ({ menu_item_id: c.menuItemId, quantity: c.quantity })),
       });
       await apiClient.startCheckout(order.id);
-      const result = await apiClient.completeOrderWithPayment(order.id, {
-        payment_method: method,
-        amount_received: method === 'cash' ? cashGiven : undefined,
-        change_returned: method === 'cash' ? changeDue : undefined,
-        upi_transaction_id: method === 'upi' ? upiTxnId.trim() || undefined : undefined,
-      });
+      const result = await apiClient.completeOrderWithPayment(order.id,
+        method === 'split'
+          ? {
+              payment_method: 'split',
+              cash_amount: splitCashPortionAmount,
+              upi_amount: splitUpiAmount,
+              amount_received: splitCashGivenAmount,
+              change_returned: splitChange,
+            }
+          : {
+              payment_method: method,
+              amount_received: method === 'cash' ? cashGiven : undefined,
+              change_returned: method === 'cash' ? changeDue : undefined,
+              upi_transaction_id: method === 'upi' ? upiTxnId.trim() || undefined : undefined,
+            }
+      );
       const trackingUrl =
         result.tracking_url ??
         (result.tracking_token
@@ -288,21 +326,27 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
         <div className="space-y-3">
           <p className="text-sm font-semibold text-gray-700">Payment Method</p>
           <div className="flex rounded-xl border border-gray-200 p-1">
-            {(['cash', 'upi'] as PaymentMethod[]).map((m) => (
+            {([
+              { key: 'cash', label: 'Cash' },
+              { key: 'upi', label: 'UPI' },
+              { key: 'split', label: 'Split', icon: true },
+            ] as { key: PaymentMethod; label: string; icon?: boolean }[]).map((m) => (
               <button
-                key={m}
-                onClick={() => setMethod(m)}
-                className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-                  method === m
+                key={m.key}
+                onClick={() => { setMethod(m.key); setSplitPhase('cash'); }}
+                className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-medium transition-colors ${
+                  method === m.key
                     ? 'bg-primary text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                {m === 'cash' ? 'Cash' : 'UPI'}
+                {m.icon && <ArrowLeftRight className="h-3.5 w-3.5" />}
+                {m.label}
               </button>
             ))}
           </div>
-          {method === 'cash' ? (
+
+          {method === 'cash' && (
             <div className="space-y-2">
               <input
                 type="number"
@@ -318,7 +362,9 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
                 </div>
               )}
             </div>
-          ) : (
+          )}
+
+          {method === 'upi' && (
             <input
               type="text"
               value={upiTxnId}
@@ -326,6 +372,63 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
               placeholder="UPI transaction ID (optional)"
               className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
+          )}
+
+          {method === 'split' && splitPhase === 'cash' && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">Enter the cash portion of the total {fmt(total)}</p>
+              <input
+                type="number"
+                value={splitCashPortion}
+                onChange={(e) => setSplitCashPortion(e.target.value)}
+                placeholder="Cash portion (₹)"
+                min="0"
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              {splitCashPortionAmount > 0 && splitUpiAmount > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
+                  <span className="text-blue-700">UPI remainder</span>
+                  <span className="font-bold text-blue-700">{fmt(splitUpiAmount)}</span>
+                </div>
+              )}
+              <input
+                type="number"
+                value={splitCashGiven}
+                onChange={(e) => setSplitCashGiven(e.target.value)}
+                placeholder={splitCashPortionAmount > 0 ? `Cash received (min ${fmt(splitCashPortionAmount)})` : 'Cash received'}
+                min="0"
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              {splitCashGivenAmount > 0 && splitChange > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-green-50 px-4 py-3">
+                  <span className="text-sm font-medium text-green-700">Change Due</span>
+                  <span className="text-lg font-bold text-green-700">{fmt(splitChange)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {method === 'split' && splitPhase === 'upi' && (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">Cash paid</span>
+                  <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">UPI due</span>
+                  <span className="font-bold text-blue-900">{fmt(splitUpiAmount)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">Collect {fmt(splitUpiAmount)} via UPI, then confirm payment.</p>
+              <button
+                type="button"
+                onClick={() => setSplitPhase('cash')}
+                className="text-sm text-primary hover:underline"
+              >
+                ← Back to cash entry
+              </button>
+            </div>
           )}
         </div>
 
@@ -335,11 +438,11 @@ function CheckoutModal({ open, cart, ticketNumber, serviceMode, onClose, onSucce
 
         <button
           onClick={handlePay}
-          disabled={!canPay || loading || cart.length === 0}
+          disabled={(method === 'split' ? (splitPhase === 'cash' ? !isSplitCashValid : false) : !canPay) || loading || cart.length === 0}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 transition-opacity"
         >
           {loading && <Spinner size="sm" className="text-white" />}
-          Complete Payment
+          {method === 'split' && splitPhase === 'cash' ? 'Next: UPI Payment' : 'Complete Payment'}
         </button>
       </div>
     </Modal>
