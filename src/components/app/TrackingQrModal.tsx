@@ -11,6 +11,7 @@ interface TrackingQrModalProps {
   kitchenEnabled?: boolean;
   title?: string;
   confirmLabel?: string;
+  zIndexClass?: string;
 }
 
 export function TrackingQrModal({
@@ -22,9 +23,10 @@ export function TrackingQrModal({
   kitchenEnabled = false,
   title = 'Payment successful',
   confirmLabel = 'Next order',
+  zIndexClass = 'z-[60]',
 }: TrackingQrModalProps) {
   return (
-    <Modal open={open} onClose={onClose} title={title} maxWidth="sm">
+    <Modal open={open} onClose={onClose} title={title} maxWidth="sm" zIndexClass={zIndexClass}>
       <div className="flex flex-col items-center text-center">
         {ticketNumber != null ? (
           <div className="mb-3 flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2">

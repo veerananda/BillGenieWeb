@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag,
   ArrowLeftRight, Banknote, Smartphone,
@@ -24,7 +24,6 @@ import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { TrackingQrModal } from '../../components/app/TrackingQrModal';
-import { QRCodeSVG } from 'qrcode.react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +60,39 @@ function resolveTrackingUrl(data: {
   if (data.tracking_url) return data.tracking_url;
   if (data.tracking_token) return `${API_BASE_URL}/t/${data.tracking_token}`;
   return null;
+}
+
+async function resolveTrackingUrlAfterPayment(
+  result: {
+    tracking_url?: string;
+    tracking_token?: string;
+    ticket_number?: number;
+    order?: Order;
+  },
+  orderId: string
+): Promise<{ url: string | null; ticket: number | null }> {
+  let url =
+    resolveTrackingUrl(result) ??
+    resolveTrackingUrl(result.order) ??
+    null;
+
+  let ticket =
+    result.ticket_number ??
+    result.order?.ticket_number ??
+    result.order?.order_number ??
+    null;
+
+  if (!url) {
+    try {
+      const fresh = await apiClient.getOrder(orderId);
+      url = resolveTrackingUrl(fresh);
+      ticket = ticket ?? fresh.ticket_number ?? fresh.order_number ?? null;
+    } catch {
+      // keep payment success even if tracking fetch fails
+    }
+  }
+
+  return { url, ticket };
 }
 
 function VegDot({ isVeg }: { isVeg: boolean }) {
@@ -179,10 +211,9 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     [profile?.subscription_limits]
   );
   const counterModes = profile?.counter_service_modes ?? 'both';
-  const defaultMode: ServiceMode = counterModes === 'takeaway' ? 'takeaway' : 'eat_here';
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
 
-  const [serviceMode, setServiceMode] = useState<ServiceMode>(defaultMode);
+  const [serviceMode, setServiceMode] = useState<ServiceMode>('eat_here');
   const [search, setSearch] = useState('');
   const [dietFilter, setDietFilter] = useState<DietFilter>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -210,6 +241,10 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
   const [successTicket, setSuccessTicket] = useState<number | null>(null);
   const [trackingUrl, setTrackingUrl] = useState<string | null>(null);
   const [lastPaymentSummary, setLastPaymentSummary] = useState<string | null>(null);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [paymentComplete, setPaymentComplete] = useState(false);
+
+  const panelWasOpenRef = useRef(false);
 
   const resetPaymentFields = useCallback(() => {
     setCashReceived('');
@@ -220,7 +255,10 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
   }, []);
 
   useEffect(() => {
-    if (open) {
+    const justOpened = open && !panelWasOpenRef.current;
+    panelWasOpenRef.current = open;
+
+    if (justOpened) {
       setCart([]);
       setSearch('');
       setDietFilter('all');
@@ -228,11 +266,13 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       setSuccessTicket(null);
       setTrackingUrl(null);
       setLastPaymentSummary(null);
+      setShowTrackingModal(false);
+      setPaymentComplete(false);
       setShowCheckout(false);
       setShowCashModal(false);
       setShowUpiModal(false);
       setShowSplitCashModal(false);
-      setServiceMode(defaultMode);
+      setServiceMode(counterModes === 'takeaway' ? 'takeaway' : 'eat_here');
       setCustomerName('');
       setCustomerPhone('');
       setDiscountType('amount');
@@ -240,7 +280,7 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       resetPaymentFields();
       apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => setTicketNumber(null));
     }
-  }, [open, defaultMode, resetPaymentFields]);
+  }, [open, counterModes, resetPaymentFields]);
 
   const categories = useMemo(() => {
     const map = new Map<string, MenuItem[]>();
@@ -329,23 +369,27 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       });
 
       const result = await apiClient.completeOrderWithPayment(createdOrder.id, payment);
+      const { url, ticket: resolvedTicket } = await resolveTrackingUrlAfterPayment(
+        result,
+        createdOrder.id
+      );
+
       const paidOrder: Order = {
-        ...result.order,
-        tracking_token: result.tracking_token ?? result.order.tracking_token,
-        tracking_url: resolveTrackingUrl(result) ?? resolveTrackingUrl(result.order) ?? result.order.tracking_url,
+        ...(result.order ?? createdOrder),
+        id: createdOrder.id,
+        tracking_token: result.tracking_token ?? result.order?.tracking_token,
+        tracking_url: url ?? undefined,
+        ticket_number: resolvedTicket ?? result.ticket_number ?? result.order?.ticket_number,
       };
+
       const ticket =
+        resolvedTicket ??
         result.ticket_number ??
         paidOrder.ticket_number ??
         createdOrder.ticket_number ??
         createdOrder.order_number ??
         ticketNumber ??
-        0;
-
-      const url =
-        resolveTrackingUrl(result) ??
-        resolveTrackingUrl(paidOrder) ??
-        resolveTrackingUrl(createdOrder);
+        null;
 
       setShowCheckout(false);
       setShowCashModal(false);
@@ -354,6 +398,8 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       setSuccessTicket(ticket);
       setTrackingUrl(url);
       setLastPaymentSummary(summary);
+      setPaymentComplete(true);
+      setShowTrackingModal(true);
       onCreated(paidOrder);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
@@ -416,6 +462,8 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     setSuccessTicket(null);
     setTrackingUrl(null);
     setLastPaymentSummary(null);
+    setShowTrackingModal(false);
+    setPaymentComplete(false);
     setCart([]);
     setSearch('');
     setSelectedCategory(null);
@@ -467,36 +515,27 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
           </button>
         </div>
 
-        {successTicket !== null ? (
+        {paymentComplete ? (
           <div className="flex flex-1 flex-col items-center overflow-y-auto p-8 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
               <Ticket className="h-8 w-8 text-primary" />
             </div>
             <p className="text-sm font-medium text-green-600">Payment Complete!</p>
-            <h3 className="mt-1 text-2xl font-bold text-gray-900">Ticket #{successTicket}</h3>
+            {successTicket != null ? (
+              <h3 className="mt-1 text-2xl font-bold text-gray-900">Ticket #{successTicket}</h3>
+            ) : null}
             {lastPaymentSummary ? (
               <p className="mt-2 text-sm text-gray-600">{lastPaymentSummary}</p>
             ) : null}
-
             {trackingUrl ? (
-              <div className="mt-6 w-full rounded-2xl bg-primary/5 p-5">
-                <p className="mb-3 text-sm font-semibold text-gray-700">
-                  {counterKitchenEnabled
-                    ? 'Customer scans to track order and view bill'
-                    : 'Customer scans to view and download bill'}
-                </p>
-                <div className="flex justify-center">
-                  <div className="rounded-xl bg-white p-3 shadow-sm">
-                    <QRCodeSVG value={trackingUrl} size={200} />
-                  </div>
-                </div>
-                <p className="mt-3 text-xs text-gray-500">
-                  {counterKitchenEnabled
-                    ? 'Status updates live — bill summary and download appear on the page after scanning'
-                    : 'Bill summary and download are shown on the page after scanning'}
-                </p>
-              </div>
-            ) : null}
+              <p className="mt-4 text-sm text-gray-500">
+                Customer tracking QR is open — scan to view bill and download.
+              </p>
+            ) : (
+              <p className="mt-4 text-sm text-amber-600">
+                Tracking link unavailable. Customer can ask staff for receipt.
+              </p>
+            )}
 
             <button
               onClick={handleNextOrder}
@@ -573,7 +612,7 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                     <p className="py-8 text-center text-sm text-gray-500">No items found</p>
                   ) : (
                     searchResults.map((item) => (
-                      <ItemRow key={item.id} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
+                      <ItemRow key={`search-${item.id}`} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
                     ))
                   )}
                 </div>
@@ -589,20 +628,20 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                   <p className="px-4 pb-2 text-base font-semibold text-gray-900">{selectedCategory}</p>
                   <div className="divide-y divide-gray-50 px-4">
                     {categoryItems.map((item) => (
-                      <ItemRow key={item.id} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
+                      <ItemRow key={`cat-${selectedCategory}-${item.id}`} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
                     ))}
                   </div>
                 </div>
               ) : (
                 <div className="p-4">
                   <div className="grid grid-cols-3 gap-2">
-                    {filteredCategories.map((cat) => {
+                    {filteredCategories.map((cat, index) => {
                       const inCartCount = cart
                         .filter((c) => menuItems.find((m) => m.id === c.menuItemId)?.category === cat.name)
                         .reduce((s, c) => s + c.quantity, 0);
                       return (
                         <button
-                          key={cat.name}
+                          key={`${cat.name}-${index}`}
                           onClick={() => setSelectedCategory(cat.name)}
                           className="relative flex flex-col items-center justify-center rounded-xl bg-primary px-3 py-3 text-center transition-opacity hover:opacity-90"
                         >
@@ -881,6 +920,7 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
         }}
         title={paymentMethod === 'split' ? 'UPI — remaining balance' : 'UPI Payment'}
         maxWidth="sm"
+        zIndexClass="z-[55]"
       >
         <div className="space-y-4">
           <UpiPaymentDisplay profile={profile} amount={activeUpiAmount} transactionNote="Counter order" />
@@ -914,6 +954,17 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
           </button>
         </div>
       </Modal>
+
+      <TrackingQrModal
+        open={showTrackingModal}
+        onClose={() => setShowTrackingModal(false)}
+        ticketNumber={successTicket}
+        trackingUrl={trackingUrl}
+        paymentSummary={lastPaymentSummary}
+        kitchenEnabled={counterKitchenEnabled}
+        confirmLabel="Done"
+        zIndexClass="z-[60]"
+      />
     </>
   );
 }
