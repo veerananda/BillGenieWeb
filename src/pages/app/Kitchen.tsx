@@ -1,180 +1,30 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChefHat, Check, Wifi } from 'lucide-react';
 import { apiClient } from '../../services/api';
-import type { Order } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
-  setActiveOrders, setCounterOrders, patchOrderItemStatus,
-  selectActiveOrders, selectCounterOrders,
+  setActiveOrders,
+  patchOrderItemStatus,
+  selectActiveOrders,
+  selectCounterOrders,
+  removeCounterOrder,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
+import { selectTables, setTables, selectTablesHydrated } from '../../store/tablesSlice';
+import { store } from '../../store';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 import wsService from '../../services/websocket';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface KotItem {
-  id: string;
-  orderId: string;
-  name: string;
-  quantity: number;
-  notes?: string;
-  status: string;
-  menuId: string;
-}
-
-interface KotTicket {
-  key: string;
-  kotNumber: number;
-  orderId: string;
-  isAddOn: boolean;
-  tableLabel: string;
-  customerName: string;
-  serviceMode?: string;
-  firedAt: Date;
-  items: KotItem[];
-}
-
-interface MenuEntry {
-  name: string;
-  readily_available?: boolean;
-}
-
-const LEGACY_SUB_PREFIX = '__legacy__';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function isActive(status: string) {
-  return status !== 'ready' && status !== 'served' && status !== 'completed';
-}
-
-function formatTime(d: Date): string {
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatElapsed(d: Date): string {
-  const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins === 1) return '1 min ago';
-  return `${mins} mins ago`;
-}
-
-function resolveTableLabel(order: Order): string {
-  if (order.order_type === 'counter') {
-    const num = order.ticket_number ?? order.order_number;
-    const suffix =
-      order.service_mode === 'takeaway'
-        ? ' · Takeaway'
-        : order.service_mode === 'eat_here'
-        ? ' · Eat here'
-        : '';
-    return `Order #${num}${suffix}`;
-  }
-  return `Table ${order.table_number ?? '?'}`;
-}
-
-/**
- * Mirrors mobile kitchenHelpers.buildKotTickets:
- * Groups items by order.id + item.sub_id so each "kitchen fire" (add-on batch)
- * produces its own KOT card. Items without a sub_id share a legacy fallback key.
- */
-function buildTickets(
-  orders: Order[],
-  menuMap: Record<string, MenuEntry>
-): KotTicket[] {
-  // Map of `${orderId}:${subId}` → ticket accumulator
-  const ticketMap = new Map<string, Omit<KotTicket, 'kotNumber' | 'isAddOn'> & { firedAtMs: number }>();
-
-  for (const order of orders) {
-    if (!order?.id) continue;
-    if (order.status === 'cancelled' || order.status === 'completed') continue;
-
-    const activeItems = (order.items ?? []).filter(
-      (i) => isActive(i.status) && !menuMap[i.menu_id]?.readily_available
-    );
-    if (activeItems.length === 0) continue;
-
-    const tableLabel = resolveTableLabel(order);
-    const orderFiredMs = new Date(order.created_at).getTime();
-
-    for (const item of activeItems) {
-      const rawSubId = String(item.sub_id ?? '').trim();
-      const subId = rawSubId || `${LEGACY_SUB_PREFIX}${order.id}`;
-      const key = `${order.id}:${subId}`;
-      const itemFiredMs = item.created_at
-        ? new Date(item.created_at).getTime()
-        : orderFiredMs;
-
-      const kotItem: KotItem = {
-        id: item.id,
-        orderId: order.id,
-        name: menuMap[item.menu_id]?.name ?? item.menu_item?.name ?? item.menu_id,
-        quantity: item.quantity,
-        notes: item.notes,
-        status: item.status,
-        menuId: item.menu_id,
-      };
-
-      const existing = ticketMap.get(key);
-      if (existing) {
-        existing.items.push(kotItem);
-        existing.firedAtMs = Math.min(existing.firedAtMs, itemFiredMs);
-      } else {
-        ticketMap.set(key, {
-          key,
-          orderId: order.id,
-          tableLabel,
-          customerName: order.customer_name || 'Guest',
-          serviceMode: order.service_mode,
-          firedAt: new Date(itemFiredMs),
-          firedAtMs: itemFiredMs,
-          items: [kotItem],
-        });
-      }
-    }
-  }
-
-  // Sort FIFO by earliest item timestamp
-  const sorted = Array.from(ticketMap.values()).sort((a, b) => {
-    if (a.firedAtMs !== b.firedAtMs) return a.firedAtMs - b.firedAtMs;
-    return a.key.localeCompare(b.key);
-  });
-
-  // Track first sub_id per order to mark subsequent ones as ADD-ON
-  const firstSubByOrder = new Map<string, string>();
-  for (const t of sorted) {
-    if (!firstSubByOrder.has(t.orderId)) firstSubByOrder.set(t.orderId, t.key);
-  }
-
-  return sorted.map((t, i) => ({
-    key: t.key,
-    kotNumber: i + 1,
-    orderId: t.orderId,
-    isAddOn: firstSubByOrder.get(t.orderId) !== t.key,
-    tableLabel: t.tableLabel,
-    customerName: t.customerName,
-    serviceMode: t.serviceMode,
-    firedAt: t.firedAt,
-    items: t.items,
-  }));
-}
-
-function buildPrepSummary(tickets: KotTicket[]) {
-  const map = new Map<string, { name: string; qty: number }>();
-  for (const t of tickets) {
-    for (const item of t.items) {
-      const key = item.menuId || item.name;
-      const ex = map.get(key);
-      if (ex) ex.qty += item.quantity;
-      else map.set(key, { name: item.name, qty: item.quantity });
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-// ─── KOT Card ─────────────────────────────────────────────────────────────────
+import {
+  buildKotTickets,
+  buildPrepSummary,
+  formatKitchenElapsed,
+  formatKitchenTime,
+  getKotTableLabel,
+  type KotTicket,
+  type KotTicketItem,
+} from '../../lib/kitchenHelpers';
 
 function KOTCard({
   ticket,
@@ -185,12 +35,13 @@ function KOTCard({
 }) {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [readyAllLoading, setReadyAllLoading] = useState(false);
+  const tableLabel = getKotTableLabel(ticket);
 
-  async function handleItemReady(item: KotItem) {
+  async function handleItemReady(item: KotTicketItem) {
     if (markingId || readyAllLoading) return;
     setMarkingId(item.id);
     try {
-      onItemReady(item.orderId, item.id); // optimistic (sync)
+      onItemReady(item.orderId, item.id);
       await apiClient.updateOrderItemStatus(item.orderId, item.id, 'ready');
     } catch {
       // WS will eventually sync the correct state
@@ -201,7 +52,6 @@ function KOTCard({
 
   async function handleReadyAll() {
     setReadyAllLoading(true);
-    // Optimistic: mark all items ready immediately (sync)
     ticket.items.forEach((item) => onItemReady(item.orderId, item.id));
     try {
       await Promise.all(
@@ -210,7 +60,7 @@ function KOTCard({
         )
       );
     } catch {
-      // silent
+      // silent — WS catch-up handles partial failures
     } finally {
       setReadyAllLoading(false);
     }
@@ -226,57 +76,55 @@ function KOTCard({
         borderLeftColor: ticket.isAddOn ? '#f59e0b' : '#1BAE76',
       }}
     >
-      {/* Card header */}
       <div className="flex items-start justify-between border-b border-gray-100 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2">
             <span className="rounded bg-primary px-2 py-0.5 text-xs font-bold text-white">
               KOT #{ticket.kotNumber}
             </span>
-            {ticket.isAddOn && (
+            {ticket.isAddOn ? (
               <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                 ADD-ON
               </span>
-            )}
+            ) : null}
           </div>
-          <p className="text-lg font-bold text-gray-900">{ticket.tableLabel}</p>
+          <p className="text-lg font-bold text-gray-900">{tableLabel}</p>
           <p className="mt-0.5 text-sm text-gray-500">{ticket.customerName}</p>
           <p className="mt-1 text-xs text-gray-400">
-            {formatElapsed(ticket.firedAt)} · Fired {formatTime(ticket.firedAt)}
+            {formatKitchenElapsed(ticket.firedAt)} · Fired {formatKitchenTime(ticket.firedAt)}
           </p>
         </div>
         <div className="ml-3 flex shrink-0 flex-col items-end gap-2">
           <span className="text-sm font-semibold text-gray-700">
-            {formatTime(ticket.firedAt)}
+            {formatKitchenTime(ticket.firedAt)}
           </span>
           <button
             onClick={handleReadyAll}
             disabled={readyAllLoading}
-            className="flex min-w-18 items-center justify-center rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
+            className="flex min-w-18 items-center justify-center rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-green-600 disabled:opacity-50"
           >
             {readyAllLoading ? <Spinner size="sm" className="text-white" /> : 'Ready all'}
           </button>
         </div>
       </div>
 
-      {/* Items */}
       <div className="flex flex-col gap-1.5 p-3">
         {ticket.items.map((item) => (
           <div
-            key={item.id}
+            key={`${item.orderId}-${item.id}`}
             className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2"
           >
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
-              {item.notes && (
+              {item.notes ? (
                 <p className="mt-0.5 text-xs italic text-gray-400">{item.notes}</p>
-              )}
+              ) : null}
             </div>
             <span className="shrink-0 text-sm font-bold text-primary">{item.quantity}x</span>
             <button
               onClick={() => handleItemReady(item)}
               disabled={markingId === item.id || readyAllLoading}
-              className="flex min-w-12 flex-col items-center rounded-lg bg-green-500 px-2.5 py-1.5 text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
+              className="flex min-w-12 flex-col items-center rounded-lg bg-green-500 px-2.5 py-1.5 text-white transition-colors hover:bg-green-600 disabled:opacity-50"
             >
               {markingId === item.id ? (
                 <Spinner size="sm" className="text-white" />
@@ -292,50 +140,52 @@ function KOTCard({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function kitchenSourceOrders(
+  activeOrders: ReturnType<typeof selectActiveOrders>,
+  counterOrders: ReturnType<typeof selectCounterOrders>
+) {
+  const liveCounter = counterOrders.filter(
+    (o) => o.status !== 'completed' && o.status !== 'cancelled'
+  );
+  const activeIds = new Set(activeOrders.map((o) => o.id));
+  const counterOnly = liveCounter.filter((o) => !activeIds.has(o.id));
+  return [...activeOrders, ...counterOnly];
+}
 
 export function Kitchen() {
   const dispatch = useAppDispatch();
-
-  // Read from Redux — AppShell's WS handlers keep these slices live
   const activeOrders = useAppSelector(selectActiveOrders);
   const counterOrders = useAppSelector(selectCounterOrders);
-  const allOrders = useMemo(
-    () => [...activeOrders, ...counterOrders],
-    [activeOrders, counterOrders]
-  );
-
+  const tables = useAppSelector(selectTables);
   const menuItems = useAppSelector(selectMenuItems);
   const menuHydrated = useAppSelector(selectMenuHydrated);
+  const tablesHydrated = useAppSelector(selectTablesHydrated);
+
+  const sourceOrders = useMemo(
+    () => kitchenSourceOrders(activeOrders, counterOrders),
+    [activeOrders, counterOrders]
+  );
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(() => wsService.isConnected());
 
-  // Tick every minute to keep elapsed-time labels fresh
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  // Track WS connection status for the indicator
   useEffect(() => {
     setConnected(wsService.isConnected());
     const unsub1 = wsService.on('connected', () => setConnected(true));
     const unsub2 = wsService.on('disconnected', () => setConnected(false));
-    return () => { unsub1(); unsub2(); };
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
-  const menuMap = useMemo(
-    () =>
-      Object.fromEntries(
-        menuItems.map((m) => [m.id, { name: m.name, readily_available: m.readily_available }])
-      ) as Record<string, MenuEntry>,
-    [menuItems]
-  );
-
-  // ── Optimistic mark-ready — dispatches to Redux (AppShell's WS handler can't revert it due to max-status guard)
   const onItemReady = useCallback(
     (orderId: string, itemId: string) => {
       dispatch(patchOrderItemStatus({ orderId, itemId, status: 'ready' }));
@@ -343,42 +193,43 @@ export function Kitchen() {
     [dispatch]
   );
 
-  // ── Initial data fetch — populates both Redux slices ──────────────────────
-
-  const fetchOrders = useCallback(async () => {
+  const fetchKitchenOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [dineInRes, counterRes] = await Promise.all([
-        apiClient.listOrders('active', 100),
-        apiClient.listCounterOrdersToday().catch(() => ({ orders: [] as Order[], total: 0 })),
-        !menuHydrated
-          ? apiClient.listMenuItems().then((items) => dispatch(setMenuItems(items)))
-          : Promise.resolve(),
-      ]);
+      const tasks: Promise<unknown>[] = [
+        apiClient.listOrdersSummary('active').then((res) => {
+          dispatch(setActiveOrders(res.orders));
+        }),
+      ];
+      if (!menuHydrated) {
+        tasks.push(apiClient.listMenuItems().then((items) => dispatch(setMenuItems(items))));
+      }
+      if (!tablesHydrated) {
+        tasks.push(apiClient.getTables().then((t) => dispatch(setTables(t))));
+      }
+      await Promise.all(tasks);
 
-      dispatch(setActiveOrders(dineInRes.orders));
-
-      const dineInIds = new Set(dineInRes.orders.map((o) => o.id));
-      const todayCounterOrders = (counterRes.orders ?? []).filter(
-        (o) => o.status !== 'cancelled' && !dineInIds.has(o.id)
-      );
-      dispatch(setCounterOrders(todayCounterOrders));
+      store.getState().orders.counterOrders.forEach((order) => {
+        if (order.status === 'completed' || order.status === 'cancelled') {
+          dispatch(removeCounterOrder(order.id));
+        }
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load kitchen orders');
     } finally {
       setLoading(false);
     }
-  }, [dispatch, menuHydrated]);
+  }, [dispatch, menuHydrated, tablesHydrated]);
 
-  // Mount: fetch once — WS (via AppShell) keeps Redux live after that
   useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+    void fetchKitchenOrders();
+  }, [fetchKitchenOrders]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-
-  const tickets = useMemo(() => buildTickets(allOrders, menuMap), [allOrders, menuMap]);
+  const tickets = useMemo(
+    () => buildKotTickets(sourceOrders, tables, menuItems),
+    [sourceOrders, tables, menuItems]
+  );
   const prepSummary = useMemo(() => buildPrepSummary(tickets), [tickets]);
 
   const statsKOTs = tickets.length;
@@ -400,16 +251,15 @@ export function Kitchen() {
         }
       />
 
-      {error && (
+      {error ? (
         <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}{' '}
-          <button onClick={fetchOrders} className="font-semibold underline">
+          <button onClick={() => void fetchKitchenOrders()} className="font-semibold underline">
             Retry
           </button>
         </div>
-      )}
+      ) : null}
 
-      {/* Stats bar */}
       <div className="mb-5 grid grid-cols-3 divide-x divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
         <div className="flex flex-col items-center py-4">
           <span className="text-2xl font-bold text-primary">{statsKOTs}</span>
@@ -425,8 +275,7 @@ export function Kitchen() {
         </div>
       </div>
 
-      {/* Batch prep — cook by dish */}
-      {prepSummary.length > 0 && (
+      {prepSummary.length > 0 ? (
         <div className="mb-5">
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">
             Batch prep — cook by dish
@@ -434,20 +283,20 @@ export function Kitchen() {
           <div className="flex gap-2 overflow-x-auto pb-1">
             {prepSummary.map((entry) => (
               <div
-                key={entry.name}
-                className="flex shrink-0 flex-col rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm min-w-24"
+                key={entry.menuId}
+                className="flex min-w-24 shrink-0 flex-col rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm"
               >
-                <p className="text-xs font-semibold leading-tight text-gray-800 line-clamp-2">
+                <p className="line-clamp-2 text-xs font-semibold leading-tight text-gray-800">
                   {entry.name}
                 </p>
-                <span className="mt-1 text-lg font-extrabold text-primary">×{entry.qty}</span>
+                <span className="mt-1 text-lg font-extrabold text-primary">×{entry.totalQty}</span>
               </div>
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {loading && allOrders.length === 0 ? (
+      {loading && sourceOrders.length === 0 ? (
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" className="text-primary" />
         </div>
@@ -455,7 +304,7 @@ export function Kitchen() {
         <EmptyState
           icon={ChefHat}
           title="No KOTs in kitchen"
-          description="Each order from dine-in or counter creates a numbered ticket in FIFO order"
+          description="Each save from dine-in or counter creates a numbered ticket in FIFO order"
         />
       ) : (
         <div className="mx-auto max-w-2xl space-y-3">
