@@ -22,7 +22,7 @@ export function TrackingQrModal({
   paymentSummary,
   kitchenEnabled = false,
   title = 'Payment successful',
-  confirmLabel = 'Next order',
+  confirmLabel = 'Close',
   zIndexClass = 'z-[60]',
 }: TrackingQrModalProps) {
   return (
