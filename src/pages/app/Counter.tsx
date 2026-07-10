@@ -40,6 +40,12 @@ type PaymentMethod = 'cash' | 'upi' | 'split';
 type DietFilter = 'all' | 'veg' | 'non_veg';
 type DiscountType = 'amount' | 'percent';
 
+interface PostPaymentQr {
+  ticket: number | null;
+  trackingUrl: string | null;
+  summary: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -201,15 +207,12 @@ interface NewOrderPanelProps {
   open: boolean;
   onClose: () => void;
   onCreated: (order: Order) => void;
+  onPaymentComplete: (data: PostPaymentQr) => void;
   menuItems: MenuItem[];
 }
 
-function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelProps) {
+function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems }: NewOrderPanelProps) {
   const profile = useAppSelector(selectProfile);
-  const counterKitchenEnabled = useMemo(
-    () => parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined).kitchen_counter,
-    [profile?.subscription_limits]
-  );
   const counterModes = profile?.counter_service_modes ?? 'both';
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
 
@@ -238,12 +241,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [successTicket, setSuccessTicket] = useState<number | null>(null);
-  const [trackingUrl, setTrackingUrl] = useState<string | null>(null);
-  const [lastPaymentSummary, setLastPaymentSummary] = useState<string | null>(null);
-  const [showTrackingModal, setShowTrackingModal] = useState(false);
-  const [paymentComplete, setPaymentComplete] = useState(false);
-
   const panelWasOpenRef = useRef(false);
 
   const resetPaymentFields = useCallback(() => {
@@ -263,11 +260,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       setSearch('');
       setDietFilter('all');
       setSelectedCategory(null);
-      setSuccessTicket(null);
-      setTrackingUrl(null);
-      setLastPaymentSummary(null);
-      setShowTrackingModal(false);
-      setPaymentComplete(false);
       setShowCheckout(false);
       setShowCashModal(false);
       setShowUpiModal(false);
@@ -395,12 +387,9 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
       setShowCashModal(false);
       setShowUpiModal(false);
       setShowSplitCashModal(false);
-      setSuccessTicket(ticket);
-      setTrackingUrl(url);
-      setLastPaymentSummary(summary);
-      setPaymentComplete(true);
-      setShowTrackingModal(true);
       onCreated(paidOrder);
+      onPaymentComplete({ ticket, trackingUrl: url, summary });
+      resetForNextOrder();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
       throw err;
@@ -458,18 +447,16 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
     ).catch(() => undefined);
   }
 
-  function handleNextOrder() {
-    setSuccessTicket(null);
-    setTrackingUrl(null);
-    setLastPaymentSummary(null);
-    setShowTrackingModal(false);
-    setPaymentComplete(false);
+  function resetForNextOrder() {
     setCart([]);
     setSearch('');
     setSelectedCategory(null);
     resetPaymentFields();
     apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => null);
   }
+
+  const paymentFlowActive =
+    processing || showCheckout || showCashModal || showUpiModal || showSplitCashModal;
 
   function openUpiModal(method: PaymentMethod) {
     setPaymentMethod(method);
@@ -494,7 +481,12 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div
+        className="fixed inset-0 z-40 bg-black/30"
+        onClick={() => {
+          if (!paymentFlowActive) onClose();
+        }}
+      />
       <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col bg-white shadow-2xl">
         <div className="flex shrink-0 items-start justify-between border-b border-gray-100 px-6 py-4">
           <div>
@@ -508,44 +500,16 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={() => {
+              if (!paymentFlowActive) onClose();
+            }}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {paymentComplete ? (
-          <div className="flex flex-1 flex-col items-center overflow-y-auto p-8 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
-              <Ticket className="h-8 w-8 text-primary" />
-            </div>
-            <p className="text-sm font-medium text-green-600">Payment Complete!</p>
-            {successTicket != null ? (
-              <h3 className="mt-1 text-2xl font-bold text-gray-900">Ticket #{successTicket}</h3>
-            ) : null}
-            {lastPaymentSummary ? (
-              <p className="mt-2 text-sm text-gray-600">{lastPaymentSummary}</p>
-            ) : null}
-            {trackingUrl ? (
-              <p className="mt-4 text-sm text-gray-500">
-                Customer tracking QR is open — scan to view bill and download.
-              </p>
-            ) : (
-              <p className="mt-4 text-sm text-amber-600">
-                Tracking link unavailable. Customer can ask staff for receipt.
-              </p>
-            )}
-
-            <button
-              onClick={handleNextOrder}
-              className="mt-6 w-full rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90 transition-colors"
-            >
-              Next Order
-            </button>
-          </div>
-        ) : (
-          <>
+        <>
             {showModeToggle && (
               <div className="shrink-0 flex gap-2 border-b border-gray-100 px-6 py-3">
                 {(['eat_here', 'takeaway'] as ServiceMode[]).map((m) => (
@@ -715,8 +679,7 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
                 </button>
               </div>
             )}
-          </>
-        )}
+        </>
       </div>
 
       {/* Checkout review — pick payment method (matches mobile) */}
@@ -954,17 +917,6 @@ function NewOrderPanel({ open, onClose, onCreated, menuItems }: NewOrderPanelPro
           </button>
         </div>
       </Modal>
-
-      <TrackingQrModal
-        open={showTrackingModal}
-        onClose={() => setShowTrackingModal(false)}
-        ticketNumber={successTicket}
-        trackingUrl={trackingUrl}
-        paymentSummary={lastPaymentSummary}
-        kitchenEnabled={counterKitchenEnabled}
-        confirmLabel="Done"
-        zIndexClass="z-[60]"
-      />
     </>
   );
 }
@@ -987,6 +939,7 @@ export function Counter() {
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [postPaymentQr, setPostPaymentQr] = useState<PostPaymentQr | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1023,6 +976,21 @@ export function Counter() {
   const selectedTrackingUrl = selectedOrder ? resolveTrackingUrl(selectedOrder) : null;
   const selectedTicket =
     selectedOrder?.ticket_number ?? selectedOrder?.order_number ?? null;
+
+  const activeQr: PostPaymentQr | null =
+    postPaymentQr ??
+    (selectedOrder
+      ? {
+          ticket: selectedTicket,
+          trackingUrl: selectedTrackingUrl,
+          summary: `${fmt(selectedOrder.total)} · ${selectedOrder.payment_method?.toUpperCase() ?? 'Paid'}`,
+        }
+      : null);
+
+  function handleCloseQrModal() {
+    setPostPaymentQr(null);
+    setSelectedOrder(null);
+  }
 
   return (
     <div>
@@ -1124,22 +1092,20 @@ export function Counter() {
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
         onCreated={handleOrderCreated}
+        onPaymentComplete={setPostPaymentQr}
         menuItems={menuItems}
       />
 
       <TrackingQrModal
-        open={selectedOrder !== null}
-        onClose={() => setSelectedOrder(null)}
-        title="Order tracking QR"
+        open={activeQr !== null}
+        onClose={handleCloseQrModal}
+        title={postPaymentQr ? 'Payment successful' : 'Order tracking QR'}
         confirmLabel="Close"
-        ticketNumber={selectedTicket}
-        trackingUrl={selectedTrackingUrl}
+        ticketNumber={activeQr?.ticket ?? null}
+        trackingUrl={activeQr?.trackingUrl ?? null}
+        paymentSummary={activeQr?.summary ?? null}
         kitchenEnabled={counterKitchenEnabled}
-        paymentSummary={
-          selectedOrder
-            ? `${fmt(selectedOrder.total)} · ${selectedOrder.payment_method?.toUpperCase() ?? 'Paid'}`
-            : null
-        }
+        zIndexClass="z-[70]"
       />
     </div>
   );
