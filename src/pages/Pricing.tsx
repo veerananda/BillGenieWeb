@@ -6,6 +6,7 @@ import {
   BASIC_FEATURES,
   BASIC_MONTHLY_PRICE,
   PRICING,
+  TRIAL_DURATION_DAYS,
   annualMonthlyEquivalent,
   annualSavings,
   formatInr,
@@ -41,7 +42,7 @@ export function Pricing() {
           </h1>
           <p className="mt-5 text-lg text-ink-soft leading-relaxed">
             Start with the basics, then add only what your restaurant needs. Every plan starts
-            with a 30-day free trial.
+            with a {TRIAL_DURATION_DAYS}-day free trial.
           </p>
 
           {/* Billing toggle */}
@@ -90,7 +91,7 @@ export function Pricing() {
                 Everything a single-location restaurant needs to get started.
               </p>
               <div className="mt-5 inline-flex items-center rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary-dark">
-                30-day free trial
+                {TRIAL_DURATION_DAYS}-day free trial
               </div>
               <Link
                 to="/register"
@@ -158,7 +159,7 @@ export function Pricing() {
             Ready to get started?
           </h2>
           <p className="mt-3 text-white/70">
-            30-day free trial — no credit card required.
+            {TRIAL_DURATION_DAYS}-day free trial — no credit card required.
           </p>
           <Link
             to="/register"
