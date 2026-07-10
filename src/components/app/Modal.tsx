@@ -7,11 +7,12 @@ interface Props {
   title?: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  zIndexClass?: string;
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl' };
 
-export function Modal({ open, onClose, title, children, maxWidth = 'md' }: Props) {
+export function Modal({ open, onClose, title, children, maxWidth = 'md', zIndexClass = 'z-50' }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export function Modal({ open, onClose, title, children, maxWidth = 'md' }: Props
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+      className={`fixed inset-0 ${zIndexClass} flex items-end justify-center bg-black/50 sm:items-center sm:p-4`}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
       {/*
