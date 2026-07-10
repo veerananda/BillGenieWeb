@@ -23,6 +23,7 @@ type WSPayload = Record<string, unknown>;
 type EventCallback = (payload: WSPayload) => void;
 
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? 'wss://billgenie-api.fly.dev';
+const WS_DEBUG = import.meta.env.DEV;
 const TOKEN_KEY = 'auth_token';
 
 const RECONNECT_DELAY_MS = 3000;
@@ -76,7 +77,7 @@ class WebSocketService {
     }
 
     this.ws.onopen = () => {
-      console.log('[WS] connected');
+      if (WS_DEBUG) console.log('[WS] connected');
       this.connecting = false;
       this.reconnectAttempts = 0;
       this.emit('connected');
@@ -88,7 +89,7 @@ class WebSocketService {
         // Backend sends: { type, room_id, timestamp, data: {...} }
         // Mobile WS emits message.data — we do the same.
         const message = JSON.parse(event.data) as { type: WSEvent; data?: WSPayload } & WSPayload;
-        console.log('[WS] message:', message.type, message.data ?? message);
+        if (WS_DEBUG) console.log('[WS] message:', message.type, message.data ?? message);
         if (message?.type) {
           this.emit(message.type, message.data ?? {});
         }
@@ -103,7 +104,7 @@ class WebSocketService {
     };
 
     this.ws.onclose = (ev) => {
-      console.log('[WS] closed — code:', ev.code, 'clean:', ev.wasClean);
+      if (WS_DEBUG) console.log('[WS] closed — code:', ev.code, 'clean:', ev.wasClean);
       this.connecting = false;
       this.stopPing();
       this.emit('disconnected');
