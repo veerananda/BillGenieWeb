@@ -19,13 +19,12 @@ import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBil
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
-import { selectTables, setTables, upsertTable, setTableOccupied } from '../../store/tablesSlice';
+import { selectTables, setTables, upsertTable } from '../../store/tablesSlice';
 import {
   selectActiveOrders,
   setActiveOrders,
   upsertActiveOrder,
   removeActiveOrder,
-  patchOrderItemStatus,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import type { MenuItem } from '../../store/menuSlice';
@@ -37,7 +36,6 @@ import type {
   CreateOrderRequest,
 } from '../../services/api';
 import { apiClient } from '../../services/api';
-import wsService from '../../services/websocket';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -1361,85 +1359,10 @@ export function Orders() {
     [dispatch]
   );
 
-  // Load tables, orders, and menu on mount — WS handles all subsequent updates
+  // Load tables, orders, and menu on mount — AppShell WS hub handles all subsequent updates
   useEffect(() => {
     fetchTablesAndOrders({ showLoader: true, includeMenu: !menuHydrated });
   }, [fetchTablesAndOrders]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Direct WS subscriptions — data IS the order/table object (backend: { type, data: {...} })
-  useEffect(() => {
-    const unsubs = [
-      wsService.on('order_created', (data) => {
-        if (data.id) {
-          dispatch(upsertActiveOrder(data as unknown as Order));
-          const tableId = (data.table_id ?? data.tableId) as string | undefined;
-          if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: true, currentOrderId: data.id as string }));
-        }
-      }),
-      wsService.on('order_updated', (data) => {
-        const orderId = (data.id ?? data.order_id) as string | undefined;
-        if (!orderId) return;
-        const items = data.items as Order['items'] | undefined;
-        if (data.id && items?.length) {
-          // Full order included — upsert directly (upsertOrder guards against overwriting items)
-          dispatch(upsertActiveOrder(data as unknown as Order));
-        } else {
-          // Partial event (no items) — fetch fresh so we get the latest item statuses
-          apiClient.getOrder(orderId)
-            .then((fresh) => dispatch(upsertActiveOrder(fresh)))
-            .catch(() => {});
-        }
-      }),
-      wsService.on('order_status_changed', (data) => {
-        const orderId = (data.id ?? data.order_id) as string | undefined;
-        if (!orderId) return;
-        const items = data.items as Order['items'] | undefined;
-        if (data.id && items?.length) {
-          dispatch(upsertActiveOrder(data as unknown as Order));
-        } else {
-          apiClient.getOrder(orderId)
-            .then((fresh) => dispatch(upsertActiveOrder(fresh)))
-            .catch(() => {});
-        }
-      }),
-      wsService.on('order_item_status_changed', (data) => {
-        const orderId = (data.order_id ?? data.id) as string | undefined;
-        const itemId = (data.item_id ?? data.itemId) as string | undefined;
-        const status = data.status as string | undefined;
-
-        // Patch the specific item immediately for instant feedback
-        if (orderId && itemId && status) {
-          dispatch(patchOrderItemStatus({ orderId, itemId, status }));
-        }
-
-        // If the event also carries a full items array, upsert the whole order
-        const items = data.items as Order['items'] | undefined;
-        if (data.id && items?.length) {
-          dispatch(upsertActiveOrder(data as unknown as Order));
-        }
-      }),
-      wsService.on('order_completed', (data) => {
-        const orderId = (data.id ?? data.order_id) as string | undefined;
-        if (orderId) dispatch(removeActiveOrder(orderId));
-        const tableId = (data.table_id ?? data.tableId) as string | undefined;
-        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
-      }),
-      wsService.on('order_cancelled', (data) => {
-        const orderId = (data.id ?? data.order_id) as string | undefined;
-        if (orderId) dispatch(removeActiveOrder(orderId));
-        const tableId = (data.table_id ?? data.tableId) as string | undefined;
-        if (tableId) dispatch(setTableOccupied({ tableId, isOccupied: false }));
-      }),
-      wsService.on('table_status_changed', (data) => {
-        const tableId = (data.table_id ?? data.tableId) as string | undefined;
-        if (tableId !== undefined) {
-          dispatch(setTableOccupied({ tableId, isOccupied: Boolean(data.is_occupied ?? data.isOccupied) }));
-        }
-        if (data.table) dispatch(upsertTable(data.table as unknown as RestaurantTable));
-      }),
-    ];
-    return () => unsubs.forEach((fn) => fn());
-  }, [dispatch]);
 
   // Keep selectedTable in sync with Redux when WS updates arrive (table_status_changed etc.)
   useEffect(() => {

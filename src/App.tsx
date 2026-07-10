@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -13,19 +14,33 @@ import { VerifyEmail } from './pages/auth/VerifyEmail';
 import { EmailVerificationPending } from './pages/auth/EmailVerificationPending';
 import { ProtectedRoute } from './components/app/ProtectedRoute';
 import { AppShell } from './components/app/AppShell';
-import { Dashboard } from './pages/app/Dashboard';
-import { Menu } from './pages/app/Menu';
-import { Orders } from './pages/app/Orders';
-import { Counter } from './pages/app/Counter';
-import { Kitchen } from './pages/app/Kitchen';
-import { Sales } from './pages/app/Sales';
-import { History } from './pages/app/History';
-import { Staff } from './pages/app/Staff';
-import { Profile } from './pages/app/Profile';
-import { Inventory } from './pages/app/Inventory';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
 import { Contact } from './pages/Contact';
+import { Spinner } from './components/app/Spinner';
+
+const Dashboard = lazy(() => import('./pages/app/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Menu = lazy(() => import('./pages/app/Menu').then((m) => ({ default: m.Menu })));
+const Orders = lazy(() => import('./pages/app/Orders').then((m) => ({ default: m.Orders })));
+const Counter = lazy(() => import('./pages/app/Counter').then((m) => ({ default: m.Counter })));
+const Kitchen = lazy(() => import('./pages/app/Kitchen').then((m) => ({ default: m.Kitchen })));
+const Sales = lazy(() => import('./pages/app/Sales').then((m) => ({ default: m.Sales })));
+const History = lazy(() => import('./pages/app/History').then((m) => ({ default: m.History })));
+const Staff = lazy(() => import('./pages/app/Staff').then((m) => ({ default: m.Staff })));
+const Profile = lazy(() => import('./pages/app/Profile').then((m) => ({ default: m.Profile })));
+const Inventory = lazy(() => import('./pages/app/Inventory').then((m) => ({ default: m.Inventory })));
+
+function AppRouteFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center p-8">
+      <Spinner />
+    </div>
+  );
+}
+
+function LazyAppPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<AppRouteFallback />}>{children}</Suspense>;
+}
 
 function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -67,16 +82,16 @@ function App() {
         }
       >
         <Route index element={<Navigate to="/app/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="menu" element={<Menu />} />
-        <Route path="orders" element={<Orders />} />
-        <Route path="counter" element={<Counter />} />
-        <Route path="kitchen" element={<Kitchen />} />
-        <Route path="sales" element={<Sales />} />
-        <Route path="history" element={<History />} />
-        <Route path="staff" element={<Staff />} />
-        <Route path="profile" element={<Profile />} />
-        <Route path="inventory" element={<Inventory />} />
+        <Route path="dashboard" element={<LazyAppPage><Dashboard /></LazyAppPage>} />
+        <Route path="menu" element={<LazyAppPage><Menu /></LazyAppPage>} />
+        <Route path="orders" element={<LazyAppPage><Orders /></LazyAppPage>} />
+        <Route path="counter" element={<LazyAppPage><Counter /></LazyAppPage>} />
+        <Route path="kitchen" element={<LazyAppPage><Kitchen /></LazyAppPage>} />
+        <Route path="sales" element={<LazyAppPage><Sales /></LazyAppPage>} />
+        <Route path="history" element={<LazyAppPage><History /></LazyAppPage>} />
+        <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
+        <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
+        <Route path="inventory" element={<LazyAppPage><Inventory /></LazyAppPage>} />
       </Route>
 
       {/* Fallback */}
