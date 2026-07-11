@@ -13,6 +13,8 @@ import {
   ArrowLeftRight,
   QrCode,
   Printer,
+  Users,
+  Clock,
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
@@ -88,7 +90,7 @@ function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
 // ── Table card ─────────────────────────────────────────────────────────────────
 
 function billSubtotal(order: Order): number {
-  const fromItems = order.items.reduce((sum, item) => {
+  const fromItems = (order.items ?? []).reduce((sum, item) => {
     if (item.total > 0) return sum + item.total;
     return sum + (item.unit_rate || 0) * item.quantity;
   }, 0);
@@ -108,7 +110,7 @@ function TableCard({
   const occupied = table.is_occupied;
   const derived = occupied && order ? getDerivedItemStatus(order) : null;
 
-  const readyCount = order?.items.filter((i) => i.status === 'ready').length ?? 0;
+  const readyCount = order?.items?.filter((i) => i.status === 'ready').length ?? 0;
 
   return (
     <button
@@ -124,8 +126,17 @@ function TableCard({
       {/* Badge row */}
       <div className="flex items-start justify-between gap-2">
         <Badge variant={derived === 'ready' ? 'warning' : occupied ? 'occupied' : 'vacant'}>
-          {derived === 'ready' ? 'Ready' : occupied ? 'In use' : 'Vacant'}
+          <span className="flex items-center gap-1">
+            {derived === 'ready' && <CheckCircle className="h-3 w-3" />}
+            {derived === 'ready' ? 'Ready to serve' : occupied ? 'In use' : 'Vacant'}
+          </span>
         </Badge>
+        {table.capacity ? (
+          <span className="flex items-center gap-1 text-xs text-gray-400">
+            <Users size={11} />
+            {table.capacity}
+          </span>
+        ) : null}
       </div>
 
       {/* Table name */}
@@ -143,11 +154,11 @@ function TableCard({
           ) : (
             <>
               <p className="text-xs text-gray-500">
-                {order.items.length > 0
-                  ? (() => { const qty = order.items.reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
+                {(order.items?.length ?? 0) > 0
+                  ? (() => { const qty = (order.items ?? []).reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
                   : 'No items yet'}
               </p>
-              {order.items.length > 0 && (
+              {(order.items?.length ?? 0) > 0 && (
                 <p className="text-sm font-semibold text-primary">{fmt(billSubtotal(order))}</p>
               )}
               {derived === 'cooking' && (
@@ -276,9 +287,18 @@ function OrderDetailPanel({
   const profile = useAppSelector(selectProfile);
   const menuMap = new Map(menuItems.map((m) => [m.id, m]));
 
+  // Hydrate full order (with items) when the panel opens or items are missing
+  useEffect(() => {
+    if (!order.items?.length) {
+      apiClient.getOrder(order.id)
+        .then((full) => dispatch(upsertActiveOrder(full)))
+        .catch(() => {});
+    }
+  }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Compute totals — use GST setting from profile
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
-  const computedSubtotal = order.items.reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
+  const computedSubtotal = (order.items ?? []).reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
   // When prices include GST: gross = item prices as shown on menu (already GST-inclusive).
   // order.sub_total from the API is the pre-tax base (backend already extracted GST), so using it
   // here would double-extract GST. Always use computedSubtotal when prices include GST.
@@ -288,6 +308,8 @@ function OrderDetailPanel({
     : (order.sub_total > 0 ? order.sub_total : computedSubtotal);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [checkoutAcquired, setCheckoutAcquired] = useState(false);
+  const [checkoutConflictMsg, setCheckoutConflictMsg] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [discountAmount, setDiscountAmount] = useState('');
@@ -314,7 +336,7 @@ function OrderDetailPanel({
     try {
       const updatedOrder: Order = {
         ...order,
-        items: order.items.map((i) => (i.id === itemId ? { ...i, status: 'served' } : i)),
+        items: (order.items ?? []).map((i) => (i.id === itemId ? { ...i, status: 'served' } : i)),
       };
       dispatch(upsertActiveOrder(updatedOrder));
       await apiClient.updateOrderItemStatus(order.id, itemId, 'served');
@@ -325,15 +347,10 @@ function OrderDetailPanel({
     }
   };
 
-  // ── Kitchen status column ─────────────────────────────────────────────────
-  const showKitchenStatus = order.items.some(
-    (item) => item.status === 'cooking' || item.status === 'ready' || item.status === 'served'
-  );
-
   // ── Group duplicate menu items by menu_id ────────────────────────────────
   const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
   const groupedItems = Object.values(
-    order.items.reduce<
+    (order.items ?? []).reduce<
       Record<string, { menuId: string; name: string; quantity: number; total: number; status: string; ids: string[] }>
     >((acc, item) => {
       const key = item.menu_id;
@@ -377,7 +394,11 @@ function OrderDetailPanel({
 
   const closePaymentModal = () => {
     if (!paymentLoading) {
+      if (checkoutAcquired) {
+        apiClient.cancelCheckout(order.id);
+      }
       setPaymentOpen(false);
+      setCheckoutAcquired(false);
       setDiscountAmount('');
       setAmountReceived('');
       setUpiTransactionId('');
@@ -389,21 +410,27 @@ function OrderDetailPanel({
   };
 
   const handleCheckout = () => {
-    // Open the payment modal immediately; call startCheckout in the background
     setPaymentOpen(true);
     setPaymentError(null);
-    apiClient.startCheckout(order.id).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message.toLowerCase() : '';
-      if (msg.includes('no longer active')) {
-        setPaymentOpen(false);
-        onOrderCompleted(order.id, table.id);
-        return;
-      }
-      if (msg.includes('checkout already in progress')) {
-        setPaymentError('Another device is already checking out this table. Please wait.');
-      }
-      // For other errors keep the modal open — user can still attempt payment
-    });
+    setCheckoutConflictMsg(null);
+    setCheckoutAcquired(false);
+    apiClient.startCheckout(order.id)
+      .then(() => setCheckoutAcquired(true))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message.toLowerCase() : '';
+        if (msg.includes('no longer active')) {
+          setPaymentOpen(false);
+          onOrderCompleted(order.id, table.id);
+          return;
+        }
+        if (msg.includes('checkout already in progress')) {
+          // Close modal, show error in the drawer so another device can proceed
+          setPaymentOpen(false);
+          setCheckoutConflictMsg('Checkout is already in progress on another device. Please wait.');
+          return;
+        }
+        setPaymentError(err instanceof Error ? err.message : 'Could not start checkout');
+      });
   };
 
   const handleOpenBillShare = async () => {
@@ -489,6 +516,7 @@ function OrderDetailPanel({
       const updatedTable = await apiClient.setTableVacant(table.id);
       dispatch(upsertTable(updatedTable));
       dispatch(removeActiveOrder(order.id));
+      setCheckoutAcquired(false);
       onOrderCompleted(order.id, table.id);
     } catch (err: unknown) {
       setPaymentError(err instanceof Error ? err.message : 'Payment failed');
@@ -540,51 +568,71 @@ function OrderDetailPanel({
           </button>
         </div>
 
+        {/* Customer name */}
+        {order.customer_name && (
+          <div className="border-b border-gray-100 px-6 py-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Customer</p>
+            <p className="mt-0.5 text-sm font-medium text-gray-900">{order.customer_name}</p>
+          </div>
+        )}
+
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs font-medium text-gray-400">
-                <th className="pb-2">Item</th>
-                <th className="pb-2 text-center">Qty</th>
-                <th className="pb-2 text-right">Total</th>
-                {showKitchenStatus && <th className="pb-2 text-right">Status</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {groupedItems.map((item) => (
-                <tr key={item.menuId}>
-                  <td className="py-2.5 text-gray-900">{item.name}</td>
-                  <td className="py-2.5 text-center text-gray-600">{item.quantity}</td>
-                  <td className="py-2.5 text-right font-medium text-gray-900">
-                    {fmt(item.total)}
-                  </td>
-                  {showKitchenStatus && (
-                    <td className="py-2.5 text-right">
-                      {item.status === 'ready' ? (
-                        <button
-                          onClick={() => item.ids.forEach((id) => handleServe(id))}
-                          disabled={item.ids.some((id) => servingId === id)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-                        >
-                          {item.ids.some((id) => servingId === id) ? (
-                            <Spinner size="sm" className="text-white" />
-                          ) : (
-                            <CheckCircle className="h-3 w-3" />
-                          )}
-                          Serve
-                        </button>
-                      ) : (
-                        <Badge variant={orderStatusVariant(item.status)}>
-                          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                        </Badge>
-                      )}
-                    </td>
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-400">
+            Items ({groupedItems.length})
+          </p>
+          <div className="space-y-3">
+            {groupedItems.map((item) => {
+              const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
+              const isReady = item.status === 'ready';
+              const isCooking = item.status === 'cooking';
+              const isServed = item.status === 'served';
+              const isServing = item.ids.some((id) => servingId === id);
+              return (
+                <div key={item.menuId} className="flex items-center gap-3">
+                  {/* Status icon — tappable when ready */}
+                  {isReady ? (
+                    <button
+                      onClick={() => item.ids.forEach((id) => handleServe(id))}
+                      disabled={isServing}
+                      title="Tap to mark as served"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-all hover:bg-primary/20 disabled:opacity-50 active:scale-95"
+                    >
+                      {isServing
+                        ? <CheckCircle className="h-5 w-5 text-primary" />
+                        : <UtensilsCrossed className="h-5 w-5 text-primary" />}
+                    </button>
+                  ) : isServed ? (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                      <CheckCircle className="h-5 w-5 text-primary" />
+                    </div>
+                  ) : (
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isCooking ? 'bg-amber-50' : 'bg-gray-100'}`}>
+                      <Clock className={`h-5 w-5 ${isCooking ? 'text-amber-500' : 'text-gray-400'}`} />
+                    </div>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+                  {/* Name + qty */}
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                    <p className="text-xs text-gray-500">{item.quantity}× {fmt(unitPrice)}</p>
+                  </div>
+
+                  {/* Total + status label */}
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    <span className="text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
+                    {isReady ? (
+                      <span className="text-xs font-medium text-primary">Tap to serve</span>
+                    ) : isCooking ? (
+                      <Badge variant="cooking">Cooking</Badge>
+                    ) : isServed ? (
+                      <Badge variant="served">Served</Badge>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Totals */}
@@ -613,29 +661,16 @@ function OrderDetailPanel({
 
         {/* Actions */}
         <div className="border-t border-gray-100 px-6 py-4 space-y-3">
+          {checkoutConflictMsg && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+              {checkoutConflictMsg}
+            </div>
+          )}
           {order.status !== 'completed' && order.status !== 'cancelled' && (
             <>
               <button
-                type="button"
-                onClick={handleOpenBillShare}
-                disabled={billShareLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
-              >
-                {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
-                Customer bill QR
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePrintBill}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                <Printer className="h-4 w-4" />
-                Print bill
-              </button>
-
-              <button
-                onClick={handleCheckout}
+                onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
               >
                 <CreditCard className="h-4 w-4" />
@@ -688,24 +723,76 @@ function OrderDetailPanel({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleOpenBillShare}
-            disabled={billShareLoading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
-          >
-            {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
-            Customer bill QR
-          </button>
+          {/* Bill summary */}
+          <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-1.5">
+            {groupedItems.map((item) => (
+              <div key={item.menuId} className="flex justify-between text-sm">
+                <span className="text-gray-600">{item.name} ×{item.quantity}</span>
+                <span className="font-medium text-gray-900">{fmt(item.total)}</span>
+              </div>
+            ))}
+            <div className="border-t border-gray-200 pt-1.5 space-y-1">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>{taxResult.subtotalLabel}</span>
+                <span>{fmt(displaySubtotal)}</span>
+              </div>
+              {displayTax > 0 && (
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Tax (5%)</span>
+                  <span>{fmt(displayTax)}</span>
+                </div>
+              )}
+              {discountValue > 0 && (
+                <div className="flex justify-between text-xs text-green-600">
+                  <span>Discount</span>
+                  <span>-{fmt(discountValue)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-gray-200 pt-1 text-sm font-bold text-gray-900">
+                <span>Total</span>
+                <span>{fmt(displayTotal)}</span>
+              </div>
+            </div>
+          </div>
 
-          <button
-            type="button"
-            onClick={handlePrintBill}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            <Printer className="h-4 w-4" />
-            Print bill
-          </button>
+          {/* Discount (common to all payment methods) */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Discount (optional)</label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+              <input
+                type="number"
+                min={0}
+                max={gross}
+                step="0.01"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                placeholder="0"
+                className="w-full rounded-xl border border-gray-200 py-2.5 pl-7 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          {/* Share + print */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleOpenBillShare}
+              disabled={billShareLoading}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+            >
+              {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
+              Customer QR
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintBill}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <Printer className="h-4 w-4" />
+              Print bill
+            </button>
+          </div>
 
           {/* Payment method tabs */}
           <div className="flex gap-2">
@@ -782,32 +869,6 @@ function OrderDetailPanel({
           {/* ── Cash layout ── */}
           {paymentMethod === 'cash' && (
             <div className="space-y-4">
-              {/* Bill amount */}
-              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-                <p className="mb-1 text-xs font-medium text-gray-500">Bill Amount</p>
-                <p className="text-2xl font-bold text-primary">{fmt(displayTotal)}</p>
-              </div>
-
-              {/* Discount */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Discount (optional)
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={displayTotal}
-                    step="0.01"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              </div>
-
               {/* Amount received */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -824,37 +885,23 @@ function OrderDetailPanel({
                 />
               </div>
 
-              {/* Summary */}
-              <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-2">
-                {discountValue > 0 && (
+              {/* Change */}
+              {amountReceived && !isNaN(parseFloat(amountReceived)) && (
+                <div className="rounded-xl bg-gray-50 px-4 py-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Discount:</span>
-                    <span className="font-semibold text-green-600">-{fmt(discountValue)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Amount to Receive:</span>
-                  <span className="font-semibold text-gray-900">{fmt(effectiveTotal)}</span>
-                </div>
-                {amountReceived && !isNaN(parseFloat(amountReceived)) && (
-                  <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
                     <span className="text-gray-600">Change to Return:</span>
                     <span className={`font-semibold ${changeAmount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
                       {fmt(Math.max(0, changeAmount))}
                     </span>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* ── Split bill layout ── */}
           {paymentMethod === 'split' && splitPhase === 'cash' && (
             <div className="space-y-4">
-              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-                <p className="mb-1 text-xs font-medium text-gray-500">Total Bill</p>
-                <p className="text-2xl font-bold text-primary">{fmt(effectiveTotal)}</p>
-              </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
                   Cash portion (customer pays in cash)
@@ -1329,7 +1376,7 @@ export function Orders() {
       try {
         const promises: Promise<unknown>[] = [
           apiClient.getTables(),
-          apiClient.listOrdersSummary('active'),
+          apiClient.listOrders('active'),
         ];
         if (opts.includeMenu) promises.push(apiClient.listMenuItems());
 

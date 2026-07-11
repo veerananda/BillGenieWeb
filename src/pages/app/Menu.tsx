@@ -475,7 +475,9 @@ export function Menu() {
       ) : (
         /* ── Category accordions ── */
         <div className="space-y-3">
-          {categories.map((cat) => {
+          {categories
+            .filter((cat) => dietFilter === 'all' || cat.items.some((item) => matchesDiet(item, dietFilter)))
+            .map((cat) => {
             const isExpanded = expandedCategory === cat.name;
             const visibleItems = cat.items.filter((item) => matchesDiet(item, dietFilter));
             return (
