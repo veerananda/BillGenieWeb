@@ -509,6 +509,10 @@ export function Profile() {
       setTableModalError('Table name is required.');
       return;
     }
+    if (name.length > 7) {
+      setTableModalError('Table name must be 7 characters or less.');
+      return;
+    }
     setTableModalSaving(true);
     setTableModalError(null);
     try {
@@ -911,7 +915,7 @@ export function Profile() {
               autoFocus
               type="text"
               value={tableModalName}
-              maxLength={20}
+              maxLength={7}
               onChange={(e) => {
                 setTableModalName(e.target.value);
                 setTableModalError(null);
