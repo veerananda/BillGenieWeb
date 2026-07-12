@@ -63,14 +63,22 @@ export function AppShell() {
     if (!apiClient.isAuthenticated()) return;
     Promise.allSettled([
       apiClient.listOrdersSummary('active'),
+      apiClient.listCounterOrdersToday(),
       apiClient.getTables(),
-    ]).then(([ordersRes, tablesRes]) => {
+    ]).then(([ordersRes, counterRes, tablesRes]) => {
       if (ordersRes.status === 'fulfilled') {
         const dineIn = ordersRes.value?.orders ?? [];
+        store.dispatch(setActiveOrders(dineIn));
+      }
+      if (counterRes.status === 'fulfilled') {
+        const counter = (counterRes.value?.orders ?? []).filter(
+          (o) => o.status !== 'completed' && o.status !== 'cancelled'
+        );
+        store.dispatch(setCounterOrders(counter));
+      } else if (ordersRes.status === 'fulfilled') {
         const counter = store.getState().orders.counterOrders.filter(
           (o) => o.status !== 'completed' && o.status !== 'cancelled'
         );
-        store.dispatch(setActiveOrders(dineIn));
         store.dispatch(setCounterOrders(counter));
       }
       if (tablesRes.status === 'fulfilled') {

@@ -8,6 +8,7 @@ import {
   selectActiveOrders,
   selectCounterOrders,
   removeCounterOrder,
+  setCounterOrders,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { selectTables, setTables, selectTablesHydrated } from '../../store/tablesSlice';
@@ -200,6 +201,12 @@ export function Kitchen() {
       const tasks: Promise<unknown>[] = [
         apiClient.listOrdersSummary('active').then((res) => {
           dispatch(setActiveOrders(res.orders));
+        }),
+        apiClient.listCounterOrdersToday().then((res) => {
+          const activeCounter = (res.orders ?? []).filter(
+            (o) => o.status !== 'completed' && o.status !== 'cancelled'
+          );
+          dispatch(setCounterOrders(activeCounter));
         }),
       ];
       if (!menuHydrated) {
