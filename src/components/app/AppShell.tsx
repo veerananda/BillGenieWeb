@@ -73,7 +73,15 @@ export function AppShell() {
         store.dispatch(setTables(tablesRes.value as RestaurantTable[]));
       }
       if (counterRes.status === 'fulfilled') {
-        store.dispatch(setCounterOrders(counterRes.value?.orders ?? []));
+        const counter = (counterRes.value?.orders ?? []).filter(
+          (o) => o.status !== 'completed' && o.status !== 'cancelled'
+        );
+        store.dispatch(setCounterOrders(counter));
+      } else if (ordersRes.status === 'fulfilled') {
+        const counter = store.getState().orders.counterOrders.filter(
+          (o) => o.status !== 'completed' && o.status !== 'cancelled'
+        );
+        store.dispatch(setCounterOrders(counter));
       }
     });
   }
