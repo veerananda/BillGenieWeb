@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Plus, X, Minus, Search, ShoppingCart, ChevronLeft, ChevronRight, Ticket, Percent, Tag,
+  Plus, X, Minus, Search, ShoppingCart, ChevronRight, Ticket, Percent, Tag,
   ArrowLeftRight, Banknote, Smartphone,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
@@ -111,34 +111,6 @@ function VegDot({ isVeg }: { isVeg: boolean }) {
   );
 }
 
-function ItemRow({
-  item, qty, onAdd,
-}: {
-  item: MenuItem; qty: number; onAdd: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <VegDot isVeg={item.is_veg} />
-          <span className="truncate text-sm font-medium text-gray-900">{item.name}</span>
-          {qty > 0 && (
-            <span className="rounded-full bg-primary px-1.5 py-0.5 text-xs font-bold text-white">
-              {qty}
-            </span>
-          )}
-        </div>
-        <p className="ml-4 mt-0.5 text-xs text-gray-500">{fmt(item.price)}</p>
-      </div>
-      <button
-        onClick={onAdd}
-        className="ml-3 flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
 
 function OrderSummaryBlock({
   cart,
@@ -220,7 +192,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [search, setSearch] = useState('');
   const [dietFilter, setDietFilter] = useState<DietFilter>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>('All');
   const [ticketNumber, setTicketNumber] = useState<number | null>(null);
 
   const [customerName, setCustomerName] = useState('');
@@ -241,6 +213,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const searchRef = useRef<HTMLInputElement>(null);
   const panelWasOpenRef = useRef(false);
 
   const resetPaymentFields = useCallback(() => {
@@ -259,7 +232,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setCart([]);
       setSearch('');
       setDietFilter('all');
-      setSelectedCategory(null);
+      setActiveCategory('All');
       setShowCheckout(false);
       setShowCashModal(false);
       setShowUpiModal(false);
@@ -271,44 +244,29 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setDiscountValue('');
       resetPaymentFields();
       apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => setTicketNumber(null));
+      setTimeout(() => searchRef.current?.focus(), 50);
     }
   }, [open, counterModes, resetPaymentFields]);
 
   const categories = useMemo(() => {
-    const map = new Map<string, MenuItem[]>();
-    menuItems.filter((m) => m.is_available).forEach((m) => {
-      if (!map.has(m.category)) map.set(m.category, []);
-      map.get(m.category)!.push(m);
-    });
-    return Array.from(map.entries()).map(([name, items]) => ({ name, items }));
+    const cats = new Set<string>();
+    menuItems.filter((m) => m.is_available).forEach((m) => cats.add(m.category));
+    return Array.from(cats);
   }, [menuItems]);
 
-  const filteredCategories = useMemo(() => {
-    if (dietFilter === 'all') return categories;
-    return categories
-      .map((cat) => ({
-        ...cat,
-        items: cat.items.filter((i) => (dietFilter === 'veg' ? i.is_veg : !i.is_veg)),
-      }))
-      .filter((cat) => cat.items.length > 0);
-  }, [categories, dietFilter]);
-
-  const searchResults = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
+  const visibleItems = useMemo(() => {
     return menuItems.filter((m) => {
       if (!m.is_available) return false;
       if (dietFilter === 'veg' && !m.is_veg) return false;
       if (dietFilter === 'non_veg' && m.is_veg) return false;
-      return m.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
+      if (activeCategory !== 'All' && m.category !== activeCategory) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!m.name.toLowerCase().includes(q) && !m.category.toLowerCase().includes(q)) return false;
+      }
+      return true;
     });
-  }, [menuItems, search, dietFilter]);
-
-  const categoryItems = useMemo(() => {
-    if (!selectedCategory) return [];
-    const cat = filteredCategories.find((c) => c.name === selectedCategory);
-    return cat?.items ?? [];
-  }, [filteredCategories, selectedCategory]);
+  }, [menuItems, dietFilter, activeCategory, search]);
 
   const orderTotals = useMemo(
     () => calculateOrderTotals(cart, discountValue, discountType, { pricesIncludeGst }),
@@ -328,10 +286,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
 
   const totalItems = cart.reduce((s, c) => s + c.quantity, 0);
   const showModeToggle = counterModes === 'both';
-
-  function getQty(id: string) {
-    return cart.find((c) => c.menuItemId === id)?.quantity ?? 0;
-  }
 
   function addItem(item: MenuItem) {
     setCart((prev) => {
@@ -450,7 +404,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   function resetForNextOrder() {
     setCart([]);
     setSearch('');
-    setSelectedCategory(null);
+    setActiveCategory('All');
     resetPaymentFields();
     apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => null);
   }
@@ -483,12 +437,11 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     <>
       <div
         className="fixed inset-0 z-40 bg-black/30"
-        onClick={() => {
-          if (!paymentFlowActive) onClose();
-        }}
+        onClick={() => { if (!paymentFlowActive) onClose(); }}
       />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col bg-white shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between border-b border-gray-100 px-6 py-4">
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">New Counter Order</h2>
             {ticketNumber !== null && (
@@ -499,24 +452,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               </p>
             )}
           </div>
-          <button
-            onClick={() => {
-              if (!paymentFlowActive) onClose();
-            }}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <>
+          <div className="flex items-center gap-3">
             {showModeToggle && (
-              <div className="shrink-0 flex gap-2 border-b border-gray-100 px-6 py-3">
+              <div className="flex gap-1.5">
                 {(['eat_here', 'takeaway'] as ServiceMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => setServiceMode(m)}
-                    className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                       serviceMode === m
                         ? 'bg-primary text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -527,38 +470,41 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                 ))}
               </div>
             )}
+            <button
+              onClick={() => { if (!paymentFlowActive) onClose(); }}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
 
-            <div className="shrink-0 border-b border-gray-100 px-4 py-3 space-y-2">
+        {/* Two-column body */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left — menu browser */}
+          <div className="flex flex-1 flex-col overflow-hidden border-r border-gray-100">
+            {/* Search + veg filter */}
+            <div className="shrink-0 space-y-2 px-4 pt-4 pb-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
+                  ref={searchRef}
                   type="text"
                   value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    if (e.target.value) setSelectedCategory(null);
-                  }}
+                  onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search menu..."
-                  className="w-full rounded-xl border border-gray-200 py-2 pl-9 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-4 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary/20"
                 />
               </div>
               <div className="flex gap-2">
-                {(
-                  [
-                    ['all', 'All'] as const,
-                    ['veg', 'Veg'] as const,
-                    ['non_veg', 'Non-Veg'] as const,
-                  ]
-                ).map(([f, label]) => (
+                {([['all', 'All'], ['veg', 'Veg'], ['non_veg', 'Non-Veg']] as const).map(([f, label]) => (
                   <button
                     key={f}
                     onClick={() => setDietFilter(f)}
                     className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                       dietFilter === f
-                        ? f === 'veg'
-                          ? 'bg-green-500 text-white'
-                          : f === 'non_veg'
-                          ? 'bg-red-500 text-white'
+                        ? f === 'veg' ? 'bg-green-500 text-white'
+                          : f === 'non_veg' ? 'bg-red-500 text-white'
                           : 'bg-primary text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
@@ -569,117 +515,144 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {search.trim() ? (
-                <div className="divide-y divide-gray-50 px-4">
-                  {searchResults.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-gray-500">No items found</p>
-                  ) : (
-                    searchResults.map((item) => (
-                      <ItemRow key={`search-${item.id}`} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
-                    ))
-                  )}
-                </div>
-              ) : selectedCategory ? (
-                <div>
-                  <button
-                    onClick={() => setSelectedCategory(null)}
-                    className="flex items-center gap-1 px-4 py-3 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Back to categories
-                  </button>
-                  <p className="px-4 pb-2 text-base font-semibold text-gray-900">{selectedCategory}</p>
-                  <div className="divide-y divide-gray-50 px-4">
-                    {categoryItems.map((item) => (
-                      <ItemRow key={`cat-${selectedCategory}-${item.id}`} item={item} qty={getQty(item.id)} onAdd={() => addItem(item)} />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4">
-                  <div className="grid grid-cols-3 gap-2">
-                    {filteredCategories.map((cat, index) => {
-                      const inCartCount = cart
-                        .filter((c) => menuItems.find((m) => m.id === c.menuItemId)?.category === cat.name)
-                        .reduce((s, c) => s + c.quantity, 0);
-                      return (
-                        <button
-                          key={`${cat.name}-${index}`}
-                          onClick={() => setSelectedCategory(cat.name)}
-                          className="relative flex flex-col items-center justify-center rounded-xl bg-primary px-3 py-3 text-center transition-opacity hover:opacity-90"
-                        >
-                          {inCartCount > 0 && (
-                            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-primary ring-2 ring-white">
-                              {inCartCount}
-                            </span>
-                          )}
-                          <p className="text-sm font-bold leading-tight text-white">{cat.name}</p>
-                          <p className="mt-0.5 text-xs text-white/70">
-                            {cat.items.length} item{cat.items.length !== 1 ? 's' : ''}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+            {/* Category tabs */}
+            <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-2 pt-1">
+              {['All', ...categories].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={`shrink-0 rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                    activeCategory === cat
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
 
-              {cart.length > 0 && (
-                <div className="border-t border-gray-100 mt-2 pb-2">
-                  <p className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Your Order ({totalItems} {totalItems === 1 ? 'item' : 'items'})
-                  </p>
-                  <div className="divide-y divide-gray-50 px-4">
-                    {cart.map((c) => (
-                      <div key={c.menuItemId} className="flex items-center justify-between py-2.5">
+            {/* Item list */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              {visibleItems.length === 0 ? (
+                <p className="py-8 text-center text-sm text-gray-400">No items found</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {visibleItems.map((item) => {
+                    const inCart = cart.find((c) => c.menuItemId === item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => addItem(item)}
+                        className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
                         <div className="flex min-w-0 items-center gap-2">
-                          <VegDot isVeg={c.isVeg} />
-                          <span className="truncate text-sm text-gray-800">{c.name}</span>
-                        </div>
-                        <div className="ml-3 flex shrink-0 items-center gap-2">
-                          <span className="text-xs text-gray-500">{fmt(c.price * c.quantity)}</span>
-                          <div className="flex items-center gap-0.5 rounded-lg bg-primary/10">
-                            <button onClick={() => changeQty(c.menuItemId, -1)} className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20">
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="w-4 text-center text-xs font-bold text-primary">{c.quantity}</span>
-                            <button onClick={() => changeQty(c.menuItemId, 1)} className="flex h-6 w-6 items-center justify-center rounded-lg text-primary hover:bg-primary/20">
-                              <Plus className="h-3 w-3" />
-                            </button>
+                          <VegDot isVeg={item.is_veg} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                            <p className="text-xs text-gray-400">{item.category}</p>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                        <div className="ml-3 flex shrink-0 items-center gap-3">
+                          <span className="text-sm font-semibold text-gray-800">₹{item.price}</span>
+                          {inCart ? (
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                              {inCart.quantity}
+                            </span>
+                          ) : (
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-primary text-primary">
+                              <Plus className="h-3.5 w-3.5" />
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
+          </div>
 
-            {cart.length > 0 && (
-              <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4 space-y-2">
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>{subtotalLabel(pricesIncludeGst)}</span>
-                  <span>{fmt(subtotal)}</span>
+          {/* Right — cart */}
+          <div className="flex w-72 shrink-0 flex-col">
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="border-b border-gray-100 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <ShoppingCart className="h-4 w-4" />
+                  Order ({totalItems} item{totalItems !== 1 ? 's' : ''})
                 </div>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>{taxLabel()}</span>
-                  <span>{fmt(taxAmount)}</span>
-                </div>
-                <div className="flex justify-between border-t border-gray-100 pt-2 text-base font-bold text-gray-900">
-                  <span>Total</span>
-                  <span>{fmt(finalAmount)}</span>
-                </div>
-                <button
-                  onClick={() => setShowCheckout(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90 transition-colors"
-                >
-                  Proceed to Checkout
-                  <ChevronRight className="h-4 w-4" />
-                </button>
               </div>
-            )}
-        </>
+
+              {/* Cart items */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+                {cart.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-gray-400">Add items from the menu</p>
+                ) : (
+                  cart.map((c) => (
+                    <div key={c.menuItemId} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <VegDot isVeg={c.isVeg} />
+                          <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
+                        </div>
+                        <p className="ml-4 text-xs text-gray-400">₹{c.price} × {c.quantity}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          onClick={() => changeQty(c.menuItemId, -1)}
+                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
+                        <button
+                          onClick={() => changeQty(c.menuItemId, 1)}
+                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Customer info */}
+              <div className="shrink-0 border-t border-gray-100 px-4 py-3 space-y-2">
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Customer name (optional)"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="Phone (optional)"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* Total + checkout */}
+            <div className="shrink-0 border-t border-gray-100 px-4 py-4 space-y-3">
+              <div className="flex justify-between text-sm font-bold text-gray-900">
+                <span>Total:</span>
+                <span>{fmt(finalAmount)}</span>
+              </div>
+              <button
+                onClick={() => setShowCheckout(true)}
+                disabled={cart.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                Proceed to Checkout
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Checkout review — pick payment method (matches mobile) */}
