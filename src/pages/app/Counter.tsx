@@ -48,8 +48,8 @@ interface PostPaymentQr {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmt(n: number | undefined | null) {
+  return `₹${(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function getStatusVariant(status: string): 'pending' | 'completed' | 'cancelled' | 'cooking' | 'ready' | 'served' {
@@ -963,11 +963,13 @@ export function Counter() {
     fetchData();
   }, [fetchData]);
 
-  const sorted = [...counterOrders].sort((a, b) => {
-    if (a.status === 'pending' && b.status !== 'pending') return -1;
-    if (a.status !== 'pending' && b.status === 'pending') return 1;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
+  const sorted = [...counterOrders]
+    .filter((o) => o.status !== 'completed' && o.status !== 'cancelled')
+    .sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   function handleOrderCreated(order: Order) {
     dispatch(upsertCounterOrder(order));
@@ -997,13 +999,15 @@ export function Counter() {
       <PageHeader
         title="Counter / Takeaway"
         action={
-          <button
-            onClick={() => setPanelOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New Order
-          </button>
+          sorted.length > 0 ? (
+            <button
+              onClick={() => setPanelOpen(true)}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              New Order
+            </button>
+          ) : undefined
         }
       />
 
@@ -1077,8 +1081,8 @@ export function Counter() {
                     {fmt(order.total)}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={getStatusVariant(order.status)}>
-                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                    <Badge variant={getStatusVariant(order.status ?? '')}>
+                      {(order.status ?? '').charAt(0).toUpperCase() + (order.status ?? '').slice(1)}
                     </Badge>
                   </td>
                 </tr>

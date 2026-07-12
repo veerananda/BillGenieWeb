@@ -697,18 +697,16 @@ export function Staff() {
   const limits = profile
     ? parseSubscriptionLimits(profile.subscription_limits as Record<string, unknown> | undefined)
     : null;
-  const usage = profile?.subscription_usage;
   const kitchenEnabled = !!(limits?.kitchen_dine_in || limits?.kitchen_counter);
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const staffCount =
-    usage?.staff_and_chefs ??
-    staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
-  const managerCount =
-    usage?.managers ?? staff.filter((s) => s.role === 'manager').length;
+  // Always count from the live local list so add/delete immediately reflects in the gate.
+  // The profile usage snapshot is stale and doesn't update on mutation.
+  const staffCount = staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
+  const managerCount = staff.filter((s) => s.role === 'manager').length;
 
   const staffSeatAvailable = limits
     ? staffCount < limits.max_staff_and_chefs || managerCount < limits.max_managers
