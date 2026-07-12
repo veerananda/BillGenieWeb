@@ -34,7 +34,6 @@ function generateStaffKey(): string {
 
 interface StaffFormData {
   name: string;
-  phone: string;
   role: 'manager' | 'staff' | 'chef';
   staff_key: string;
   password: string;
@@ -187,7 +186,6 @@ function StaffFormModal({
 
   const [form, setForm] = useState<StaffFormData>({
     name: '',
-    phone: '',
     role: 'staff',
     staff_key: generateStaffKey(),
     password: '',
@@ -205,7 +203,6 @@ function StaffFormModal({
       if (editTarget) {
         setForm({
           name: editTarget.name,
-          phone: editTarget.phone ?? '',
           role: (editTarget.role === 'admin' ? 'staff' : editTarget.role) as 'manager' | 'staff' | 'chef',
           staff_key: editTarget.staff_key ?? '',
           password: '',
@@ -215,7 +212,6 @@ function StaffFormModal({
       } else {
         setForm({
           name: '',
-          phone: '',
           role: 'staff',
           staff_key: generateStaffKey(),
           password: '',
@@ -243,7 +239,6 @@ function StaffFormModal({
       if (!form.password.trim()) errs.password = 'Password is required';
       else if (form.password.trim().length < 6) errs.password = 'Password must be at least 6 characters';
     } else {
-      if (!isAdmin && !form.phone.trim()) errs.phone = 'Phone is required';
       if (form.password && form.password.length < 6) errs.password = 'Password must be at least 6 characters';
     }
     setErrors(errs);
@@ -261,7 +256,6 @@ function StaffFormModal({
           name: form.name.trim(),
         };
         if (!isAdmin) {
-          payload.phone = form.phone.trim();
           payload.role = form.role;
           if (form.role === 'staff') payload.can_cancel_orders = form.can_cancel_orders;
           if (form.role === 'staff' || form.role === 'chef') payload.can_restock_inventory = form.can_restock_inventory;
@@ -367,27 +361,6 @@ function StaffFormModal({
           {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
         </div>
 
-        {/* Phone — edit mode only, non-admin */}
-        {isEdit && !isAdmin && (
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Phone Number <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="tel"
-              value={form.phone}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, phone: e.target.value }));
-                setErrors((er) => ({ ...er, phone: '' }));
-              }}
-              placeholder="Enter phone number"
-              className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
-                errors.phone ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
-              }`}
-            />
-            {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
-          </div>
-        )}
 
         {/* Login Key — add mode only */}
         {!isEdit && !newlyCreatedKey && (
@@ -641,9 +614,6 @@ function StaffCard({
       {/* Info */}
       <div className="min-w-0 flex-1">
         <p className="text-base font-bold text-gray-900">{member.name}</p>
-        {member.phone && (
-          <p className="mt-0.5 text-sm text-gray-500">{member.phone}</p>
-        )}
 
         {/* Login key */}
         {member.role !== 'admin' && member.staff_key && (
@@ -727,18 +697,16 @@ export function Staff() {
   const limits = profile
     ? parseSubscriptionLimits(profile.subscription_limits as Record<string, unknown> | undefined)
     : null;
-  const usage = profile?.subscription_usage;
   const kitchenEnabled = !!(limits?.kitchen_dine_in || limits?.kitchen_counter);
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const staffCount =
-    usage?.staff_and_chefs ??
-    staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
-  const managerCount =
-    usage?.managers ?? staff.filter((s) => s.role === 'manager').length;
+  // Always count from the live local list so add/delete immediately reflects in the gate.
+  // The profile usage snapshot is stale and doesn't update on mutation.
+  const staffCount = staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
+  const managerCount = staff.filter((s) => s.role === 'manager').length;
 
   const staffSeatAvailable = limits
     ? staffCount < limits.max_staff_and_chefs || managerCount < limits.max_managers

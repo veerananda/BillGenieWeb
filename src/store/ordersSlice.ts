@@ -26,15 +26,16 @@ function upsertOrder(list: Order[], incoming: Order): Order[] {
     const updated = [...list];
     const existing = updated[index];
     // Max-status merge: WS partial payloads must not revert a locally-optimistic 'ready' item
+    const existingItems = existing.items ?? [];
     const mergedItems = incoming.items?.length
       ? incoming.items.map((inc) => {
-          const loc = existing.items.find((i) => i.id === inc.id);
+          const loc = existingItems.find((i) => i.id === inc.id);
           if (!loc) return inc;
           return (STATUS_RANK[inc.status] ?? 0) >= (STATUS_RANK[loc.status] ?? 0)
             ? inc
             : { ...inc, status: loc.status };
         })
-      : existing.items;
+      : existingItems;
     updated[index] = { ...existing, ...incoming, items: mergedItems } as Order;
     return updated;
   }
@@ -74,7 +75,7 @@ const ordersSlice = createSlice({
       for (const list of [state.activeOrders, state.counterOrders]) {
         const order = list.find((o) => o.id === orderId);
         if (order) {
-          const item = order.items.find((i) => i.id === itemId);
+          const item = (order.items ?? []).find((i) => i.id === itemId);
           if (item && incomingRank >= (STATUS_RANK[item.status] ?? 0)) {
             item.status = status;
           }
