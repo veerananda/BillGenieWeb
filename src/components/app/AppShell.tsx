@@ -62,13 +62,15 @@ export function AppShell() {
   function runCatchUpSync() {
     if (!apiClient.isAuthenticated()) return;
     Promise.allSettled([
-      apiClient.listOrdersSummary('active'),
-      apiClient.listCounterOrdersToday(),
+      apiClient.listOrders('active'),
       apiClient.getTables(),
-    ]).then(([ordersRes, counterRes, tablesRes]) => {
+      apiClient.listCounterOrdersToday(),
+    ]).then(([ordersRes, tablesRes, counterRes]) => {
       if (ordersRes.status === 'fulfilled') {
-        const dineIn = ordersRes.value?.orders ?? [];
-        store.dispatch(setActiveOrders(dineIn));
+        store.dispatch(setActiveOrders(ordersRes.value?.orders ?? []));
+      }
+      if (tablesRes.status === 'fulfilled') {
+        store.dispatch(setTables(tablesRes.value as RestaurantTable[]));
       }
       if (counterRes.status === 'fulfilled') {
         const counter = (counterRes.value?.orders ?? []).filter(
@@ -80,9 +82,6 @@ export function AppShell() {
           (o) => o.status !== 'completed' && o.status !== 'cancelled'
         );
         store.dispatch(setCounterOrders(counter));
-      }
-      if (tablesRes.status === 'fulfilled') {
-        store.dispatch(setTables(tablesRes.value as RestaurantTable[]));
       }
     });
   }
@@ -137,24 +136,22 @@ export function AppShell() {
       }),
 
       wsService.on('order_item_status_changed', (data) => {
-        const items = (data as { items?: unknown[] }).items;
-        if (data.id && items?.length) {
-          const counter = isCounterOrder(data);
-          if (counter) {
-            dispatch(upsertCounterOrder(data as unknown as Order));
-          } else {
-            dispatch(upsertActiveOrder(data as unknown as Order));
-          }
-        } else if (data.order_id && data.item_id && data.status) {
-          dispatch(patchOrderItemStatus({
-            orderId: data.order_id as string,
-            itemId: data.item_id as string,
-            status: data.status as string,
-          }));
-        } else if (data.order_id) {
-          const counter = isCounterOrder(data);
-          hydrateOrder(data.order_id as string, counter, dispatch);
+        // Backend sends snake_case or camelCase depending on event path
+        const orderId = (data.order_id ?? data.orderId ?? data.id) as string | undefined;
+        if (!orderId) return;
+        const counter = isCounterOrder(data);
+
+        // Optimistic single-item patch (works when order+items already in Redux)
+        const itemId = (data.item_id ?? data.itemId) as string | undefined;
+        const status = data.status as string | undefined;
+        if (itemId && status) {
+          dispatch(patchOrderItemStatus({ orderId, itemId, status }));
         }
+
+        // Always fetch the full order so items are authoritative.
+        // The /orders/summary endpoint omits items[], so the patch above may hit an
+        // empty array. The hydrate ensures we always get up-to-date statuses.
+        hydrateOrder(orderId, counter, dispatch);
       }),
 
       wsService.on('order_completed', (data) => {
