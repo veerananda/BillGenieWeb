@@ -14,7 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectAuthRole, selectAuthName, selectCanRestockInventory, selectCanManageMenu, clearAuth } from '../../store/authSlice';
+import { selectAuthRole, selectAuthName, selectCanRestockInventory, clearAuth } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import apiClient from '../../services/api';
@@ -37,7 +37,7 @@ interface NavItem {
 // Mirrors HomeScreen.tsx in the mobile app exactly.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard',          to: '/app/dashboard', icon: LayoutDashboard, roles: ['admin'] },
-  { label: 'Menu & Pricing',     to: '/app/menu',      icon: UtensilsCrossed, roles: ['admin', 'manager'] },
+  { label: 'Menu Management',    to: '/app/menu',      icon: UtensilsCrossed, roles: ['admin', 'manager'] },
   { label: 'Orders & Billing',   to: '/app/orders',    icon: ClipboardList,   roles: ['admin', 'manager', 'staff'], subscriptionKey: 'dine_in_enabled' },
   { label: 'Counter / Takeaway', to: '/app/counter',   icon: ShoppingBag,     roles: ['admin', 'manager', 'staff'], subscriptionKey: 'counter_enabled' },
   { label: 'Kitchen',            to: '/app/kitchen',   icon: Flame,           roles: ['admin', 'manager', 'chef'],  subscriptionKey: 'kitchen' },
@@ -59,7 +59,6 @@ export function Sidebar({ onClose }: Props) {
   const name = useAppSelector(selectAuthName);
   const profile = useAppSelector(selectProfile);
   const canRestock = useAppSelector(selectCanRestockInventory);
-  const canManageMenu = useAppSelector(selectCanManageMenu);
 
   const limits = parseSubscriptionLimits(
     (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
@@ -124,12 +123,7 @@ export function Sidebar({ onClose }: Props) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-        {NAV_ITEMS.filter(isItemVisible).map((item) => {
-          const label =
-            item.to === '/app/menu' && role === 'manager' && !canManageMenu
-              ? 'Item availability'
-              : item.label;
-          return (
+        {NAV_ITEMS.filter(isItemVisible).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -143,10 +137,9 @@ export function Sidebar({ onClose }: Props) {
             }
           >
             <item.icon className="h-4.5 w-4.5 shrink-0" />
-            {label}
+            {item.label}
           </NavLink>
-          );
-        })}
+        ))}
       </nav>
 
       {/* User */}
