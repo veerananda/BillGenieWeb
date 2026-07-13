@@ -14,6 +14,7 @@ const USER_NAME_KEY = 'user_name';
 const USER_ROLE_KEY = 'user_role';
 const CAN_CANCEL_ORDERS_KEY = 'can_cancel_orders';
 const CAN_RESTOCK_INVENTORY_KEY = 'can_restock_inventory';
+const MENU_MANAGEMENT_ACCESS_KEY = 'menu_management_access';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ export interface AuthResponse {
   restaurant_code?: string;
   can_cancel_orders?: boolean;
   can_restock_inventory?: boolean;
+  menu_management_access?: boolean;
   id?: string;
   code?: string;
 }
@@ -251,6 +253,7 @@ export interface StaffMember {
   staff_key?: string;
   can_cancel_orders?: boolean;
   can_restock_inventory?: boolean;
+  menu_management_access?: boolean;
   is_active?: boolean;
   created_at?: string;
 }
@@ -386,7 +389,7 @@ class APIClient {
   }
 
   logout(): void {
-    [TOKEN_KEY, REFRESH_TOKEN_KEY, RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY].forEach((k) =>
+    [TOKEN_KEY, REFRESH_TOKEN_KEY, RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
       localStorage.removeItem(k)
     );
   }
@@ -426,6 +429,7 @@ class APIClient {
     if (authData.name) localStorage.setItem(USER_NAME_KEY, authData.name);
     localStorage.setItem(CAN_CANCEL_ORDERS_KEY, authData.can_cancel_orders ? 'true' : 'false');
     localStorage.setItem(CAN_RESTOCK_INVENTORY_KEY, authData.can_restock_inventory ? 'true' : 'false');
+    localStorage.setItem(MENU_MANAGEMENT_ACCESS_KEY, authData.menu_management_access ? 'true' : 'false');
   }
 
   // ── Menu ──────────────────────────────────────────────────────────────────
@@ -600,7 +604,7 @@ class APIClient {
     return r?.staff ?? r?.users ?? (Array.isArray(r) ? r : []);
   }
 
-  async createStaff(data: { name: string; email?: string; phone?: string; role: string; staff_key?: string; password?: string; can_cancel_orders?: boolean; can_restock_inventory?: boolean }): Promise<StaffMember> {
+  async createStaff(data: { name: string; email?: string; phone?: string; role: string; staff_key?: string; password?: string; can_cancel_orders?: boolean; can_restock_inventory?: boolean; menu_management_access?: boolean }): Promise<StaffMember> {
     const r = await this.makeRequest('/users', 'POST', data);
     return r?.staff_member ?? r?.user ?? r;
   }
