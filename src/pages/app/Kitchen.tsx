@@ -7,12 +7,10 @@ import {
   patchOrderItemStatus,
   selectActiveOrders,
   selectCounterOrders,
-  removeCounterOrder,
   setCounterOrders,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import { selectTables, setTables, selectTablesHydrated } from '../../store/tablesSlice';
-import { store } from '../../store';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
@@ -198,15 +196,17 @@ export function Kitchen() {
     setLoading(true);
     setError(null);
     try {
+      // Use full-order endpoints so items[] are present for buildKotTickets.
+      // listOrdersSummary omits items[] and produces empty KOT tickets.
       const tasks: Promise<unknown>[] = [
-        apiClient.listOrdersSummary('active').then((res) => {
+        apiClient.listOrders('active').then((res) => {
           dispatch(setActiveOrders(res.orders));
         }),
         apiClient.listCounterOrdersToday().then((res) => {
-          const activeCounter = (res.orders ?? []).filter(
+          const active = (res.orders ?? []).filter(
             (o) => o.status !== 'completed' && o.status !== 'cancelled'
           );
-          dispatch(setCounterOrders(activeCounter));
+          dispatch(setCounterOrders(active));
         }),
       ];
       if (!menuHydrated) {
@@ -216,12 +216,6 @@ export function Kitchen() {
         tasks.push(apiClient.getTables().then((t) => dispatch(setTables(t))));
       }
       await Promise.all(tasks);
-
-      store.getState().orders.counterOrders.forEach((order) => {
-        if (order.status === 'completed' || order.status === 'cancelled') {
-          dispatch(removeCounterOrder(order.id));
-        }
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load kitchen orders');
     } finally {
@@ -303,7 +297,7 @@ export function Kitchen() {
         </div>
       ) : null}
 
-      {loading && sourceOrders.length === 0 ? (
+      {loading ? (
         <div className="flex items-center justify-center py-20">
           <Spinner size="lg" className="text-primary" />
         </div>
