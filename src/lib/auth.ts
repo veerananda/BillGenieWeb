@@ -9,6 +9,7 @@ const KEYS = {
   userId: 'user_id',
   canCancelOrders: 'can_cancel_orders',
   canRestockInventory: 'can_restock_inventory',
+  menuManagementAccess: 'menu_management_access',
 } as const;
 
 export function getToken(): string | null {
@@ -33,6 +34,7 @@ export function setAuth(response: AuthResponse): void {
   if (response.user_id) localStorage.setItem(KEYS.userId, response.user_id);
   localStorage.setItem(KEYS.canCancelOrders, response.can_cancel_orders ? 'true' : 'false');
   localStorage.setItem(KEYS.canRestockInventory, response.can_restock_inventory ? 'true' : 'false');
+  localStorage.setItem(KEYS.menuManagementAccess, response.menu_management_access ? 'true' : 'false');
 }
 
 export function clearAuth(): void {
