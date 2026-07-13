@@ -139,16 +139,24 @@ function KOTCard({
   );
 }
 
+function isTodayOrder(order: { created_at?: string }): boolean {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const ts = order.created_at ? new Date(order.created_at).getTime() : 0;
+  return ts >= midnight.getTime();
+}
+
 function kitchenSourceOrders(
   activeOrders: ReturnType<typeof selectActiveOrders>,
   counterOrders: ReturnType<typeof selectCounterOrders>
 ) {
+  const todayActive = activeOrders.filter(isTodayOrder);
   const liveCounter = counterOrders.filter(
-    (o) => o.status !== 'completed' && o.status !== 'cancelled'
+    (o) => o.status !== 'completed' && o.status !== 'cancelled' && isTodayOrder(o)
   );
-  const activeIds = new Set(activeOrders.map((o) => o.id));
+  const activeIds = new Set(todayActive.map((o) => o.id));
   const counterOnly = liveCounter.filter((o) => !activeIds.has(o.id));
-  return [...activeOrders, ...counterOnly];
+  return [...todayActive, ...counterOnly];
 }
 
 export function Kitchen() {
