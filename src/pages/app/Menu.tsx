@@ -380,7 +380,7 @@ export function Menu() {
   return (
     <div>
       <PageHeader
-        title={canManageMenu ? 'Menu' : 'Item availability'}
+        title="Menu Management"
         subtitle={`${items.length} item${items.length !== 1 ? 's' : ''}`}
         action={
           canManageMenu ? (
