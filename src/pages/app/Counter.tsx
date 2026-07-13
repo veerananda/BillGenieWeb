@@ -972,15 +972,13 @@ export function Counter() {
       <PageHeader
         title="Counter / Takeaway"
         action={
-          sorted.length > 0 ? (
-            <button
-              onClick={() => setPanelOpen(true)}
-              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              New Order
-            </button>
-          ) : undefined
+          <button
+            onClick={() => setPanelOpen(true)}
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            New Order
+          </button>
         }
       />
 
