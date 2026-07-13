@@ -9,6 +9,7 @@ interface AuthState {
   name: string | null;
   canCancelOrders: boolean;
   canRestockInventory: boolean;
+  menuManagementAccess: boolean;
   restaurantId: string | null;
   subscriptionExpired: boolean;
 }
@@ -19,6 +20,7 @@ const initialState: AuthState = {
   name: localStorage.getItem('user_name'),
   canCancelOrders: localStorage.getItem('can_cancel_orders') === 'true',
   canRestockInventory: localStorage.getItem('can_restock_inventory') === 'true',
+  menuManagementAccess: localStorage.getItem('menu_management_access') === 'true',
   restaurantId: localStorage.getItem('restaurant_id'),
   subscriptionExpired: false,
 };
@@ -34,6 +36,7 @@ const authSlice = createSlice({
       state.name = r.name ?? null;
       state.canCancelOrders = r.can_cancel_orders ?? false;
       state.canRestockInventory = r.can_restock_inventory ?? false;
+      state.menuManagementAccess = r.menu_management_access ?? false;
       state.restaurantId = r.restaurant_id ?? null;
       state.subscriptionExpired = false;
     },
@@ -43,6 +46,7 @@ const authSlice = createSlice({
       state.name = null;
       state.canCancelOrders = false;
       state.canRestockInventory = false;
+      state.menuManagementAccess = false;
       state.restaurantId = null;
       state.subscriptionExpired = false;
     },
@@ -59,6 +63,13 @@ export const selectAuthRole = (state: RootState) => state.auth.role;
 export const selectAuthName = (state: RootState) => state.auth.name;
 export const selectCanCancelOrders = (state: RootState) => state.auth.canCancelOrders;
 export const selectCanRestockInventory = (state: RootState) => state.auth.canRestockInventory;
+export const selectMenuManagementAccess = (state: RootState) => state.auth.menuManagementAccess;
+export const selectCanManageMenu = (state: RootState) => {
+  const role = state.auth.role;
+  if (role === 'admin') return true;
+  if (role === 'manager') return state.auth.menuManagementAccess;
+  return false;
+};
 export const selectRestaurantId = (state: RootState) => state.auth.restaurantId;
 export const selectIsAuthenticated = (state: RootState) => !!state.auth.token;
 export const selectSubscriptionExpired = (state: RootState) => state.auth.subscriptionExpired;

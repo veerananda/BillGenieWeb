@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { selectCanManageMenu } from '../../store/authSlice';
 import {
   selectMenuItems,
   setMenuItems,
@@ -96,6 +97,7 @@ function Toggle({
 export function Menu() {
   const dispatch = useAppDispatch();
   const items = useAppSelector(selectMenuItems);
+  const canManageMenu = useAppSelector(selectCanManageMenu);
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -378,9 +380,10 @@ export function Menu() {
   return (
     <div>
       <PageHeader
-        title="Menu"
+        title={canManageMenu ? 'Menu' : 'Item availability'}
         subtitle={`${items.length} item${items.length !== 1 ? 's' : ''}`}
         action={
+          canManageMenu ? (
           <button
             onClick={openAddCategory}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
@@ -388,6 +391,7 @@ export function Menu() {
             <Plus className="h-4 w-4" />
             Add category
           </button>
+          ) : undefined
         }
       />
 
@@ -452,6 +456,7 @@ export function Menu() {
                   onEdit={openEditItem}
                   onDelete={setDeleteItemTarget}
                   showCategory
+                  canManageMenu={canManageMenu}
                 />
               ))}
             </div>
@@ -461,8 +466,9 @@ export function Menu() {
         <EmptyState
           icon={BookOpen}
           title="No menu categories yet"
-          description="Add a category, then add items within it."
+          description={canManageMenu ? 'Add a category, then add items within it.' : 'No menu items to manage yet.'}
           action={
+            canManageMenu ? (
             <button
               onClick={openAddCategory}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white"
@@ -470,6 +476,7 @@ export function Menu() {
               <Plus className="h-4 w-4" />
               Add category
             </button>
+            ) : undefined
           }
         />
       ) : (
@@ -496,6 +503,8 @@ export function Menu() {
                   </span>
                   <span className="flex-1 text-sm font-semibold text-gray-900">{cat.name}</span>
                   <span className="mr-2 text-xs text-gray-400">{cat.items.length} item{cat.items.length !== 1 ? 's' : ''}</span>
+                  {canManageMenu && (
+                  <>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); openEditCategory(cat.name); }}
@@ -512,6 +521,8 @@ export function Menu() {
                   >
                     <Trash2 size={14} />
                   </button>
+                  </>
+                  )}
                 </button>
 
                 {/* Expanded content */}
@@ -522,6 +533,7 @@ export function Menu() {
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                         Types / Flavours
                       </span>
+                      {canManageMenu && (
                       <button
                         type="button"
                         onClick={() => openAddItem(cat.name)}
@@ -529,6 +541,7 @@ export function Menu() {
                       >
                         <Plus size={12} /> Add item
                       </button>
+                      )}
                     </div>
 
                     {/* Items */}
@@ -548,6 +561,7 @@ export function Menu() {
                             onToggle={handleToggleAvailability}
                             onEdit={openEditItem}
                             onDelete={setDeleteItemTarget}
+                            canManageMenu={canManageMenu}
                           />
                         ))}
                       </div>
@@ -767,6 +781,7 @@ function ItemRow({
   onEdit,
   onDelete,
   showCategory,
+  canManageMenu = true,
 }: {
   item: MenuItem;
   togglingId: string | null;
@@ -774,6 +789,7 @@ function ItemRow({
   onEdit: (item: MenuItem) => void;
   onDelete: (item: MenuItem) => void;
   showCategory?: boolean;
+  canManageMenu?: boolean;
 }) {
   return (
     <div
@@ -827,6 +843,8 @@ function ItemRow({
       </div>
 
       {/* Actions */}
+      {canManageMenu && (
+      <>
       <button
         type="button"
         onClick={() => onEdit(item)}
@@ -843,6 +861,8 @@ function ItemRow({
       >
         <Trash2 size={15} />
       </button>
+      </>
+      )}
     </div>
   );
 }

@@ -39,6 +39,7 @@ interface StaffFormData {
   password: string;
   can_cancel_orders: boolean;
   can_restock_inventory: boolean;
+  menu_management_access: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -191,6 +192,7 @@ function StaffFormModal({
     password: '',
     can_cancel_orders: false,
     can_restock_inventory: false,
+    menu_management_access: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,6 +210,7 @@ function StaffFormModal({
           password: '',
           can_cancel_orders: editTarget.can_cancel_orders ?? false,
           can_restock_inventory: editTarget.can_restock_inventory ?? false,
+          menu_management_access: editTarget.menu_management_access ?? false,
         });
       } else {
         setForm({
@@ -217,6 +220,7 @@ function StaffFormModal({
           password: '',
           can_cancel_orders: false,
           can_restock_inventory: false,
+          menu_management_access: false,
         });
       }
       setError(null);
@@ -259,6 +263,7 @@ function StaffFormModal({
           payload.role = form.role;
           if (form.role === 'staff') payload.can_cancel_orders = form.can_cancel_orders;
           if (form.role === 'staff' || form.role === 'chef') payload.can_restock_inventory = form.can_restock_inventory;
+          if (form.role === 'manager') payload.menu_management_access = form.menu_management_access;
         }
         if (form.password.trim()) payload.password = form.password.trim();
         const updated = await apiClient.updateStaff(editTarget.id, payload);
@@ -272,6 +277,7 @@ function StaffFormModal({
         };
         if (form.role === 'staff') payload.can_cancel_orders = form.can_cancel_orders;
         if (form.role === 'staff' || form.role === 'chef') payload.can_restock_inventory = form.can_restock_inventory;
+        if (form.role === 'manager') payload.menu_management_access = form.menu_management_access;
         const created = await apiClient.createStaff(payload);
         onSaved(created, true);
       }
@@ -436,7 +442,7 @@ function StaffFormModal({
                 desc="Menu & settings"
                 selected={form.role === 'manager'}
                 onClick={() =>
-                  setForm((f) => ({ ...f, role: 'manager', can_cancel_orders: false }))
+                  setForm((f) => ({ ...f, role: 'manager', can_cancel_orders: false, menu_management_access: false }))
                 }
               />
               {kitchenEnabled && (
@@ -469,6 +475,14 @@ function StaffFormModal({
             hint="When enabled, this user can add received stock on the Stock Management page."
             checked={form.can_restock_inventory}
             onChange={(v) => setForm((f) => ({ ...f, can_restock_inventory: v }))}
+          />
+        )}
+        {!isAdmin && !newlyCreatedKey && form.role === 'manager' && (
+          <PermissionRow
+            title="Full menu management"
+            hint="When enabled, this manager can add, edit, and delete menu categories and items. When off, they can only turn item availability on or off."
+            checked={form.menu_management_access}
+            onChange={(v) => setForm((f) => ({ ...f, menu_management_access: v }))}
           />
         )}
 
@@ -645,7 +659,7 @@ function StaffCard({
         </div>
 
         {/* Permission chips */}
-        {(member.can_cancel_orders || member.can_restock_inventory) && (
+        {(member.can_cancel_orders || member.can_restock_inventory || member.menu_management_access) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {member.can_cancel_orders && (
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
@@ -655,6 +669,11 @@ function StaffCard({
             {member.can_restock_inventory && (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
                 <Check className="h-3 w-3" /> Stock refill
+              </span>
+            )}
+            {member.menu_management_access && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-600">
+                <Check className="h-3 w-3" /> Menu management
               </span>
             )}
           </div>
