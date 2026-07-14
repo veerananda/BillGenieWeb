@@ -163,7 +163,7 @@ function TableCard({
       {needsAssistance ? (
         <div className="space-y-1">
           <p className="text-xs font-bold text-sky-700">Customer requested assistance</p>
-          <p className="text-xs text-sky-600">Tap to open table</p>
+          <p className="text-xs text-sky-600">Tap to acknowledge</p>
         </div>
       ) : occupied && order ? (
         <div className="space-y-1">
@@ -309,16 +309,6 @@ function OrderDetailPanel({
   const kitchenEnabled = hasKitchenAccess(
     parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
   );
-
-  // Clear call-waiter attention when staff opens this table
-  useEffect(() => {
-    if (!tableNeedsAssistance(table)) return;
-    apiClient.clearTableAssistance(table.id)
-      .then((updated) => dispatch(upsertTable(updated)))
-      .catch(() => {
-        dispatch(setTableAssistance({ tableId: table.id, assistanceRequested: false }));
-      });
-  }, [table.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate full order (with items) when the panel opens or items are missing
   useEffect(() => {
@@ -1563,7 +1553,20 @@ export function Orders() {
     return true;
   });
 
+  const handleClearAssistance = useCallback((table: RestaurantTable) => {
+    dispatch(setTableAssistance({ tableId: table.id, assistanceRequested: false }));
+    apiClient.clearTableAssistance(table.id)
+      .then((updated) => dispatch(upsertTable(updated)))
+      .catch(() => {
+        dispatch(setTableAssistance({ tableId: table.id, assistanceRequested: true }));
+      });
+  }, [dispatch]);
+
   const handleTableClick = (table: RestaurantTable) => {
+    if (tableNeedsAssistance(table)) {
+      handleClearAssistance(table);
+      return;
+    }
     setSelectedTable(table);
     setPanelMode(table.is_occupied ? 'detail' : 'vacant');
   };
