@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, X, Minus, Search, ShoppingCart, ChevronRight, Ticket, Percent, Tag,
-  ArrowLeftRight, Banknote, Smartphone,
+  ArrowLeftRight, Banknote, Smartphone, Leaf, Beef,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
 import type { Order, MenuItem, CompletePaymentRequest } from '../../services/api';
@@ -192,7 +192,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [search, setSearch] = useState('');
   const [dietFilter, setDietFilter] = useState<DietFilter>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [ticketNumber, setTicketNumber] = useState<number | null>(null);
 
   const [customerName, setCustomerName] = useState('');
@@ -232,7 +232,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setCart([]);
       setSearch('');
       setDietFilter('all');
-      setActiveCategory('All');
+      setActiveCategory(categories[0] ?? '');
       setShowCheckout(false);
       setShowCashModal(false);
       setShowUpiModal(false);
@@ -254,17 +254,28 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     return Array.from(cats);
   }, [menuItems]);
 
+  // Default to first category on initial load
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const categoryCount = (cat: string) =>
+    menuItems.filter((m) => {
+      if (!m.is_available || m.category !== cat) return false;
+      if (dietFilter === 'veg' && !m.is_veg) return false;
+      if (dietFilter === 'non_veg' && m.is_veg) return false;
+      return true;
+    }).length;
+
   const visibleItems = useMemo(() => {
     return menuItems.filter((m) => {
       if (!m.is_available) return false;
       if (dietFilter === 'veg' && !m.is_veg) return false;
       if (dietFilter === 'non_veg' && m.is_veg) return false;
-      if (activeCategory !== 'All' && m.category !== activeCategory) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        if (!m.name.toLowerCase().includes(q) && !m.category.toLowerCase().includes(q)) return false;
-      }
-      return true;
+      if (search.trim()) return m.name.toLowerCase().includes(search.toLowerCase());
+      return m.category === activeCategory;
     });
   }, [menuItems, dietFilter, activeCategory, search]);
 
@@ -404,7 +415,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   function resetForNextOrder() {
     setCart([]);
     setSearch('');
-    setActiveCategory('All');
+    setActiveCategory(categories[0] ?? '');
     resetPaymentFields();
     apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => null);
   }
@@ -439,7 +450,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         className="fixed inset-0 z-40 bg-black/30"
         onClick={() => { if (!paymentFlowActive) onClose(); }}
       />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl">
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
@@ -479,12 +490,12 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
           </div>
         </div>
 
-        {/* Two-column body */}
+        {/* Three-column body */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left — menu browser */}
-          <div className="flex flex-1 flex-col overflow-hidden border-r border-gray-100">
-            {/* Search + veg filter */}
-            <div className="shrink-0 space-y-2 px-4 pt-4 pb-2">
+          {/* Left — search + diet filter + category list */}
+          <div className="flex w-64 shrink-0 flex-col border-r border-gray-100">
+            <div className="space-y-2 border-b border-gray-100 p-3">
+              {/* Search */}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
@@ -492,48 +503,67 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search menu..."
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-4 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary/20"
+                  placeholder="Search…"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
-              <div className="flex gap-2">
-                {([['all', 'All'], ['veg', 'Veg'], ['non_veg', 'Non-Veg']] as const).map(([f, label]) => (
+              {/* Diet filter */}
+              <div className="flex gap-1">
+                {(
+                  [
+                    { value: 'all', label: 'All', icon: null },
+                    { value: 'veg', label: 'Veg', icon: <Leaf size={13} color={dietFilter === 'veg' ? '#ffffff' : '#22c55e'} /> },
+                    { value: 'non_veg', label: 'Non-Veg', icon: <Beef size={13} color={dietFilter === 'non_veg' ? '#ffffff' : '#dc2626'} /> },
+                  ] as const
+                ).map((f) => (
                   <button
-                    key={f}
-                    onClick={() => setDietFilter(f)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      dietFilter === f
-                        ? f === 'veg' ? 'bg-green-500 text-white'
-                          : f === 'non_veg' ? 'bg-red-500 text-white'
-                          : 'bg-primary text-white'
+                    key={f.value}
+                    onClick={() => setDietFilter(f.value)}
+                    className={`flex flex-1 items-center justify-center gap-1 rounded-lg py-1 text-xs font-medium transition-colors ${
+                      dietFilter === f.value
+                        ? 'bg-primary text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    {label}
+                    {f.icon}
+                    {f.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Category tabs */}
-            <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-2 pt-1">
-              {['All', ...categories].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`shrink-0 rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
-                    activeCategory === cat
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            {/* Category list */}
+            <div className="flex-1 overflow-y-auto">
+              {categories.map((cat) => {
+                const count = categoryCount(cat);
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => { setActiveCategory(cat); setSearch(''); }}
+                    className={`flex w-full items-center justify-between border-b border-gray-50 px-4 py-3 text-left text-sm transition-colors ${
+                      activeCategory === cat && !search.trim()
+                        ? 'border-l-2 border-l-primary bg-primary/10 font-semibold text-primary'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="truncate">{cat}</span>
+                    <span className={`ml-2 shrink-0 text-xs ${activeCategory === cat && !search.trim() ? 'text-primary' : 'text-gray-400'}`}>
+                      ({count})
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Item list */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4">
+          {/* Middle — items */}
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="border-b border-gray-100 px-4 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                {search.trim() ? `Results for "${search}"` : activeCategory}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2">
               {visibleItems.length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-400">No items found</p>
               ) : (
@@ -546,12 +576,9 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                         onClick={() => addItem(item)}
                         className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <VegDot isVeg={item.is_veg} />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
-                            <p className="text-xs text-gray-400">{item.category}</p>
-                          </div>
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          {item.is_veg ? <Leaf size={14} color="#22c55e" /> : <Beef size={14} color="#dc2626" />}
+                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
                         </div>
                         <div className="ml-3 flex shrink-0 items-center gap-3">
                           <span className="text-sm font-semibold text-gray-800">₹{item.price}</span>
@@ -574,7 +601,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
           </div>
 
           {/* Right — cart */}
-          <div className="flex w-72 shrink-0 flex-col">
+          <div className="flex w-60 shrink-0 flex-col border-l border-gray-100">
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
