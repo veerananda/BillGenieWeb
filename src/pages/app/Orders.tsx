@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
+import { resolveOrderItemParts, getOrderItemGroupKey } from '../../lib/orderHelpers';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
@@ -43,6 +44,7 @@ import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
 import { BillShareQrModal } from '../../components/app/BillShareQrModal';
+import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { Badge } from '../../components/app/Badge';
 import { EmptyState } from '../../components/app/EmptyState';
 
@@ -74,6 +76,14 @@ function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
   if (items.some((i) => i.status === 'ready')) return 'ready';
   if (items.some((i) => i.status === 'cooking')) return 'cooking';
   return null;
+}
+
+function VegBadge({ isVeg }: { isVeg: boolean }) {
+  return isVeg ? (
+    <Leaf className="h-3.5 w-3.5 shrink-0 text-green-600" />
+  ) : (
+    <Beef className="h-3.5 w-3.5 shrink-0 text-red-600" />
+  );
 }
 
 // ── Table card ─────────────────────────────────────────────────────────────────
@@ -352,21 +362,46 @@ function OrderDetailPanel({
   const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
   const groupedItems = Object.values(
     (order.items ?? []).reduce<
-      Record<string, { menuId: string; name: string; quantity: number; total: number; status: string; ids: string[] }>
+      Record<string, {
+        groupKey: string;
+        menuId: string;
+        name: string;
+        category: string;
+        isVeg: boolean;
+        quantity: number;
+        total: number;
+        status: string;
+        ids: string[];
+      }>
     >((acc, item) => {
-      const key = item.menu_id;
-      const name = item.menu_item?.name ?? menuMap.get(item.menu_id)?.name ?? 'Item';
+      const parts = resolveOrderItemParts(item, menuItems);
+      const groupKey = getOrderItemGroupKey({
+        menuId: item.menu_id,
+        name: parts.name,
+        category: parts.category,
+      });
+      const menuEntry = menuMap.get(item.menu_id);
+      const isVeg = menuEntry?.is_veg ?? true;
       const itemTotal = resolveItemTotal(item, menuMap);
-      if (acc[key]) {
-        acc[key].quantity += item.quantity;
-        acc[key].total += itemTotal;
-        acc[key].ids.push(item.id);
-        // Show the least-advanced status so we don't hide pending work
-        if ((STATUS_RANK[item.status] ?? 0) < (STATUS_RANK[acc[key].status] ?? 0)) {
-          acc[key].status = item.status;
+      if (acc[groupKey]) {
+        acc[groupKey].quantity += item.quantity;
+        acc[groupKey].total += itemTotal;
+        acc[groupKey].ids.push(item.id);
+        if ((STATUS_RANK[item.status] ?? 0) < (STATUS_RANK[acc[groupKey].status] ?? 0)) {
+          acc[groupKey].status = item.status;
         }
       } else {
-        acc[key] = { menuId: key, name, quantity: item.quantity, total: itemTotal, status: item.status, ids: [item.id] };
+        acc[groupKey] = {
+          groupKey,
+          menuId: item.menu_id,
+          name: parts.name,
+          category: parts.category,
+          isVeg,
+          quantity: item.quantity,
+          total: itemTotal,
+          status: item.status,
+          ids: [item.id],
+        };
       }
       return acc;
     }, {})
@@ -601,7 +636,7 @@ function OrderDetailPanel({
               const isServed = item.status === 'served';
               const isServing = item.ids.some((id) => servingId === id);
               return (
-                <div key={item.menuId} className="flex items-center gap-3">
+                <div key={item.groupKey} className="flex items-center gap-3">
                   {/* Status icon — tappable when ready */}
                   {isReady ? (
                     <button
@@ -626,7 +661,13 @@ function OrderDetailPanel({
 
                   {/* Name + qty */}
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                      <VegBadge isVeg={item.isVeg} />
+                    </div>
+                    {item.category ? (
+                      <p className="truncate text-xs text-gray-400">{item.category}</p>
+                    ) : null}
                     <p className="text-xs text-gray-500">{item.quantity}× {fmt(unitPrice)}</p>
                   </div>
 
@@ -708,19 +749,27 @@ function OrderDetailPanel({
       <Modal
         open={paymentOpen}
         onClose={closePaymentModal}
-        title="Bill Summary"
+        title="Checkout"
         maxWidth="3xl"
       >
         <div className="flex gap-6">
           {/* ── Left column: bill items + subtotal + GST ── */}
           <div className="w-64 shrink-0">
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 space-y-2">
-              <p className="text-sm font-semibold text-gray-800">Bill Summary</p>
+              <p className="text-sm font-semibold text-gray-800">Order items</p>
               <div className="space-y-1.5">
                 {groupedItems.map((item) => (
-                  <div key={item.menuId} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{item.name} ×{item.quantity}</span>
-                    <span className="font-medium text-gray-900">{fmt(item.total)}</span>
+                  <div key={item.groupKey} className="flex justify-between gap-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-600">{item.name} ×{item.quantity}</span>
+                        <VegBadge isVeg={item.isVeg} />
+                      </div>
+                      {item.category ? (
+                        <p className="text-xs text-gray-400">{item.category}</p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 font-medium text-gray-900">{fmt(item.total)}</span>
                   </div>
                 ))}
               </div>
@@ -852,20 +901,12 @@ function OrderDetailPanel({
               {/* ── UPI inputs ── */}
               {paymentMethod === 'upi' && (
                 <div className="space-y-3 pt-1">
-                  {profile?.upi_qr_code ? (
-                    <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-3">
-                      <img src={profile.upi_qr_code} alt="UPI QR Code" className="h-36 w-36 rounded-lg object-contain" />
-                      {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-center text-xs text-gray-400">
-                      Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
-                    </div>
-                  )}
-                  <div className="rounded-xl bg-gray-50 px-4 py-3 text-center">
-                    <p className="mb-0.5 text-xs font-medium text-gray-500">Bill Amount</p>
-                    <p className="text-xl font-bold text-primary">{fmt(displayTotal)}</p>
-                  </div>
+                  <UpiPaymentDisplay
+                    profile={profile}
+                    amount={displayTotal}
+                    transactionNote={`Table ${table.name} order`}
+                    qrSize={144}
+                  />
                   <input
                     type="text"
                     value={upiTransactionId}
@@ -948,21 +989,15 @@ function OrderDetailPanel({
               {/* ── Split UPI phase ── */}
               {paymentMethod === 'split' && splitPhase === 'upi' && (
                 <div className="space-y-3 pt-1">
-                  {profile?.upi_qr_code ? (
-                    <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-3">
-                      <img src={profile.upi_qr_code} alt="UPI QR" className="h-32 w-32 rounded-lg object-contain" />
-                      {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-center text-xs text-gray-400">
-                      Add a UPI ID in Restaurant Profile to enable QR codes.
-                    </div>
-                  )}
-                  <div className="rounded-xl bg-gray-50 px-4 py-3 text-center">
-                    <p className="mb-0.5 text-xs font-medium text-gray-500">UPI Amount</p>
-                    <p className="text-xl font-bold text-primary">{fmt(splitUpiAmount)}</p>
-                    <p className="mt-0.5 text-xs text-gray-400">Cash paid: {fmt(splitCashPortionAmount)}</p>
-                  </div>
+                  <UpiPaymentDisplay
+                    profile={profile}
+                    amount={splitUpiAmount}
+                    transactionNote={`Table ${table.name} split payment`}
+                    qrSize={128}
+                  />
+                  <p className="text-center text-xs text-gray-500">
+                    Cash paid: {fmt(splitCashPortionAmount)}
+                  </p>
                   <input
                     type="text"
                     value={upiTransactionId}
