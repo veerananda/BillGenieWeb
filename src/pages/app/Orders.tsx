@@ -24,7 +24,7 @@ import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptio
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
-import { selectTables, setTables, upsertTable } from '../../store/tablesSlice';
+import { selectTables, setTables, upsertTable, setTableAssistance } from '../../store/tablesSlice';
 import {
   selectActiveOrders,
   setActiveOrders,
@@ -44,7 +44,7 @@ import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
-import { BillShareQrModal } from '../../components/app/BillShareQrModal';
+import { AssistanceQrModal } from '../../components/app/AssistanceQrModal';
 import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { Badge } from '../../components/app/Badge';
 import { EmptyState } from '../../components/app/EmptyState';
@@ -98,6 +98,10 @@ function billSubtotal(order: Order): number {
   return order.sub_total > 0 ? order.sub_total : order.total;
 }
 
+function tableNeedsAssistance(table: RestaurantTable): boolean {
+  return Boolean(table.assistance_requested_at);
+}
+
 function TableCard({
   table,
   order,
@@ -110,6 +114,7 @@ function TableCard({
   kitchenEnabled: boolean;
 }) {
   const occupied = table.is_occupied;
+  const needsAssistance = tableNeedsAssistance(table);
   const derived = kitchenEnabled && occupied && order ? getDerivedItemStatus(order) : null;
 
   const readyCount = kitchenEnabled
@@ -120,7 +125,9 @@ function TableCard({
     <button
       onClick={onClick}
       className={`group flex w-full flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-        derived === 'ready'
+        needsAssistance
+          ? 'border-sky-500 bg-sky-50 hover:border-sky-600'
+          : derived === 'ready'
           ? 'border-amber-400 bg-amber-50 hover:border-amber-500'
           : occupied
           ? 'border-red-400 bg-red-50 hover:border-red-500'
@@ -129,10 +136,20 @@ function TableCard({
     >
       {/* Badge row */}
       <div className="flex items-start justify-between gap-2">
-        <Badge variant={derived === 'ready' ? 'warning' : occupied ? 'occupied' : 'vacant'}>
+        <Badge variant={needsAssistance ? 'warning' : derived === 'ready' ? 'warning' : occupied ? 'occupied' : 'vacant'}>
           <span className="flex items-center gap-1">
-            {derived === 'ready' && <CheckCircle className="h-3 w-3" />}
-            {derived === 'ready' ? 'Ready to serve' : occupied ? 'In use' : 'Vacant'}
+            {needsAssistance ? (
+              <>Needs attention</>
+            ) : derived === 'ready' ? (
+              <>
+                <CheckCircle className="h-3 w-3" />
+                Ready to serve
+              </>
+            ) : occupied ? (
+              'In use'
+            ) : (
+              'Vacant'
+            )}
           </span>
         </Badge>
       </div>
@@ -143,7 +160,12 @@ function TableCard({
       </span>
 
       {/* Content */}
-      {occupied && order ? (
+      {needsAssistance ? (
+        <div className="space-y-1">
+          <p className="text-xs font-bold text-sky-700">Customer requested assistance</p>
+          <p className="text-xs text-sky-600">Tap to open table</p>
+        </div>
+      ) : occupied && order ? (
         <div className="space-y-1">
           {derived === 'ready' ? (
             <>
@@ -288,6 +310,16 @@ function OrderDetailPanel({
     parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
   );
 
+  // Clear call-waiter attention when staff opens this table
+  useEffect(() => {
+    if (!tableNeedsAssistance(table)) return;
+    apiClient.clearTableAssistance(table.id)
+      .then((updated) => dispatch(upsertTable(updated)))
+      .catch(() => {
+        dispatch(setTableAssistance({ tableId: table.id, assistanceRequested: false }));
+      });
+  }, [table.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Hydrate full order (with items) when the panel opens or items are missing
   useEffect(() => {
     if (!order.items?.length) {
@@ -335,9 +367,9 @@ function OrderDetailPanel({
   const [upiTransactionId, setUpiTransactionId] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [billShareOpen, setBillShareOpen] = useState(false);
-  const [billShareUrl, setBillShareUrl] = useState<string | null>(null);
-  const [billShareLoading, setBillShareLoading] = useState(false);
+  const [assistanceOpen, setAssistanceOpen] = useState(false);
+  const [assistanceUrl, setAssistanceUrl] = useState<string | null>(null);
+  const [assistanceLoading, setAssistanceLoading] = useState(false);
 
   // Split bill state
   const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
@@ -481,18 +513,18 @@ function OrderDetailPanel({
       });
   };
 
-  const handleOpenBillShare = async () => {
-    setBillShareOpen(true);
-    setBillShareLoading(true);
-    setBillShareUrl(null);
+  const handleOpenAssistanceQr = async () => {
+    setAssistanceOpen(true);
+    setAssistanceLoading(true);
+    setAssistanceUrl(null);
     try {
-      const response = await apiClient.createBillShare(order.id, discountValue);
-      setBillShareUrl(response.bill_url);
+      const response = await apiClient.getTableAssistanceQr(table.id);
+      setAssistanceUrl(response.assistance_url);
     } catch (err: unknown) {
-      setBillShareOpen(false);
-      setPaymentError(err instanceof Error ? err.message : 'Could not create customer bill link');
+      setAssistanceOpen(false);
+      setPaymentError(err instanceof Error ? err.message : 'Could not create assistance QR');
     } finally {
-      setBillShareLoading(false);
+      setAssistanceLoading(false);
     }
   };
 
@@ -732,6 +764,15 @@ function OrderDetailPanel({
                 </button>
               )}
 
+              <button
+                type="button"
+                onClick={handleOpenAssistanceQr}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 py-3 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-50"
+              >
+                <QrCode className="h-4 w-4" />
+                Customer assistance QR
+              </button>
+
               <div className="flex gap-3">
                 {canCancel && (
                   <button
@@ -780,9 +821,12 @@ function OrderDetailPanel({
                         {item.category ? (
                           <p className="truncate text-xs text-gray-400">{item.category}</p>
                         ) : null}
+                        <p className="truncate text-xs text-gray-400">
+                          {item.quantity}× {fmt(unitPrice)}
+                        </p>
                       </div>
                       <span className="shrink-0 whitespace-nowrap font-medium text-gray-900">
-                        {item.quantity}× {fmt(unitPrice)}
+                        {fmt(item.total)}
                       </span>
                     </div>
                   );
@@ -852,29 +896,20 @@ function OrderDetailPanel({
               </div>
             </div>
 
-            {/* Customer review card */}
+            {/* Print bill */}
             <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
-              <p className="text-sm font-semibold text-gray-800">Customer review</p>
-              <p className="text-xs text-gray-400">Share the bill for the customer to verify and download before you collect payment.</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleOpenBillShare}
-                  disabled={billShareLoading}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
-                >
-                  {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
-                  Customer bill QR
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrintBill}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  <Printer className="h-4 w-4" />
-                  Print bill
-                </button>
-              </div>
+              <p className="text-sm font-semibold text-gray-800">Staff print</p>
+              <p className="text-xs text-gray-400">
+                Customer bill review appears on their assistance QR page when you start checkout.
+              </p>
+              <button
+                type="button"
+                onClick={handlePrintBill}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Printer className="h-4 w-4" />
+                Print bill
+              </button>
             </div>
 
             {/* Payment Method card */}
@@ -1048,11 +1083,12 @@ function OrderDetailPanel({
         </div>
       </Modal>
 
-      <BillShareQrModal
-        open={billShareOpen}
-        billUrl={billShareUrl}
-        loading={billShareLoading}
-        onClose={() => setBillShareOpen(false)}
+      <AssistanceQrModal
+        open={assistanceOpen}
+        tableName={table.name}
+        assistanceUrl={assistanceUrl}
+        loading={assistanceLoading}
+        onClose={() => setAssistanceOpen(false)}
       />
 
       {/* Cancel confirm modal */}
