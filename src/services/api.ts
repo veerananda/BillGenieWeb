@@ -592,6 +592,7 @@ class APIClient {
   async getTableAssistanceQr(tableId: string): Promise<{
     table_id: string;
     table_name: string;
+    order_id?: string;
     assistance_token: string;
     assistance_url: string;
   }> {

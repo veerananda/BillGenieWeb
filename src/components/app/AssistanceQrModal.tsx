@@ -44,7 +44,7 @@ export function AssistanceQrModal({
       <div className="space-y-4 text-center">
         <p className="text-sm text-gray-600">
           Ask the customer to scan this QR for table <span className="font-semibold text-gray-800">{tableName}</span>.
-          They can call a waiter, and when you start checkout their bill review and download appear on the same page.
+          They can call a waiter, see this order&apos;s bill items, and download the bill once checkout starts.
         </p>
 
         <div className="mx-auto flex min-h-[252px] min-w-[252px] items-center justify-center rounded-2xl bg-gray-50 p-4">
