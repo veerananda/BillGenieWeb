@@ -20,6 +20,7 @@ import {
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
 import { resolveOrderItemParts, getOrderItemGroupKey } from '../../lib/orderHelpers';
+import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
@@ -101,15 +102,19 @@ function TableCard({
   table,
   order,
   onClick,
+  kitchenEnabled,
 }: {
   table: RestaurantTable;
   order: Order | undefined;
   onClick: () => void;
+  kitchenEnabled: boolean;
 }) {
   const occupied = table.is_occupied;
-  const derived = occupied && order ? getDerivedItemStatus(order) : null;
+  const derived = kitchenEnabled && occupied && order ? getDerivedItemStatus(order) : null;
 
-  const readyCount = order?.items?.filter((i) => i.status === 'ready').length ?? 0;
+  const readyCount = kitchenEnabled
+    ? (order?.items?.filter((i) => i.status === 'ready').length ?? 0)
+    : 0;
 
   return (
     <button
@@ -156,7 +161,7 @@ function TableCard({
               {(order.items?.length ?? 0) > 0 && (
                 <p className="text-sm font-semibold text-primary">{fmt(billSubtotal(order))}</p>
               )}
-              {derived === 'cooking' && (
+              {kitchenEnabled && derived === 'cooking' && (
                 <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                   Cooking…
                 </span>
@@ -279,6 +284,9 @@ function OrderDetailPanel({
   const menuItems = useAppSelector(selectMenuItems);
   const profile = useAppSelector(selectProfile);
   const menuMap = new Map(menuItems.map((m) => [m.id, m]));
+  const kitchenEnabled = hasKitchenAccess(
+    parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
+  );
 
   // Hydrate full order (with items) when the panel opens or items are missing
   useEffect(() => {
@@ -631,32 +639,34 @@ function OrderDetailPanel({
           <div className="space-y-3">
             {groupedItems.map((item) => {
               const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
-              const isReady = item.status === 'ready';
-              const isCooking = item.status === 'cooking';
-              const isServed = item.status === 'served';
+              const isReady = kitchenEnabled && item.status === 'ready';
+              const isCooking = kitchenEnabled && item.status === 'cooking';
+              const isServed = kitchenEnabled && item.status === 'served';
               const isServing = item.ids.some((id) => servingId === id);
               return (
                 <div key={item.groupKey} className="flex items-center gap-3">
-                  {/* Status icon — tappable when ready */}
-                  {isReady ? (
-                    <button
-                      onClick={() => item.ids.forEach((id) => handleServe(id))}
-                      disabled={isServing}
-                      title="Tap to mark as served"
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-all hover:bg-primary/20 disabled:opacity-50 active:scale-95"
-                    >
-                      {isServing
-                        ? <CheckCircle className="h-5 w-5 text-primary" />
-                        : <UtensilsCrossed className="h-5 w-5 text-primary" />}
-                    </button>
-                  ) : isServed ? (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                      <CheckCircle className="h-5 w-5 text-primary" />
-                    </div>
-                  ) : (
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isCooking ? 'bg-amber-50' : 'bg-gray-100'}`}>
-                      <Clock className={`h-5 w-5 ${isCooking ? 'text-amber-500' : 'text-gray-400'}`} />
-                    </div>
+                  {/* Status icons only when kitchen dine-in/counter KOT is enabled */}
+                  {kitchenEnabled && (
+                    isReady ? (
+                      <button
+                        onClick={() => item.ids.forEach((id) => handleServe(id))}
+                        disabled={isServing}
+                        title="Tap to mark as served"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-all hover:bg-primary/20 disabled:opacity-50 active:scale-95"
+                      >
+                        {isServing
+                          ? <CheckCircle className="h-5 w-5 text-primary" />
+                          : <UtensilsCrossed className="h-5 w-5 text-primary" />}
+                      </button>
+                    ) : isServed ? (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                        <CheckCircle className="h-5 w-5 text-primary" />
+                      </div>
+                    ) : (
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isCooking ? 'bg-amber-50' : 'bg-gray-100'}`}>
+                        <Clock className={`h-5 w-5 ${isCooking ? 'text-amber-500' : 'text-gray-400'}`} />
+                      </div>
+                    )
                   )}
 
                   {/* Name + qty */}
@@ -674,11 +684,11 @@ function OrderDetailPanel({
                   {/* Total + status label */}
                   <div className="shrink-0 flex flex-col items-end gap-1">
                     <span className="text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
-                    {isReady ? (
+                    {kitchenEnabled && isReady ? (
                       <span className="text-xs font-medium text-primary">Tap to serve</span>
-                    ) : isCooking ? (
+                    ) : kitchenEnabled && isCooking ? (
                       <Badge variant="cooking">Cooking</Badge>
-                    ) : isServed ? (
+                    ) : kitchenEnabled && isServed ? (
                       <Badge variant="served">Served</Badge>
                     ) : null}
                   </div>
@@ -758,20 +768,25 @@ function OrderDetailPanel({
             <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 space-y-2">
               <p className="text-sm font-semibold text-gray-800">Order items</p>
               <div className="space-y-1.5">
-                {groupedItems.map((item) => (
-                  <div key={item.groupKey} className="flex justify-between gap-2 text-sm">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-gray-600">{item.name} ×{item.quantity}</span>
-                        <VegBadge isVeg={item.isVeg} />
+                {groupedItems.map((item) => {
+                  const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
+                  return (
+                    <div key={item.groupKey} className="flex justify-between gap-2 text-sm">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-gray-600">{item.name}</span>
+                          <VegBadge isVeg={item.isVeg} />
+                        </div>
+                        {item.category ? (
+                          <p className="truncate text-xs text-gray-400">{item.category}</p>
+                        ) : null}
                       </div>
-                      {item.category ? (
-                        <p className="text-xs text-gray-400">{item.category}</p>
-                      ) : null}
+                      <span className="shrink-0 whitespace-nowrap font-medium text-gray-900">
+                        {item.quantity}× {fmt(unitPrice)}
+                      </span>
                     </div>
-                    <span className="shrink-0 font-medium text-gray-900">{fmt(item.total)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="border-t border-gray-200 pt-2 space-y-1.5">
                 <div className="flex justify-between text-sm text-gray-600">
@@ -1418,10 +1433,14 @@ export function Orders() {
   const tables = useAppSelector(selectTables);
   const activeOrders = useAppSelector(selectActiveOrders);
   const menuHydrated = useAppSelector(selectMenuHydrated);
+  const profile = useAppSelector(selectProfile);
   const role = useAppSelector(selectAuthRole);
   const canCancelOrders = useAppSelector(selectCanCancelOrders);
   // Admins and managers can always cancel; staff only if explicitly permitted
   const canCancel = role === 'admin' || role === 'manager' || canCancelOrders;
+  const kitchenEnabled = hasKitchenAccess(
+    parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
+  );
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1612,6 +1631,7 @@ export function Orders() {
                   key={table.id}
                   table={table}
                   order={getOrderForTable(table)}
+                  kitchenEnabled={kitchenEnabled}
                   onClick={() => handleTableClick(table)}
                 />
               ))}
