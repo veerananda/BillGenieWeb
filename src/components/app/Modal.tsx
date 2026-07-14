@@ -6,11 +6,11 @@ interface Props {
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   zIndexClass?: string;
 }
 
-const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl' };
+const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl' };
 
 export function Modal({ open, onClose, title, children, maxWidth = 'md', zIndexClass = 'z-50' }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -44,7 +44,7 @@ export function Modal({ open, onClose, title, children, maxWidth = 'md', zIndexC
       */}
       <div
         className={`
-          flex w-full flex-col bg-white shadow-xl
+          flex w-full flex-col bg-white shadow-xl overflow-hidden
           rounded-t-2xl sm:rounded-2xl
           max-h-[92vh] sm:max-h-[90vh]
           ${widths[maxWidth]}
