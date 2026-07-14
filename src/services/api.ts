@@ -240,6 +240,8 @@ export interface RestaurantTable {
   is_occupied: boolean;
   current_order_id?: string;
   capacity?: number;
+  assistance_token?: string;
+  assistance_requested_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -585,6 +587,19 @@ class APIClient {
 
   async setTableVacant(tableId: string): Promise<RestaurantTable> {
     return this.makeRequest(`/tables/${tableId}/vacant`, 'PUT', {});
+  }
+
+  async getTableAssistanceQr(tableId: string): Promise<{
+    table_id: string;
+    table_name: string;
+    assistance_token: string;
+    assistance_url: string;
+  }> {
+    return this.makeRequest(`/tables/${tableId}/assistance-qr`);
+  }
+
+  async clearTableAssistance(tableId: string): Promise<RestaurantTable> {
+    return this.makeRequest(`/tables/${tableId}/clear-assistance`, 'POST', {});
   }
 
   // ── Profile ───────────────────────────────────────────────────────────────
