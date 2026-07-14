@@ -13,7 +13,6 @@ import {
   ArrowLeftRight,
   QrCode,
   Printer,
-  Users,
   Clock,
   Leaf,
   Beef,
@@ -121,16 +120,12 @@ function TableCard({
             {derived === 'ready' ? 'Ready to serve' : occupied ? 'In use' : 'Vacant'}
           </span>
         </Badge>
-        {table.capacity ? (
-          <span className="flex items-center gap-1 text-xs text-gray-400">
-            <Users size={11} />
-            {table.capacity}
-          </span>
-        ) : null}
       </div>
 
       {/* Table name */}
-      <span className="text-base font-bold text-gray-900">{table.name}</span>
+      <span className="text-base font-bold text-gray-900">
+        {table.name}{table.capacity ? ` (${table.capacity})` : ''}
+      </span>
 
       {/* Content */}
       {occupied && order ? (
@@ -318,6 +313,7 @@ function OrderDetailPanel({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [discountAmount, setDiscountAmount] = useState('');
+  const [discountType, setDiscountType] = useState<'₹' | '%'>('₹');
   const [upiTransactionId, setUpiTransactionId] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -377,7 +373,10 @@ function OrderDetailPanel({
   );
 
   // ── GST-aware totals ──────────────────────────────────────────────────────
-  const discountValue = parseFloat(discountAmount) || 0;
+  const discountInput = parseFloat(discountAmount) || 0;
+  const discountValue = discountType === '%'
+    ? Math.min(gross, gross * discountInput / 100)
+    : discountInput;
   const taxResult = calculateOrderTax(gross, discountValue, pricesIncludeGst);
   const displaySubtotal = taxResult.subtotal;
   const displayTax = taxResult.taxAmount;
@@ -405,6 +404,7 @@ function OrderDetailPanel({
       setPaymentOpen(false);
       setCheckoutAcquired(false);
       setDiscountAmount('');
+      setDiscountType('₹');
       setAmountReceived('');
       setUpiTransactionId('');
       setPaymentError(null);
@@ -671,14 +671,6 @@ function OrderDetailPanel({
           )}
           {order.status !== 'completed' && order.status !== 'cancelled' && (
             <>
-              <button
-                onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-              >
-                <CreditCard className="h-4 w-4" />
-                Checkout
-              </button>
-
               {onAddItems && (
                 <button
                   onClick={onAddItems}
@@ -688,17 +680,26 @@ function OrderDetailPanel({
                   Add items
                 </button>
               )}
-            </>
-          )}
 
-          {canCancel && (
-            <button
-              onClick={() => setCancelConfirmOpen(true)}
-              disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
-              className="w-full rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
-            >
-              Cancel order
-            </button>
+              <div className="flex gap-3">
+                {canCancel && (
+                  <button
+                    onClick={() => setCancelConfirmOpen(true)}
+                    disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
+                    className="flex-1 rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+                  >
+                    Cancel order
+                  </button>
+                )}
+                <button
+                  onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
+                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 ${canCancel ? 'flex-1' : 'w-full'}`}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Checkout
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -707,298 +708,292 @@ function OrderDetailPanel({
       <Modal
         open={paymentOpen}
         onClose={closePaymentModal}
-        title={
-          paymentMethod === 'upi'
-            ? 'UPI Payment'
-            : paymentMethod === 'split'
-            ? splitPhase === 'upi'
-              ? 'Split — UPI Remainder'
-              : 'Split — Cash Portion'
-            : 'Cash Payment'
-        }
-        maxWidth="sm"
+        title="Bill Summary"
+        maxWidth="3xl"
       >
-        <div className="space-y-4">
-          {paymentError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {paymentError}
-            </div>
-          )}
-
-          {/* Bill summary */}
-          <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-1.5">
-            {groupedItems.map((item) => (
-              <div key={item.menuId} className="flex justify-between text-sm">
-                <span className="text-gray-600">{item.name} ×{item.quantity}</span>
-                <span className="font-medium text-gray-900">{fmt(item.total)}</span>
+        <div className="flex gap-6">
+          {/* ── Left column: bill items + subtotal + GST ── */}
+          <div className="w-64 shrink-0">
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 space-y-2">
+              <p className="text-sm font-semibold text-gray-800">Bill Summary</p>
+              <div className="space-y-1.5">
+                {groupedItems.map((item) => (
+                  <div key={item.menuId} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{item.name} ×{item.quantity}</span>
+                    <span className="font-medium text-gray-900">{fmt(item.total)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-            <div className="border-t border-gray-200 pt-1.5 space-y-1">
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>{taxResult.subtotalLabel}</span>
-                <span>{fmt(displaySubtotal)}</span>
-              </div>
-              {displayTax > 0 && (
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>Tax (5%)</span>
-                  <span>{fmt(displayTax)}</span>
+              <div className="border-t border-gray-200 pt-2 space-y-1.5">
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{fmt(displaySubtotal)}</span>
                 </div>
-              )}
-              {discountValue > 0 && (
-                <div className="flex justify-between text-xs text-green-600">
-                  <span>Discount</span>
-                  <span>-{fmt(discountValue)}</span>
-                </div>
-              )}
-              <div className="flex justify-between border-t border-gray-200 pt-1 text-sm font-bold text-gray-900">
-                <span>Total</span>
-                <span>{fmt(displayTotal)}</span>
+                {displayTax > 0 && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>GST (5%)</span>
+                    <span>{fmt(displayTax)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Discount (common to all payment methods) */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Discount (optional)</label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
-              <input
-                type="number"
-                min={0}
-                max={gross}
-                step="0.01"
-                value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)}
-                placeholder="0"
-                className="w-full rounded-xl border border-gray-200 py-2.5 pl-7 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          {/* Share + print */}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleOpenBillShare}
-              disabled={billShareLoading}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
-            >
-              {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
-              Customer QR
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintBill}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <Printer className="h-4 w-4" />
-              Print bill
-            </button>
-          </div>
-
-          {/* Payment method tabs */}
-          <div className="flex gap-2">
-            {([
-              { value: 'cash' as PaymentMethod, label: 'Cash', icon: <Banknote className="h-4 w-4" /> },
-              { value: 'upi' as PaymentMethod, label: 'UPI', icon: <CreditCard className="h-4 w-4" /> },
-              { value: 'split' as PaymentMethod, label: 'Split', icon: <ArrowLeftRight className="h-4 w-4" /> },
-            ] as const).map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => { setPaymentMethod(tab.value); setSplitPhase('cash'); setPaymentError(null); }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl border py-2.5 text-sm font-medium transition-colors ${
-                  paymentMethod === tab.value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── UPI layout (matches mobile UPI Payment screen) ── */}
-          {paymentMethod === 'upi' && (
-            <div className="space-y-4">
-              {/* QR code or placeholder */}
-              {profile?.upi_qr_code ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-4">
-                  <img
-                    src={profile.upi_qr_code}
-                    alt="UPI QR Code"
-                    className="h-44 w-44 rounded-lg object-contain"
-                  />
-                  {profile.upi_id && (
-                    <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-400">
-                  Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
-                </div>
-              )}
-
-              {/* Bill amount */}
-              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-                <p className="mb-1 text-xs font-medium text-gray-500">Bill Amount</p>
-                <p className="text-2xl font-bold text-primary">{fmt(displayTotal)}</p>
+          {/* ── Right column: discount + customer review + payment method ── */}
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            {paymentError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {paymentError}
               </div>
+            )}
 
-              {/* Transaction ID */}
-              <input
-                type="text"
-                value={upiTransactionId}
-                onChange={(e) => setUpiTransactionId(e.target.value)}
-                placeholder="Enter transaction ID after payment (optional)"
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-
-              {/* Summary */}
-              <div className="rounded-xl bg-gray-50 px-4 py-3 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Amount to Receive:</span>
-                  <span className="font-semibold text-gray-900">{fmt(displayTotal)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Transaction ID:</span>
-                  <span className="text-gray-500">{upiTransactionId.trim() || '—'}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Cash layout ── */}
-          {paymentMethod === 'cash' && (
-            <div className="space-y-4">
-              {/* Amount received */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Amount received (₹)
-                </label>
+            {/* Apply Discount card */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Apply Discount (Optional)</p>
+              <div className="flex gap-2">
                 <input
                   type="number"
-                  min={effectiveTotal}
+                  min={0}
+                  max={discountType === '%' ? 100 : gross}
                   step="0.01"
-                  value={amountReceived}
-                  onChange={(e) => setAmountReceived(e.target.value)}
-                  placeholder={String(effectiveTotal)}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={discountAmount}
+                  onChange={(e) => setDiscountAmount(e.target.value)}
+                  placeholder="0"
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
+                <button
+                  onClick={() => { setDiscountType('₹'); setDiscountAmount(''); }}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
+                    discountType === '₹'
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  ₹
+                </button>
+                <button
+                  onClick={() => { setDiscountType('%'); setDiscountAmount(''); }}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
+                    discountType === '%'
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  %
+                </button>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
+                <span className="text-sm font-semibold text-gray-700">Total Amount</span>
+                <span className="text-lg font-bold text-primary">{fmt(displayTotal)}</span>
+              </div>
+            </div>
+
+            {/* Customer review card */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Customer review</p>
+              <p className="text-xs text-gray-400">Share the bill for the customer to verify and download before you collect payment.</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenBillShare}
+                  disabled={billShareLoading}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+                >
+                  {billShareLoading ? <Spinner size="sm" /> : <QrCode className="h-4 w-4" />}
+                  Customer bill QR
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintBill}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print bill
+                </button>
+              </div>
+            </div>
+
+            {/* Payment Method card */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Payment Method</p>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  {([
+                    { value: 'cash' as PaymentMethod, label: 'Pay by Cash', icon: <Banknote className="h-4 w-4" /> },
+                    { value: 'upi' as PaymentMethod, label: 'Pay by UPI', icon: <CreditCard className="h-4 w-4" /> },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.value}
+                      onClick={() => { setPaymentMethod(tab.value); setSplitPhase('cash'); setPaymentError(null); }}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
+                        paymentMethod === tab.value
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => { setPaymentMethod('split'); setSplitPhase('cash'); setPaymentError(null); }}
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
+                    paymentMethod === 'split'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <ArrowLeftRight className="h-4 w-4" />
+                  Split payment
+                </button>
               </div>
 
-              {/* Change */}
-              {amountReceived && !isNaN(parseFloat(amountReceived)) && (
-                <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Change to Return:</span>
-                    <span className={`font-semibold ${changeAmount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                      {fmt(Math.max(0, changeAmount))}
-                    </span>
+              {/* ── UPI inputs ── */}
+              {paymentMethod === 'upi' && (
+                <div className="space-y-3 pt-1">
+                  {profile?.upi_qr_code ? (
+                    <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-3">
+                      <img src={profile.upi_qr_code} alt="UPI QR Code" className="h-36 w-36 rounded-lg object-contain" />
+                      {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-center text-xs text-gray-400">
+                      Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
+                    </div>
+                  )}
+                  <div className="rounded-xl bg-gray-50 px-4 py-3 text-center">
+                    <p className="mb-0.5 text-xs font-medium text-gray-500">Bill Amount</p>
+                    <p className="text-xl font-bold text-primary">{fmt(displayTotal)}</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={upiTransactionId}
+                    onChange={(e) => setUpiTransactionId(e.target.value)}
+                    placeholder="Enter transaction ID after payment (optional)"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {/* ── Cash inputs ── */}
+              {paymentMethod === 'cash' && (
+                <div className="space-y-3 pt-1">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Amount received (₹)</label>
+                    <input
+                      type="number"
+                      min={effectiveTotal}
+                      step="0.01"
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                      placeholder={String(effectiveTotal)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  {amountReceived && !isNaN(parseFloat(amountReceived)) && (
+                    <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-2.5 text-sm">
+                      <span className="text-gray-600">Change to Return</span>
+                      <span className={`font-semibold ${changeAmount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {fmt(Math.max(0, changeAmount))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Split cash phase ── */}
+              {paymentMethod === 'split' && splitPhase === 'cash' && (
+                <div className="space-y-3 pt-1">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Cash portion</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={effectiveTotal}
+                        step="0.01"
+                        value={splitCashPortion}
+                        onChange={(e) => setSplitCashPortion(e.target.value)}
+                        placeholder="0"
+                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    {splitCashPortionAmount > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">UPI remainder: <span className="font-semibold text-primary">{fmt(splitUpiAmount)}</span></p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Cash received</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                      <input
+                        type="number"
+                        min={splitCashPortionAmount}
+                        step="0.01"
+                        value={splitCashGiven}
+                        onChange={(e) => setSplitCashGiven(e.target.value)}
+                        placeholder={String(splitCashPortionAmount || 0)}
+                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    {splitCashGivenAmount > 0 && splitCashPortionAmount > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">Change to return: <span className="font-semibold">{fmt(splitChange)}</span></p>
+                    )}
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ── Split bill layout ── */}
-          {paymentMethod === 'split' && splitPhase === 'cash' && (
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Cash portion (customer pays in cash)
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+              {/* ── Split UPI phase ── */}
+              {paymentMethod === 'split' && splitPhase === 'upi' && (
+                <div className="space-y-3 pt-1">
+                  {profile?.upi_qr_code ? (
+                    <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-3">
+                      <img src={profile.upi_qr_code} alt="UPI QR" className="h-32 w-32 rounded-lg object-contain" />
+                      {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-center text-xs text-gray-400">
+                      Add a UPI ID in Restaurant Profile to enable QR codes.
+                    </div>
+                  )}
+                  <div className="rounded-xl bg-gray-50 px-4 py-3 text-center">
+                    <p className="mb-0.5 text-xs font-medium text-gray-500">UPI Amount</p>
+                    <p className="text-xl font-bold text-primary">{fmt(splitUpiAmount)}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">Cash paid: {fmt(splitCashPortionAmount)}</p>
+                  </div>
                   <input
-                    type="number"
-                    min={0}
-                    max={effectiveTotal}
-                    step="0.01"
-                    value={splitCashPortion}
-                    onChange={(e) => setSplitCashPortion(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    type="text"
+                    value={upiTransactionId}
+                    onChange={(e) => setUpiTransactionId(e.target.value)}
+                    placeholder="Enter UPI transaction ID (optional)"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
-                {splitCashPortionAmount > 0 && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    UPI remainder: <span className="font-semibold text-primary">{fmt(splitUpiAmount)}</span>
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Cash received from customer
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
-                  <input
-                    type="number"
-                    min={splitCashPortionAmount}
-                    step="0.01"
-                    value={splitCashGiven}
-                    onChange={(e) => setSplitCashGiven(e.target.value)}
-                    placeholder={String(splitCashPortionAmount || 0)}
-                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                {splitCashGivenAmount > 0 && splitCashPortionAmount > 0 && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Change to return: <span className="font-semibold">{fmt(splitChange)}</span>
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {paymentMethod === 'split' && splitPhase === 'upi' && (
-            <div className="space-y-4">
-              {profile?.upi_qr_code ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl bg-gray-50 p-4">
-                  <img src={profile.upi_qr_code} alt="UPI QR" className="h-40 w-40 rounded-lg object-contain" />
-                  {profile.upi_id && <p className="text-xs font-medium text-gray-600">{profile.upi_id}</p>}
-                </div>
-              ) : (
-                <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-400">
-                  Add a UPI ID in Restaurant Profile to enable QR codes.
-                </div>
               )}
-              <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-                <p className="mb-1 text-xs font-medium text-gray-500">UPI Amount</p>
-                <p className="text-2xl font-bold text-primary">{fmt(splitUpiAmount)}</p>
-                <p className="mt-1 text-xs text-gray-400">Cash portion paid: {fmt(splitCashPortionAmount)}</p>
-              </div>
-              <input
-                type="text"
-                value={upiTransactionId}
-                onChange={(e) => setUpiTransactionId(e.target.value)}
-                placeholder="Enter UPI transaction ID (optional)"
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
             </div>
-          )}
 
-          <div className="flex gap-3">
-            <button
-              onClick={paymentMethod === 'split' && splitPhase === 'upi' ? () => setSplitPhase('cash') : closePaymentModal}
-              disabled={paymentLoading}
-              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Back
-            </button>
-            <button
-              onClick={handlePayment}
-              disabled={paymentLoading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              {paymentLoading ? (
-                <Spinner size="sm" className="text-white" />
-              ) : (
-                <CheckCircle className="h-4 w-4" />
-              )}
-              {paymentMethod === 'split' && splitPhase === 'cash' ? 'Accept Cash & Pay UPI' : 'Confirm Payment'}
-            </button>
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={paymentMethod === 'split' && splitPhase === 'upi' ? () => setSplitPhase('cash') : closePaymentModal}
+                disabled={paymentLoading}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                onClick={handlePayment}
+                disabled={paymentLoading}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                {paymentLoading ? <Spinner size="sm" className="text-white" /> : <CheckCircle className="h-4 w-4 shrink-0" />}
+                <span className="text-center leading-tight">
+                  {paymentMethod === 'split' && splitPhase === 'cash' ? <>Accept Cash<br />&amp; Pay UPI</> : 'Confirm Payment'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </Modal>
