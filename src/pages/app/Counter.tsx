@@ -34,6 +34,7 @@ interface CartItem {
   price: number;
   quantity: number;
   isVeg: boolean;
+  notes?: string;
 }
 
 type ServiceMode = 'eat_here' | 'takeaway';
@@ -139,6 +140,9 @@ function OrderSummaryBlock({
             </div>
             {c.category ? (
               <p className="ml-4 truncate text-xs text-gray-400">{c.category}</p>
+            ) : null}
+            {c.notes?.trim() ? (
+              <p className="ml-4 mt-0.5 text-xs italic text-amber-600">{c.notes.trim()}</p>
             ) : null}
           </div>
           <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -308,6 +312,10 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     );
   }
 
+  function changeNotes(id: string, notes: string) {
+    setCart((prev) => prev.map((c) => c.menuItemId === id ? { ...c, notes } : c));
+  }
+
   async function saveOrder(payment: CompletePaymentRequest, summary: string) {
     setProcessing(true);
     setError(null);
@@ -317,7 +325,11 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         service_mode: serviceMode,
         customer_name: customerName.trim() || undefined,
         customer_phone: customerPhone.trim() || undefined,
-        items: cart.map((c) => ({ menu_item_id: c.menuItemId, quantity: c.quantity })),
+        items: cart.map((c) => ({
+          menu_item_id: c.menuItemId,
+          quantity: c.quantity,
+          notes: c.notes?.trim() || undefined,
+        })),
       });
 
       const result = await apiClient.completeOrderWithPayment(createdOrder.id, payment);
@@ -610,34 +622,43 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                   <p className="py-6 text-center text-xs text-gray-400">Add items from the menu</p>
                 ) : (
                   cart.map((c) => (
-                    <div key={c.menuItemId} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
-                          {c.isVeg
-                            ? <Leaf size={13} color="#22c55e" className="shrink-0" />
-                            : <Beef size={13} color="#dc2626" className="shrink-0" />}
+                    <div key={c.menuItemId} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
+                            {c.isVeg
+                              ? <Leaf size={13} color="#22c55e" className="shrink-0" />
+                              : <Beef size={13} color="#dc2626" className="shrink-0" />}
+                          </div>
+                          {c.category ? (
+                            <p className="truncate text-xs text-gray-400">{c.category}</p>
+                          ) : null}
+                          <p className="text-xs text-gray-400">₹{c.price}</p>
                         </div>
-                        {c.category ? (
-                          <p className="truncate text-xs text-gray-400">{c.category}</p>
-                        ) : null}
-                        <p className="text-xs text-gray-400">₹{c.price}</p>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            onClick={() => changeQty(c.menuItemId, -1)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
+                          <button
+                            onClick={() => changeQty(c.menuItemId, 1)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          onClick={() => changeQty(c.menuItemId, -1)}
-                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
-                        <button
-                          onClick={() => changeQty(c.menuItemId, 1)}
-                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
+                      <input
+                        type="text"
+                        value={c.notes ?? ''}
+                        onChange={(e) => changeNotes(c.menuItemId, e.target.value)}
+                        placeholder="Chef note (optional)"
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
                     </div>
                   ))
                 )}

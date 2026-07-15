@@ -88,7 +88,6 @@ function KOTCard({
             ) : null}
           </div>
           <p className="text-lg font-bold text-gray-900">{tableLabel}</p>
-          <p className="mt-0.5 text-sm text-gray-500">{ticket.customerName}</p>
           <p className="mt-1 text-xs text-gray-400">
             {formatKitchenElapsed(ticket.firedAt)} · Fired {formatKitchenTime(ticket.firedAt)}
           </p>
@@ -115,8 +114,11 @@ function KOTCard({
           >
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
+              {item.category ? (
+                <p className="mt-0.5 truncate text-xs text-gray-400">{item.category}</p>
+              ) : null}
               {item.notes ? (
-                <p className="mt-0.5 text-xs italic text-gray-400">{item.notes}</p>
+                <p className="mt-0.5 text-xs italic text-amber-600">{item.notes}</p>
               ) : null}
             </div>
             <span className="shrink-0 text-sm font-bold text-primary">{item.quantity}x</span>
@@ -298,6 +300,9 @@ export function Kitchen() {
                 <p className="line-clamp-2 text-xs font-semibold leading-tight text-gray-800">
                   {entry.name}
                 </p>
+                {entry.category ? (
+                  <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400">{entry.category}</p>
+                ) : null}
                 <span className="mt-1 text-lg font-extrabold text-primary">×{entry.totalQty}</span>
               </div>
             ))}

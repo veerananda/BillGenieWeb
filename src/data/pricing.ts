@@ -229,6 +229,39 @@ export function calculateSubscriptionQuote(selection: SubscriptionSelection): Su
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
+export function isBasicSubscriptionSelection(selection: SubscriptionSelection): boolean {
+  if (selection.operation_mode === 'both') {
+    return false;
+  }
+  if (selection.operation_mode !== 'dine_in' && selection.operation_mode !== 'counter') {
+    return false;
+  }
+  if (
+    selection.extra_staff !== 0 ||
+    selection.extra_managers !== 0 ||
+    selection.history_extended ||
+    selection.inventory ||
+    selection.kitchen_dine_in ||
+    selection.kitchen_counter
+  ) {
+    return false;
+  }
+  if (selection.operation_mode === 'dine_in') {
+    return selection.max_tables === INCLUDED_TABLES_BASIC;
+  }
+  return selection.max_tables === 0;
+}
+
+export function formatSubscriptionPlanName(
+  selection: SubscriptionSelection,
+  options?: { phase?: string }
+): string {
+  if (options?.phase === 'trial') {
+    return 'BillGenie Trial';
+  }
+  return isBasicSubscriptionSelection(selection) ? 'BillGenie Basic' : 'BillGenie Customised';
+}
+
 export function annualTotal(monthly: number): number {
   return monthly * ANNUAL_MULTIPLIER;
 }
