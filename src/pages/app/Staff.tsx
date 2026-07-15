@@ -786,7 +786,7 @@ export function Staff() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Staff"
+        title="Staff Management"
         subtitle={
           loading
             ? 'Loading…'
@@ -810,7 +810,7 @@ export function Staff() {
       {/* Plan seat tracker */}
       {limits && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Seat usage</span>
+          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Plan</span>
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
               staffCount >= limits.max_staff_and_chefs
