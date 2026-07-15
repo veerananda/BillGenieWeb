@@ -30,6 +30,7 @@ import { TrackingQrModal } from '../../components/app/TrackingQrModal';
 interface CartItem {
   menuItemId: string;
   name: string;
+  category: string;
   price: number;
   quantity: number;
   isVeg: boolean;
@@ -132,14 +133,18 @@ function OrderSummaryBlock({
   return (
     <div className="rounded-xl bg-gray-50 p-4 space-y-2">
       {cart.map((c) => (
-        <div key={c.menuItemId} className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <VegDot isVeg={c.isVeg} />
-            <span className="text-sm text-gray-700 truncate">{c.name}</span>
-            <span className="shrink-0 text-xs text-gray-400">×{c.quantity}</span>
+        <div key={c.menuItemId} className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <VegDot isVeg={c.isVeg} />
+              <span className="truncate text-sm text-gray-700">{c.name}</span>
+            </div>
+            {c.category ? (
+              <p className="ml-4 truncate text-xs text-gray-400">{c.category}</p>
+            ) : null}
           </div>
-          <span className="text-sm font-medium text-gray-900 ml-3 shrink-0">
-            {fmt(c.price * c.quantity)}
+          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
+            {c.quantity}× {fmt(c.price)}
           </span>
         </div>
       ))}
@@ -302,7 +307,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     setCart((prev) => {
       const ex = prev.find((c) => c.menuItemId === item.id);
       if (ex) return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, price: item.price, quantity: 1, isVeg: item.is_veg }];
+      return [...prev, { menuItemId: item.id, name: item.name, category: item.category, price: item.price, quantity: 1, isVeg: item.is_veg }];
     });
   }
 
@@ -619,10 +624,15 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                     <div key={c.menuItemId} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <VegDot isVeg={c.isVeg} />
                           <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
+                          {c.isVeg
+                            ? <Leaf size={13} color="#22c55e" className="shrink-0" />
+                            : <Beef size={13} color="#dc2626" className="shrink-0" />}
                         </div>
-                        <p className="ml-4 text-xs text-gray-400">₹{c.price} × {c.quantity}</p>
+                        {c.category ? (
+                          <p className="truncate text-xs text-gray-400">{c.category}</p>
+                        ) : null}
+                        <p className="text-xs text-gray-400">₹{c.price}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <button
@@ -674,7 +684,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                 disabled={cart.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                Proceed to Checkout
+                Proceed to Payment
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -1025,13 +1035,14 @@ export function Counter() {
       ) : sorted.length === 0 ? (
         <EmptyState
           icon={ShoppingCart}
-          title="No counter orders today"
-          description="Create a new order to get started."
+          title="No active counter orders"
+          description="Paid orders waiting in kitchen will appear here. Tap New Order to start."
           action={
             <button
               onClick={() => setPanelOpen(true)}
-              className="mt-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white"
+              className="mt-2 flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white"
             >
+              <Plus className="h-4 w-4" />
               New Order
             </button>
           }

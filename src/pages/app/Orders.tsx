@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Utensils,
   UtensilsCrossed,
   Search,
   Plus,
@@ -267,7 +268,7 @@ function VacantTablePanel({
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {loading ? <Spinner size="sm" className="text-white" /> : null}
-            Mark Occupied
+            Mark In-use
           </button>
           <button
             onClick={onAddItems}
@@ -436,6 +437,7 @@ function OrderDetailPanel({
       return acc;
     }, {})
   );
+  const canCheckout = groupedItems.length > 0;
 
   // ── GST-aware totals ──────────────────────────────────────────────────────
   const discountInput = parseFloat(discountAmount) || 0;
@@ -480,6 +482,8 @@ function OrderDetailPanel({
   };
 
   const handleCheckout = () => {
+    if (!canCheckout) return;
+
     setPaymentOpen(true);
     setPaymentError(null);
     setCheckoutConflictMsg(null);
@@ -678,7 +682,7 @@ function OrderDetailPanel({
                       >
                         {isServing
                           ? <CheckCircle className="h-5 w-5 text-primary" />
-                          : <UtensilsCrossed className="h-5 w-5 text-primary" />}
+                          : <Utensils className="h-5 w-5 text-primary" />}
                       </button>
                     ) : isServed ? (
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -775,7 +779,8 @@ function OrderDetailPanel({
                 )}
                 <button
                   onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
-                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 ${canCancel ? 'flex-1' : 'w-full'}`}
+                  disabled={!canCheckout}
+                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${canCancel ? 'flex-1' : 'w-full'}`}
                 >
                   <CreditCard className="h-4 w-4" />
                   Checkout
@@ -802,7 +807,7 @@ function OrderDetailPanel({
                 {groupedItems.map((item) => {
                   const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
                   return (
-                    <div key={item.groupKey} className="flex justify-between gap-2 text-sm">
+                    <div key={item.groupKey} className="flex items-start justify-between gap-2 text-sm">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-gray-600">{item.name}</span>
@@ -811,12 +816,9 @@ function OrderDetailPanel({
                         {item.category ? (
                           <p className="truncate text-xs text-gray-400">{item.category}</p>
                         ) : null}
-                        <p className="truncate text-xs text-gray-400">
-                          {item.quantity}× {fmt(unitPrice)}
-                        </p>
                       </div>
                       <span className="shrink-0 whitespace-nowrap font-medium text-gray-900">
-                        {fmt(item.total)}
+                        {item.quantity}× {fmt(unitPrice)}
                       </span>
                     </div>
                   );
@@ -1389,8 +1391,14 @@ function TakeOrderPanel({
                       className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-900">{c.menuItem.name}</p>
-                        <p className="text-xs text-gray-400">₹{c.menuItem.price} × {c.quantity}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="truncate text-xs font-medium text-gray-900">{c.menuItem.name}</p>
+                          <VegBadge isVeg={c.menuItem.is_veg} />
+                        </div>
+                        {c.menuItem.category ? (
+                          <p className="truncate text-xs text-gray-400">{c.menuItem.category}</p>
+                        ) : null}
+                        <p className="text-xs text-gray-400">₹{c.menuItem.price}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <button
