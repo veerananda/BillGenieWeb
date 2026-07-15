@@ -10,6 +10,7 @@ import {
   Users,
   Package,
   Store,
+  HelpCircle,
   LogOut,
   ChevronRight,
 } from 'lucide-react';
@@ -46,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Inventory',          to: '/app/inventory', icon: Package,         inventoryAccess: true },
   { label: 'Staff Management',   to: '/app/staff',     icon: Users,           roles: ['admin'] },
   { label: 'Restaurant Profile', to: '/app/profile',   icon: Store,           roles: ['admin', 'manager'] },
+  { label: 'Customer Support',   to: '/app/support',   icon: HelpCircle },
 ];
 
 interface Props {
