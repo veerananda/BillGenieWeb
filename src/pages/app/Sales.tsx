@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, ShoppingBag, BarChart2, AlertCircle } from 'lucide-react';
+import { IndianRupee, ShoppingBag, Calculator, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
@@ -98,7 +98,7 @@ export function Sales() {
   const stats: StatCardProps[] = summary
     ? [
         {
-          icon: <TrendingUp className="h-6 w-6" />,
+          icon: <IndianRupee className="h-6 w-6" />,
           label: 'Total Revenue',
           value: formatCurrency(summary.total_revenue),
           iconBg: 'bg-primary/10',
@@ -114,7 +114,7 @@ export function Sales() {
           loading,
         },
         {
-          icon: <BarChart2 className="h-6 w-6" />,
+          icon: <Calculator className="h-6 w-6" />,
           label: 'Average Order Value',
           value: formatCurrency(summary.average_order_value),
           iconBg: 'bg-amber-50',

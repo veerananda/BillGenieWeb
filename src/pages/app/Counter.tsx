@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Plus, X, Minus, Search, ShoppingCart, ChevronRight, Ticket, Percent, Tag,
+  Plus, X, Minus, Search, ShoppingCart, ChevronRight, Percent, Tag,
   ArrowLeftRight, Banknote, Smartphone, Leaf, Beef,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
@@ -30,6 +30,7 @@ import { TrackingQrModal } from '../../components/app/TrackingQrModal';
 interface CartItem {
   menuItemId: string;
   name: string;
+  category: string;
   price: number;
   quantity: number;
   isVeg: boolean;
@@ -119,7 +120,6 @@ function OrderSummaryBlock({
   discountValue,
   finalAmount,
   pricesIncludeGst,
-  ticketNumber,
 }: {
   cart: CartItem[];
   subtotal: number;
@@ -127,19 +127,22 @@ function OrderSummaryBlock({
   discountValue: number;
   finalAmount: number;
   pricesIncludeGst: boolean;
-  ticketNumber?: number | null;
 }) {
   return (
     <div className="rounded-xl bg-gray-50 p-4 space-y-2">
       {cart.map((c) => (
-        <div key={c.menuItemId} className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <VegDot isVeg={c.isVeg} />
-            <span className="text-sm text-gray-700 truncate">{c.name}</span>
-            <span className="shrink-0 text-xs text-gray-400">×{c.quantity}</span>
+        <div key={c.menuItemId} className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <VegDot isVeg={c.isVeg} />
+              <span className="truncate text-sm text-gray-700">{c.name}</span>
+            </div>
+            {c.category ? (
+              <p className="ml-4 truncate text-xs text-gray-400">{c.category}</p>
+            ) : null}
           </div>
-          <span className="text-sm font-medium text-gray-900 ml-3 shrink-0">
-            {fmt(c.price * c.quantity)}
+          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
+            {c.quantity}× {fmt(c.price)}
           </span>
         </div>
       ))}
@@ -163,12 +166,6 @@ function OrderSummaryBlock({
           <span>{fmt(finalAmount)}</span>
         </div>
       </div>
-      {ticketNumber != null && (
-        <div className="flex items-center gap-1 text-xs text-gray-400 pt-1">
-          <Ticket className="h-3.5 w-3.5" />
-          Ticket #{ticketNumber}
-        </div>
-      )}
     </div>
   );
 }
@@ -193,7 +190,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [dietFilter, setDietFilter] = useState<DietFilter>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('');
-  const [ticketNumber, setTicketNumber] = useState<number | null>(null);
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -243,7 +239,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setDiscountType('amount');
       setDiscountValue('');
       resetPaymentFields();
-      apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => setTicketNumber(null));
       setTimeout(() => searchRef.current?.focus(), 50);
     }
   }, [open, counterModes, resetPaymentFields]);
@@ -302,7 +297,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     setCart((prev) => {
       const ex = prev.find((c) => c.menuItemId === item.id);
       if (ex) return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, price: item.price, quantity: 1, isVeg: item.is_veg }];
+      return [...prev, { menuItemId: item.id, name: item.name, category: item.category, price: item.price, quantity: 1, isVeg: item.is_veg }];
     });
   }
 
@@ -345,7 +340,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         paidOrder.ticket_number ??
         createdOrder.ticket_number ??
         createdOrder.order_number ??
-        ticketNumber ??
         null;
 
       setShowCheckout(false);
@@ -417,7 +411,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     setSearch('');
     setActiveCategory(categories[0] ?? '');
     resetPaymentFields();
-    apiClient.getNextCounterTicket().then(setTicketNumber).catch(() => null);
   }
 
   const paymentFlowActive =
@@ -441,7 +434,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     discountValue: discountAmt,
     finalAmount,
     pricesIncludeGst,
-    ticketNumber,
   };
 
   return (
@@ -455,32 +447,8 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">New Counter Order</h2>
-            {ticketNumber !== null && (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
-                <Ticket className="h-3.5 w-3.5" />
-                Next ticket:{' '}
-                <span className="font-semibold text-primary">#{ticketNumber}</span>
-              </p>
-            )}
           </div>
           <div className="flex items-center gap-3">
-            {showModeToggle && (
-              <div className="flex gap-1.5">
-                {(['eat_here', 'takeaway'] as ServiceMode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setServiceMode(m)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      serviceMode === m
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {m === 'eat_here' ? 'Eat Here' : 'Takeaway'}
-                  </button>
-                ))}
-              </div>
-            )}
             <button
               onClick={() => { if (!paymentFlowActive) onClose(); }}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -489,6 +457,32 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
             </button>
           </div>
         </div>
+
+        {showModeToggle && (
+          <div className="shrink-0 border-b border-gray-100 bg-primary/5 px-6 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">Service mode</p>
+                <p className="text-xs text-gray-500">Choose how this counter order will be served.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:w-80">
+                {(['eat_here', 'takeaway'] as ServiceMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setServiceMode(m)}
+                    className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                      serviceMode === m
+                        ? 'border-primary bg-primary text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40 hover:bg-primary/5'
+                    }`}
+                  >
+                    {m === 'eat_here' ? 'Eat Here' : 'Takeaway'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Three-column body */}
         <div className="flex flex-1 overflow-hidden">
@@ -619,10 +613,15 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                     <div key={c.menuItemId} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <VegDot isVeg={c.isVeg} />
                           <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
+                          {c.isVeg
+                            ? <Leaf size={13} color="#22c55e" className="shrink-0" />
+                            : <Beef size={13} color="#dc2626" className="shrink-0" />}
                         </div>
-                        <p className="ml-4 text-xs text-gray-400">₹{c.price} × {c.quantity}</p>
+                        {c.category ? (
+                          <p className="truncate text-xs text-gray-400">{c.category}</p>
+                        ) : null}
+                        <p className="text-xs text-gray-400">₹{c.price}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <button
@@ -674,7 +673,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                 disabled={cart.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                Proceed to Checkout
+                Proceed to Payment
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -1025,13 +1024,14 @@ export function Counter() {
       ) : sorted.length === 0 ? (
         <EmptyState
           icon={ShoppingCart}
-          title="No counter orders today"
-          description="Create a new order to get started."
+          title="No active counter orders"
+          description="Paid orders waiting in kitchen will appear here. Tap New Order to start."
           action={
             <button
               onClick={() => setPanelOpen(true)}
-              className="mt-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white"
+              className="mt-2 flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white"
             >
+              <Plus className="h-4 w-4" />
               New Order
             </button>
           }

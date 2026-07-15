@@ -44,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Sales Info',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
   { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
   { label: 'Inventory',          to: '/app/inventory', icon: Package,         inventoryAccess: true },
-  { label: 'Staff Mgmt',         to: '/app/staff',     icon: Users,           roles: ['admin'] },
+  { label: 'Staff Management',   to: '/app/staff',     icon: Users,           roles: ['admin'] },
   { label: 'Restaurant Profile', to: '/app/profile',   icon: Store,           roles: ['admin', 'manager'] },
 ];
 

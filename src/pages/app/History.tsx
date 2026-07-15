@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { History as HistoryIcon } from 'lucide-react';
+import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
-import type { Order } from '../../services/api';
+import type { Order, RestaurantProfile } from '../../services/api';
+import { printBillHtml } from '../../lib/customerBillFormat';
 import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -12,12 +13,12 @@ import { EmptyState } from '../../components/app/EmptyState';
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-type HistoryPeriod = 'today' | 'yesterday' | 'week' | 'month';
+type HistoryPeriod = 'today' | 'yesterday' | 'week' | 'month' | 'range';
 type OrderTypeTab = 'dine_in' | 'counter';
 
 const PAGE_SIZE = 50;
 
-const PERIODS: { key: HistoryPeriod; label: string }[] = [
+const FIXED_PERIODS: { key: Exclude<HistoryPeriod, 'range'>; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: 'week', label: 'Last 7 days' },
@@ -37,7 +38,7 @@ function isoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function getDateRange(period: HistoryPeriod): { from: string; to: string } {
+function getDateRange(period: Exclude<HistoryPeriod, 'range'>): { from: string; to: string } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const to = isoDate(today);
@@ -58,6 +59,10 @@ function getDateRange(period: HistoryPeriod): { from: string; to: string } {
   return { from: isoDate(d), to };
 }
 
+function isValidIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
+}
+
 function isCounter(order: Order): boolean {
   return order.order_type === 'counter';
 }
@@ -66,12 +71,70 @@ function getCounterLabel(order: Order): string {
   return String(order.ticket_number ?? order.order_number ?? '?');
 }
 
+function getServiceModeLabel(order: Order): string {
+  return order.service_mode === 'takeaway' ? 'Takeaway' : 'Eat here';
+}
+
 function getOrderTitle(order: Order): string {
   if (isCounter(order)) {
-    const mode = order.service_mode === 'takeaway' ? 'Takeaway' : 'Counter';
-    return `${mode} #${getCounterLabel(order)}`;
+    return `Order #${getCounterLabel(order)}`;
   }
   return `Table ${order.table_number}`;
+}
+
+function getItemParts(item: NonNullable<Order['items']>[number]): { name: string; category: string } {
+  return {
+    name: item.menu_item?.name ?? 'Item',
+    category: item.menu_item?.category ?? '',
+  };
+}
+
+type ReceiptLineItem = {
+  key: string;
+  name: string;
+  category: string;
+  notes?: string;
+  quantity: number;
+  unitRate: number;
+  total: number;
+};
+
+function groupReceiptItems(items: NonNullable<Order['items']>): ReceiptLineItem[] {
+  const grouped = new Map<string, ReceiptLineItem>();
+
+  items.forEach((item) => {
+    const parts = getItemParts(item);
+    const unitRate = Number(item.unit_rate || item.menu_item?.price || 0);
+    const notes = item.notes?.trim();
+    const key = [
+      item.menu_id || parts.name,
+      parts.name,
+      parts.category,
+      unitRate,
+      notes || '',
+    ].join('::');
+    const quantity = Number(item.quantity || 0);
+    const total = Number(item.total || unitRate * quantity);
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.quantity += quantity;
+      existing.total += total;
+      return;
+    }
+
+    grouped.set(key, {
+      key,
+      name: parts.name,
+      category: parts.category,
+      notes,
+      quantity,
+      unitRate,
+      total,
+    });
+  });
+
+  return Array.from(grouped.values());
 }
 
 function formatOrderTime(order: Order): string {
@@ -96,31 +159,172 @@ function formatDateTime(value?: string | null): string {
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildReceiptText(
+  order: Order,
+  restaurant: RestaurantProfile | null | undefined,
+  receiptItems: ReceiptLineItem[],
+): string {
+  const counter = isCounter(order);
+  const completedAt = order.completed_at || order.updated_at || order.created_at;
+  const restaurantContact = restaurant?.contact_number || restaurant?.phone;
+  const payment = (order.payment_method || '').toUpperCase();
+  const showCustomer = counter
+    ? !!order.customer_name && !['Takeaway', 'Counter', 'Self Service'].includes(order.customer_name)
+    : !!order.customer_name;
+  const lines: string[] = [];
+  const divider = '--------------------------------';
+
+  if (restaurant?.name) {
+    lines.push(restaurant.name);
+    if (restaurant.address) lines.push(restaurant.address);
+    if (restaurantContact) lines.push(restaurantContact);
+    lines.push('');
+  }
+
+  lines.push('RECEIPT');
+  lines.push(divider);
+  lines.push(getOrderTitle(order));
+  lines.push(counter ? getServiceModeLabel(order) : `Order #${order.order_number}`);
+  if (completedAt) lines.push(formatDateTime(completedAt));
+  if (showCustomer) lines.push(`Customer: ${order.customer_name}`);
+  if (order.customer_phone) lines.push(`Phone: ${order.customer_phone}`);
+  lines.push(divider);
+
+  receiptItems.forEach((item) => {
+    lines.push(`${item.quantity} x ${item.name}`);
+    if (item.category) lines.push(`   ${item.category}`);
+    if (item.notes) lines.push(`   Notes: ${item.notes}`);
+    lines.push(`   ${fmt(item.total)}`);
+  });
+
+  lines.push(divider);
+  if (order.sub_total > 0) lines.push(`Subtotal: ${fmt(order.sub_total)}`);
+  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${fmt(order.tax_amount)}`);
+  if (Number(order.discount_amount) > 0) lines.push(`Discount: -${fmt(order.discount_amount)}`);
+  lines.push(`Total: ${fmt(order.total)}`);
+  if (payment) lines.push(`Payment: ${payment}`);
+  if (payment === 'CASH' && Number(order.amount_received) > 0) {
+    lines.push(`Received: ${fmt(order.amount_received)}`);
+    if (Number(order.change_returned) > 0) lines.push(`Change: ${fmt(order.change_returned)}`);
+  }
+  if (order.notes) {
+    lines.push(divider);
+    lines.push(`Notes: ${order.notes}`);
+  }
+
+  lines.push(divider);
+  lines.push('Thank you!');
+
+  return lines.join('\n');
+}
+
+function buildReceiptHtml(text: string, order: Order): string {
+  const escaped = escapeHtml(text).replace(/\n/g, '<br/>');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Receipt ${escapeHtml(String(order.order_number || ''))}</title>
+  <style>
+    body { margin: 0; padding: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; }
+    .receipt { max-width: 320px; margin: 0 auto; font-size: 14px; line-height: 1.45; }
+    @media print { body { padding: 0; } .receipt { max-width: none; } }
+  </style>
+</head>
+<body>
+  <div class="receipt">${escaped}</div>
+</body>
+</html>`;
+}
+
 // ─── Receipt modal ────────────────────────────────────────────────────────────
 
-function ReceiptModal({ order, open, onClose }: { order: Order | null; open: boolean; onClose: () => void }) {
+function ReceiptModal({
+  order,
+  open,
+  onClose,
+  restaurant,
+}: {
+  order: Order | null;
+  open: boolean;
+  onClose: () => void;
+  restaurant?: RestaurantProfile | null;
+}) {
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
   if (!order) return null;
 
   const counter = isCounter(order);
   const title = getOrderTitle(order);
   const completedAt = order.completed_at || order.updated_at || order.created_at;
   const payment = (order.payment_method || '').toUpperCase();
+  const restaurantContact = restaurant?.contact_number || restaurant?.phone;
+  const receiptItems = groupReceiptItems(order.items ?? []);
+  const receiptText = buildReceiptText(order, restaurant, receiptItems);
 
   // On counter orders, skip generic placeholder names
   const showCustomer = counter
     ? !!order.customer_name && !['Takeaway', 'Counter', 'Self Service'].includes(order.customer_name)
     : !!order.customer_name;
 
+  const handleShareReceipt = async () => {
+    setActionMessage(null);
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: getOrderTitle(order),
+          text: receiptText,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(receiptText);
+      setActionMessage('Receipt copied to clipboard.');
+    } catch (error) {
+      console.error('Could not share receipt:', error);
+      setActionMessage('Could not share receipt.');
+    }
+  };
+
+  const handlePrintReceipt = () => {
+    setActionMessage(null);
+    printBillHtml(buildReceiptHtml(receiptText, order));
+  };
+
   return (
     <Modal open={open} onClose={onClose} maxWidth="md">
       <div className="space-y-5">
+        {restaurant?.name ? (
+          <div className="text-center">
+            <h3 className="text-lg font-bold text-gray-900">{restaurant.name}</h3>
+            {restaurant.address ? (
+              <p className="mt-1 text-sm text-gray-500">{restaurant.address}</p>
+            ) : null}
+            {restaurantContact ? (
+              <p className="text-sm text-gray-500">{restaurantContact}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Receipt label */}
         <p className="text-xs font-bold uppercase tracking-widest text-primary">Receipt</p>
 
         {/* Order identity */}
         <div>
           <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-          <p className="mt-1 text-sm text-gray-500">Order #{order.order_number}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+            <span>{counter ? getServiceModeLabel(order) : `Order #${order.order_number}`}</span>
+          </div>
           {completedAt && <p className="text-sm text-gray-500">{formatDateTime(completedAt)}</p>}
           {showCustomer && <p className="text-sm text-gray-500">Customer: {order.customer_name}</p>}
           {order.customer_phone && <p className="text-sm text-gray-500">Phone: {order.customer_phone}</p>}
@@ -130,17 +334,20 @@ function ReceiptModal({ order, open, onClose }: { order: Order | null; open: boo
 
         {/* Line items */}
         <div className="space-y-4">
-          {(order.items ?? []).map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-3">
+          {receiptItems.map((item) => (
+            <div key={item.key} className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
-                  {item.menu_item?.name ?? 'Item'}
+                  {item.name}
                   {item.notes && (
                     <span className="ml-1 text-xs font-normal italic text-amber-600">({item.notes})</span>
                   )}
                 </p>
+                {item.category ? (
+                  <p className="mt-0.5 text-xs text-gray-400">{item.category}</p>
+                ) : null}
                 <p className="mt-0.5 text-xs text-gray-400">
-                  {item.quantity} × {fmt(item.unit_rate)}
+                  {item.quantity} × {fmt(item.unitRate)}
                 </p>
               </div>
               <span className="shrink-0 text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
@@ -205,6 +412,30 @@ function ReceiptModal({ order, open, onClose }: { order: Order | null; open: boo
             </div>
           </>
         )}
+
+        <div className="border-t border-gray-100 pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={handleShareReceipt}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <Share2 className="h-4 w-4" />
+              Share
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintReceipt}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </button>
+          </div>
+          {actionMessage ? (
+            <p className="mt-2 text-center text-xs text-gray-500">{actionMessage}</p>
+          ) : null}
+        </div>
       </div>
     </Modal>
   );
@@ -225,8 +456,8 @@ function OrderCard({ order, onClick }: { order: Order; onClick: () => void }) {
         <span className="text-base font-bold text-gray-900">{getOrderTitle(order)}</span>
         <span className="shrink-0 text-base font-bold text-primary">{fmt(order.total)}</span>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 text-sm text-gray-500">
-        <span>#{order.order_number}</span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-sm text-gray-500">
+        <span>{isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`}</span>
         <span className="text-gray-300">·</span>
         <span>{formatOrderTime(order)}</span>
       </div>
@@ -249,11 +480,18 @@ function OrderCard({ order, onClick }: { order: Order; onClick: () => void }) {
 export function History() {
   const profile = useAppSelector(selectProfile);
   const limits = parseSubscriptionLimits(
-    (profile?.subscription_config as Record<string, unknown>) ?? null
+    (profile?.subscription_limits as Record<string, unknown> | undefined) ??
+      (profile?.subscription_config as Record<string, unknown> | undefined) ??
+      null
   );
+  const hasExtendedHistory = limits.history_days > 30;
+  const todayIso = isoDate(new Date());
+  const defaultRange = getDateRange('month');
 
   const [period, setPeriod] = useState<HistoryPeriod>('today');
   const [orderType, setOrderType] = useState<OrderTypeTab>('dine_in');
+  const [customFrom, setCustomFrom] = useState(defaultRange.from);
+  const [customTo, setCustomTo] = useState(defaultRange.to);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
@@ -265,15 +503,29 @@ export function History() {
 
   const fetchOrders = useCallback(
     async (fromOffset: number) => {
-      const { from, to } = getDateRange(period);
+      const range =
+        period === 'range'
+          ? { from: customFrom, to: customTo }
+          : getDateRange(period);
       const isReset = fromOffset === 0;
+      const validRange =
+        period !== 'range' ||
+        (isValidIsoDate(range.from) && isValidIsoDate(range.to) && range.from <= range.to);
+
       if (isReset) { setLoading(true); setError(null); setOrders([]); setTotal(0); }
       else setLoadingMore(true);
 
+      if (!validRange) {
+        if (isReset) setError('Select a valid date range.');
+        setLoading(false);
+        setLoadingMore(false);
+        return;
+      }
+
       try {
         const result = await apiClient.listOrderHistory({
-          from,
-          to,
+          from: range.from,
+          to: range.to,
           order_type: orderType,
           limit: PAGE_SIZE,
           offset: fromOffset,
@@ -288,14 +540,25 @@ export function History() {
         setLoadingMore(false);
       }
     },
-    [period, orderType]
+    [customFrom, customTo, orderType, period]
   );
 
   useEffect(() => {
     fetchOrders(0);
   }, [fetchOrders]);
 
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '';
+  useEffect(() => {
+    if (!hasExtendedHistory && period === 'range') {
+      setPeriod('today');
+    }
+  }, [hasExtendedHistory, period]);
+
+  const periods: { key: HistoryPeriod; label: string }[] = hasExtendedHistory
+    ? [...FIXED_PERIODS, { key: 'range', label: 'Date range' }]
+    : FIXED_PERIODS;
+  const periodLabel = period === 'range'
+    ? `${customFrom} to ${customTo}`
+    : periods.find((p) => p.key === period)?.label ?? '';
 
   return (
     <div>
@@ -310,7 +573,7 @@ export function History() {
 
       {/* Period chips */}
       <div className="mb-4 flex flex-wrap gap-2">
-        {PERIODS.map(({ key, label }) => (
+        {periods.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setPeriod(key)}
@@ -324,6 +587,34 @@ export function History() {
           </button>
         ))}
       </div>
+
+      {hasExtendedHistory && period === 'range' ? (
+        <div className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-medium text-gray-700">
+              From
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || todayIso}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </label>
+            <label className="text-sm font-medium text-gray-700">
+              To
+              <input
+                type="date"
+                value={customTo}
+                max={todayIso}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-gray-400">Extended history supports date ranges up to 2 years.</p>
+        </div>
+      ) : null}
 
       {/* Order type tabs — always visible so history is never gated */}
       <div className="mb-6 flex gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
@@ -395,6 +686,7 @@ export function History() {
         order={selectedOrder}
         open={selectedOrder !== null}
         onClose={() => setSelectedOrder(null)}
+        restaurant={profile}
       />
     </div>
   );
