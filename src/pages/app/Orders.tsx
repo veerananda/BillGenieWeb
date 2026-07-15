@@ -55,6 +55,7 @@ import { EmptyState } from '../../components/app/EmptyState';
 interface CartItem {
   menuItem: MenuItem;
   quantity: number;
+  notes?: string;
 }
 
 type PaymentMethod = 'cash' | 'upi' | 'split';
@@ -1198,6 +1199,12 @@ function TakeOrderPanel({
     );
   };
 
+  const updateNotes = (itemId: string, notes: string) => {
+    setCart((prev) =>
+      prev.map((c) => (c.menuItem.id === itemId ? { ...c, notes } : c))
+    );
+  };
+
   const cartTotal = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
 
   const handlePlaceOrder = async () => {
@@ -1208,7 +1215,11 @@ function TakeOrderPanel({
       if (existingOrder) {
         const updatedOrder = await apiClient.addItemsToOrder(
           existingOrder.id,
-          cart.map((c) => ({ menu_item_id: c.menuItem.id, quantity: c.quantity }))
+          cart.map((c) => ({
+            menu_item_id: c.menuItem.id,
+            quantity: c.quantity,
+            notes: c.notes?.trim() || undefined,
+          }))
         );
         dispatch(upsertActiveOrder(updatedOrder));
         onOrderPlaced(updatedOrder, table);
@@ -1218,7 +1229,11 @@ function TakeOrderPanel({
           table_number: table.name,
           order_type: 'dine_in',
           customer_name: customerName.trim() || undefined,
-          items: cart.map((c) => ({ menu_item_id: c.menuItem.id, quantity: c.quantity })),
+          items: cart.map((c) => ({
+            menu_item_id: c.menuItem.id,
+            quantity: c.quantity,
+            notes: c.notes?.trim() || undefined,
+          })),
         };
         const newOrder = await apiClient.createOrder(orderData);
         const updatedTable = await apiClient.setTableOccupied(table.id, newOrder.id);
@@ -1386,35 +1401,41 @@ function TakeOrderPanel({
                   <p className="py-6 text-center text-xs text-gray-400">Add items from the menu</p>
                 ) : (
                   cart.map((c) => (
-                    <div
-                      key={c.menuItem.id}
-                      className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate text-xs font-medium text-gray-900">{c.menuItem.name}</p>
-                          <VegBadge isVeg={c.menuItem.is_veg} />
+                    <div key={c.menuItem.id} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate text-xs font-medium text-gray-900">{c.menuItem.name}</p>
+                            <VegBadge isVeg={c.menuItem.is_veg} />
+                          </div>
+                          {c.menuItem.category ? (
+                            <p className="truncate text-xs text-gray-400">{c.menuItem.category}</p>
+                          ) : null}
+                          <p className="text-xs text-gray-400">₹{c.menuItem.price}</p>
                         </div>
-                        {c.menuItem.category ? (
-                          <p className="truncate text-xs text-gray-400">{c.menuItem.category}</p>
-                        ) : null}
-                        <p className="text-xs text-gray-400">₹{c.menuItem.price}</p>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            onClick={() => updateQty(c.menuItem.id, -1)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
+                          <button
+                            onClick={() => updateQty(c.menuItem.id, 1)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          onClick={() => updateQty(c.menuItem.id, -1)}
-                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
-                        <button
-                          onClick={() => updateQty(c.menuItem.id, 1)}
-                          className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
+                      <input
+                        type="text"
+                        value={c.notes ?? ''}
+                        onChange={(e) => updateNotes(c.menuItem.id, e.target.value)}
+                        placeholder="Chef note (optional)"
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
                     </div>
                   ))
                 )}

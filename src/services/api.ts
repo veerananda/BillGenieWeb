@@ -533,7 +533,7 @@ class APIClient {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }
 
-  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number }[]): Promise<Order> {
+  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number; notes?: string }[]): Promise<Order> {
     try {
       const r = await this.makeRequest(`/orders/${orderId}/add-items`, 'POST', { items });
       return r?.order ?? r;
