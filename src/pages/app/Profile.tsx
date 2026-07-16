@@ -11,10 +11,12 @@ import {
 import { apiClient, type RestaurantTable, type RestaurantProfile } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectProfile, setProfile, updateProfile } from '../../store/profileSlice';
+import { selectAuthRole } from '../../store/authSlice';
 import { isValidUpiId } from '../../lib/upiPayment';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
+import { PlanChangeModal } from '../../components/app/PlanChangeModal';
 import {
   DEFAULT_SUBSCRIPTION_SELECTION,
   formatSubscriptionPlanName,
@@ -234,13 +236,24 @@ function ServiceModeRadio({ value, onChange }: ServiceModeRadioProps) {
 
 // ─── Subscription Info Card ───────────────────────────────────────────────────
 
-function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }) {
+function SubscriptionInfoCard({
+  profile,
+  canManagePlan,
+  onRefresh,
+}: {
+  profile: RestaurantProfile | null;
+  canManagePlan: boolean;
+  onRefresh: () => void;
+}) {
   const limits = profile?.subscription_limits;
   const usage = profile?.subscription_usage;
   const planName = getPlanDisplayName(profile);
   const subEnd = profile?.subscription_end;
   const daysLeft = subEnd ? getDaysRemaining(subEnd) : null;
   const monthlyPrice = profile?.subscription_monthly_price?.toLocaleString('en-IN') ?? '799';
+  const [planMode, setPlanMode] = useState<'upgrade' | 'downgrade' | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const daysColor =
     daysLeft === null
@@ -293,6 +306,22 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
       ]
     : [];
 
+  const showChange =
+    canManagePlan && Boolean(profile?.can_change_plan) && daysLeft !== null && daysLeft > 0;
+
+  async function handleCancelScheduled() {
+    setCancelBusy(true);
+    setActionError(null);
+    try {
+      await apiClient.cancelScheduledPlanChange();
+      onRefresh();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : 'Could not cancel scheduled change');
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="border-b border-gray-100 px-6 py-4">
@@ -337,6 +366,29 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
             )}
           </div>
 
+          {profile?.pending_selection && profile?.pending_change_at && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Downgrade scheduled</p>
+              <p className="mt-1 text-amber-800">
+                New plan starts on {formatDate(profile.pending_change_at)}. Current features stay until then.
+              </p>
+              {canManagePlan && (
+                <button
+                  type="button"
+                  disabled={cancelBusy}
+                  onClick={() => void handleCancelScheduled()}
+                  className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-2 disabled:opacity-50"
+                >
+                  {cancelBusy ? 'Cancelling…' : 'Cancel scheduled downgrade'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {actionError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{actionError}</p>
+          )}
+
           {/* Your plan includes */}
           <div>
             <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -372,8 +424,35 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
               ))}
             </div>
           </div>
+
+          {showChange && (
+            <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setPlanMode('upgrade')}
+                className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
+              >
+                Upgrade
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanMode('downgrade')}
+                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Downgrade
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      <PlanChangeModal
+        open={planMode !== null}
+        mode={planMode ?? 'upgrade'}
+        currentSelection={profile?.subscription_selection ?? null}
+        onClose={() => setPlanMode(null)}
+        onSuccess={onRefresh}
+      />
     </div>
   );
 }
@@ -383,6 +462,8 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
 export function Profile() {
   const dispatch = useAppDispatch();
   const storedProfile = useAppSelector(selectProfile);
+  const role = useAppSelector(selectAuthRole);
+  const canManagePlan = role === 'admin' || role === 'manager';
 
   // ── Refs ──────────────────────────────────────────────────────────────────
 
@@ -643,7 +724,11 @@ export function Profile() {
       />
 
       {/* Section 0: Subscription (shown first, before the form) */}
-      <SubscriptionInfoCard profile={storedProfile} />
+      <SubscriptionInfoCard
+        profile={storedProfile}
+        canManagePlan={canManagePlan}
+        onRefresh={() => void loadProfile()}
+      />
 
       {/* Profile form — id lets the external save button bind to it */}
       <form id="profile-form" onSubmit={handleSubmit} className="space-y-5">
