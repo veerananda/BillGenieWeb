@@ -5,6 +5,10 @@ import { EmptyState } from '../../components/app/EmptyState';
 import { Spinner } from '../../components/app/Spinner';
 import { Badge } from '../../components/app/Badge';
 import {
+  compressSupportScreenshot,
+  MAX_SUPPORT_SCREENSHOT_BYTES,
+} from '../../utils/compressSupportScreenshot';
+import {
   apiClient,
   type SupportIssue,
   type SupportIssueScreenshot,
@@ -15,8 +19,8 @@ import {
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
 
-const MAX_SCREENSHOT_BYTES = 2.5 * 1024 * 1024;
 const MAX_SCREENSHOTS = 5;
+const MAX_SCREENSHOT_LABEL_KB = Math.round(MAX_SUPPORT_SCREENSHOT_BYTES / 1024);
 
 type ScreenshotAttachment = {
   dataUrl: string;
@@ -66,27 +70,7 @@ function readImageFile(file: File): Promise<{
   name: string;
   contentType: string;
 }> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      reject(new Error('Please choose an image file.'));
-      return;
-    }
-    if (file.size > MAX_SCREENSHOT_BYTES) {
-      reject(new Error('Screenshot should be smaller than 2.5 MB.'));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        dataUrl: String(reader.result || ''),
-        name: file.name,
-        contentType: file.type,
-      });
-    };
-    reader.onerror = () => reject(new Error('Could not read screenshot.'));
-    reader.readAsDataURL(file);
-  });
+  return compressSupportScreenshot(file);
 }
 
 export function Support() {
@@ -276,7 +260,7 @@ export function Support() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <Camera className="h-4 w-4 text-gray-400" />
-                  Screenshots are optional ({screenshots.length}/{MAX_SCREENSHOTS})
+                  Screenshots are optional ({screenshots.length}/{MAX_SCREENSHOTS}, max {MAX_SCREENSHOT_LABEL_KB} KB each)
                 </div>
                 <label
                   className={`cursor-pointer rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 ${
