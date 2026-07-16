@@ -159,7 +159,7 @@ export function Dashboard() {
             </p>
           </div>
           <button
-            onClick={() => navigate('/app/inventory')}
+            onClick={() => navigate('/app/inventory-management')}
             className="shrink-0 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-200"
           >
             View inventory

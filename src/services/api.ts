@@ -704,6 +704,13 @@ class APIClient {
     return r?.ingredient;
   }
 
+  async restockIngredients(
+    items: Array<{ ingredient_id: string; quantity: number }>
+  ): Promise<Ingredient[]> {
+    const r = await this.makeRequest('/ingredients/restock', 'POST', { items });
+    return r?.ingredients ?? [];
+  }
+
   async deleteIngredient(id: string): Promise<void> {
     await this.makeRequest(`/ingredients/${id}`, 'DELETE');
   }

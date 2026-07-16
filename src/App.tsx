@@ -28,6 +28,15 @@ const Sales = lazy(() => import('./pages/app/Sales').then((m) => ({ default: m.S
 const History = lazy(() => import('./pages/app/History').then((m) => ({ default: m.History })));
 const Staff = lazy(() => import('./pages/app/Staff').then((m) => ({ default: m.Staff })));
 const Profile = lazy(() => import('./pages/app/Profile').then((m) => ({ default: m.Profile })));
+const IngredientManagement = lazy(() =>
+  import('./pages/app/Inventory').then((m) => ({ default: m.IngredientManagement }))
+);
+const InventoryManagement = lazy(() =>
+  import('./pages/app/Inventory').then((m) => ({ default: m.InventoryManagement }))
+);
+const StockRefill = lazy(() =>
+  import('./pages/app/Inventory').then((m) => ({ default: m.StockRefill }))
+);
 const Inventory = lazy(() => import('./pages/app/Inventory').then((m) => ({ default: m.Inventory })));
 const Support = lazy(() => import('./pages/app/Support').then((m) => ({ default: m.Support })));
 
@@ -92,6 +101,9 @@ function App() {
         <Route path="history" element={<LazyAppPage><History /></LazyAppPage>} />
         <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
         <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
+        <Route path="ingredient-management" element={<LazyAppPage><IngredientManagement /></LazyAppPage>} />
+        <Route path="inventory-management" element={<LazyAppPage><InventoryManagement /></LazyAppPage>} />
+        <Route path="stock-refill" element={<LazyAppPage><StockRefill /></LazyAppPage>} />
         <Route path="inventory" element={<LazyAppPage><Inventory /></LazyAppPage>} />
         <Route path="support" element={<LazyAppPage><Support /></LazyAppPage>} />
       </Route>

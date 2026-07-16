@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
 import {
   Package,
   Plus,
@@ -37,6 +38,8 @@ import {
   getStockWarningLevel,
   isLowStock,
   canViewIngredientManagement,
+  canViewInventory,
+  canRestockInventory,
 } from '../../lib/inventoryAlerts';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
@@ -82,11 +85,9 @@ interface MenuCategoryGroup {
   items: Array<MenuItem & { ingredients: MenuItemIngredient[] }>;
 }
 
-interface IngredientMgmtTabProps {
-  isAdmin: boolean;
-}
-
-function IngredientMgmtTab({ isAdmin }: IngredientMgmtTabProps) {
+export function IngredientManagement() {
+  const role = useAppSelector(selectAuthRole);
+  const isAdmin = canViewIngredientManagement(role);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [categoryGroups, setCategoryGroups] = useState<MenuCategoryGroup[]>([]);
@@ -241,6 +242,11 @@ function IngredientMgmtTab({ isAdmin }: IngredientMgmtTabProps) {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Ingredient Management"
+        subtitle="Link ingredients to menu items and set recipe quantities"
+      />
+
       {/* Category chips */}
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Select Menu Category</p>
@@ -459,26 +465,38 @@ function IngredientMgmtTab({ isAdmin }: IngredientMgmtTabProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB 2 — Stock Refill
+// Stock Refill
 // ─────────────────────────────────────────────────────────────────────────────
 
-function quickAddOptions(unit: string): number[] {
-  if (unit === 'kg' || unit === 'liters') return [1, 2, 5, 10];
-  return [1, 5, 10, 25];
-}
+export function StockRefill() {
+  const dispatch = useAppDispatch();
+  const role = useAppSelector(selectAuthRole);
+  const canRestockPerm = useAppSelector(selectCanRestockInventory);
+  const ingredients = useAppSelector(selectInventoryIngredients);
+  const canRestock = role === 'admin' || role === 'manager' || canRestockPerm;
 
-interface StockRefillTabProps {
-  ingredients: InventoryIngredient[];
-  canRestock: boolean;
-  onRestock: (id: string, qty: number) => Promise<void>;
-}
-
-function StockRefillTab({ ingredients, canRestock, onRestock }: StockRefillTabProps) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refillAmounts, setRefillAmounts] = useState<Record<string, string>>({});
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
-  const [flashId, setFlashId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const fetchIngredients = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.listIngredients();
+      dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch]);
+
+  useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -491,47 +509,92 @@ function StockRefillTab({ ingredients, canRestock, onRestock }: StockRefillTabPr
     return sorted.filter((i) => i.name.toLowerCase().includes(q));
   }, [ingredients, search]);
 
-  async function handleRefill(item: InventoryIngredient) {
-    const raw = (refillAmounts[item.id] ?? '').trim();
-    const qty = parseFloat(raw);
-    if (!raw || isNaN(qty) || qty <= 0) return;
-    setSubmittingId(item.id);
+  const pendingItems = useMemo(() => {
+    const items: Array<{ ingredient_id: string; quantity: number }> = [];
+    for (const [id, raw] of Object.entries(refillAmounts)) {
+      const qty = parseFloat((raw ?? '').trim());
+      if (!raw?.trim() || Number.isNaN(qty) || qty <= 0) continue;
+      items.push({ ingredient_id: id, quantity: qty });
+    }
+    return items;
+  }, [refillAmounts]);
+
+  async function handleBulkRefill() {
+    if (pendingItems.length === 0) {
+      setSubmitError('Enter a quantity greater than 0 for at least one ingredient.');
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    setSuccessMsg(null);
     try {
-      await onRestock(item.id, qty);
-      setFlashId(item.id);
-      setRefillAmounts((prev) => ({ ...prev, [item.id]: '' }));
-      setExpandedId(null);
-      setTimeout(() => setFlashId(null), 2000);
+      const updated = await apiClient.restockIngredients(pendingItems);
+      for (const ing of updated) {
+        dispatch(upsertInventoryIngredient(toInventoryIngredient(ing)));
+      }
+      setRefillAmounts({});
+      setSuccessMsg(`Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to restock.');
     } finally {
-      setSubmittingId(null);
+      setSubmitting(false);
     }
   }
 
   if (!canRestock) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-          <Lock className="h-8 w-8 text-gray-400" />
+      <div className="space-y-6">
+        <PageHeader title="Stock Refill" subtitle="Add stock when ingredients run low" />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
+            <Lock className="h-8 w-8 text-gray-400" />
+          </div>
+          <h3 className="text-base font-semibold text-gray-900">Access restricted</h3>
+          <p className="mt-1 text-sm text-gray-500">Ask your admin to enable stock refill permission for your account.</p>
         </div>
-        <h3 className="text-base font-semibold text-gray-900">Access restricted</h3>
-        <p className="mt-1 text-sm text-gray-500">Ask your admin to enable stock refill permission for your account.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Stock Refill" subtitle="Add stock when ingredients run low" />
+        <div className="flex justify-center py-16"><Spinner size="lg" className="text-primary" /></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Stock Refill" subtitle="Add stock when ingredients run low" />
+        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          {error}
+          <button onClick={fetchIngredients} className="ml-3 font-semibold underline">Retry</button>
+        </div>
       </div>
     );
   }
 
   if (ingredients.length === 0) {
     return (
-      <EmptyState
-        icon={Package}
-        title="No ingredients yet"
-        description="Admin can set up inventory in Ingredient Management."
-      />
+      <div className="space-y-6">
+        <PageHeader title="Stock Refill" subtitle="Add stock when ingredients run low" />
+        <EmptyState
+          icon={Package}
+          title="No ingredients yet"
+          description="Admin can set up inventory in Ingredient Management."
+        />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Search */}
+    <div className="space-y-4 pb-24">
+      <PageHeader title="Stock Refill" subtitle="Enter quantities to add, then refill all at once" />
+
       <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
         <Search className="h-4 w-4 shrink-0 text-gray-400" />
         <input
@@ -543,87 +606,92 @@ function StockRefillTab({ ingredients, canRestock, onRestock }: StockRefillTabPr
         />
       </div>
       <p className="text-xs text-gray-500">
-        Tap an ingredient, enter refill quantity, and add to stock.
+        Enter add qty for the items you are restocking. Leave 0 or blank to skip. Then tap Stock Refill.
       </p>
 
-      {filtered.length === 0 && (
-        <p className="py-8 text-center text-sm text-gray-400">No ingredients match your search.</p>
+      {successMsg && (
+        <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+          <Check className="h-4 w-4 shrink-0" />
+          {successMsg}
+        </div>
+      )}
+      {submitError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {submitError}
+        </div>
       )}
 
-      {filtered.map((item) => {
-        const isExpanded = expandedId === item.id;
-        const isSubmitting = submittingId === item.id;
-        const flash = flashId === item.id;
-        const color = stockColor(item.currentStock, item.fullStock);
-
-        return (
+      {filtered.length === 0 ? (
+        <p className="py-8 text-center text-sm text-gray-400">No ingredients match your search.</p>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
           <div
-            key={item.id}
-            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+            className="grid gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500"
+            style={{ gridTemplateColumns: '1fr 120px 110px' }}
           >
-            {/* Card header */}
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : item.id)}
-              className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-gray-50/60"
-            >
-              <Circle className="h-3.5 w-3.5 shrink-0" style={{ color, fill: color }} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-900">{item.name}</p>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  Current: {item.currentStock} {item.unit}
-                  {flash && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-green-600 font-medium">
-                      <Check className="h-3 w-3" /> Restocked!
-                    </span>
-                  )}
-                </p>
-              </div>
-              {isExpanded
-                ? <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
-                : <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />}
-            </button>
-
-            {/* Expanded panel */}
-            {isExpanded && (
-              <div className="border-t border-gray-100 bg-gray-50/40 px-4 pb-4 pt-3">
-                <p className="mb-2.5 text-xs font-medium text-gray-500">
-                  Quick add ({item.unit})
-                </p>
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {quickAddOptions(item.unit).map((qty) => (
-                    <button
-                      key={qty}
-                      onClick={() => setRefillAmounts((prev) => ({ ...prev, [item.id]: String(qty) }))}
-                      className="rounded-full border border-primary bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
-                    >
-                      +{qty}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="any"
-                  value={refillAmounts[item.id] ?? ''}
-                  onChange={(e) => setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                  placeholder={`Quantity to add (${item.unit})`}
-                  className="mb-3 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                />
-                <button
-                  onClick={() => void handleRefill(item)}
-                  disabled={isSubmitting || !refillAmounts[item.id]}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {isSubmitting
-                    ? <Spinner size="sm" className="text-white" />
-                    : <RefreshCw className="h-4 w-4" />}
-                  Add to stock
-                </button>
-              </div>
-            )}
+            <span>Ingredient</span>
+            <span className="text-right">Current</span>
+            <span className="text-right">Add qty</span>
           </div>
-        );
-      })}
+          <div className="divide-y divide-gray-50">
+            {filtered.map((item) => {
+              const color = stockColor(item.currentStock, item.fullStock);
+              const addRaw = refillAmounts[item.id] ?? '';
+              return (
+                <div
+                  key={item.id}
+                  className="grid items-center gap-3 px-4 py-3"
+                  style={{ gridTemplateColumns: '1fr 120px 110px' }}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Circle className="h-3 w-3 shrink-0" style={{ color, fill: color }} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                      <p className="text-xs text-gray-400">{item.unit}</p>
+                    </div>
+                  </div>
+                  <p className="text-right text-sm font-medium text-gray-700">
+                    {item.currentStock.toFixed(2)}
+                  </p>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={addRaw}
+                    onChange={(e) => {
+                      setSubmitError(null);
+                      setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }));
+                    }}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="sticky bottom-0 z-10 -mx-1 border-t border-gray-100 bg-white/95 px-1 py-3 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => void handleBulkRefill()}
+          disabled={submitting || pendingItems.length === 0}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          {submitting ? (
+            <Spinner size="sm" className="text-white" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          {submitting
+            ? 'Refilling…'
+            : pendingItems.length > 0
+              ? `Stock Refill (${pendingItems.length})`
+              : 'Stock Refill'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -632,28 +700,72 @@ function StockRefillTab({ ingredients, canRestock, onRestock }: StockRefillTabPr
 // TAB 3 — Inventory
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface InventoryTabProps {
-  ingredients: InventoryIngredient[];
-  isAdmin: boolean;
-  onEdit: (i: InventoryIngredient) => void;
-  onDelete: (i: InventoryIngredient) => void;
-}
+export function InventoryManagement() {
+  const dispatch = useAppDispatch();
+  const role = useAppSelector(selectAuthRole);
+  const ingredients = useAppSelector(selectInventoryIngredients);
+  const isAdmin = canViewIngredientManagement(role);
 
-function InventoryTab({ ingredients, isAdmin, onEdit, onDelete }: InventoryTabProps) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<InventoryIngredient | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<InventoryIngredient | null>(null);
+
+  const fetchIngredients = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.listIngredients();
+      dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch]);
+
+  useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
+
   const lowStockItems = ingredients.filter((i) => isLowStock(i.currentStock, i.fullStock));
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
+        <div className="flex justify-center py-16"><Spinner size="lg" className="text-primary" /></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
+        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          {error}
+          <button onClick={fetchIngredients} className="ml-3 font-semibold underline">Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   if (ingredients.length === 0) {
     return (
-      <EmptyState
-        icon={Package}
-        title="No ingredients yet"
-        description="Add ingredients from the Ingredient Mgmt tab."
-      />
+      <div className="space-y-6">
+        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
+        <EmptyState
+          icon={Package}
+          title="No ingredients yet"
+          description="Add ingredients from Ingredient Management."
+        />
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
+
       {/* Low stock banner */}
       {lowStockItems.length > 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -661,7 +773,7 @@ function InventoryTab({ ingredients, isAdmin, onEdit, onDelete }: InventoryTabPr
           <div>
             <p className="text-sm font-bold text-amber-700">Low Stock Alert</p>
             <p className="text-sm text-amber-600">
-              {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} below 25% — check Stock Refill tab.
+              {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} below 25% — check Stock Refill.
             </p>
           </div>
         </div>
@@ -719,14 +831,14 @@ function InventoryTab({ ingredients, isAdmin, onEdit, onDelete }: InventoryTabPr
                 {isAdmin && (
                   <div className="flex items-center justify-center gap-1">
                     <button
-                      onClick={() => onEdit(item)}
+                      onClick={() => setEditTarget(item)}
                       className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                       title="Edit"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => onDelete(item)}
+                      onClick={() => setDeleteTarget(item)}
                       className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                       title="Delete"
                     >
@@ -739,6 +851,17 @@ function InventoryTab({ ingredients, isAdmin, onEdit, onDelete }: InventoryTabPr
           })}
         </div>
       </div>
+
+      <EditStockModal
+        ingredient={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={(updated) => dispatch(upsertInventoryIngredient(updated))}
+      />
+      <DeleteModal
+        ingredient={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={(id) => dispatch(removeInventoryIngredient(id))}
+      />
     </div>
   );
 }
@@ -928,128 +1051,22 @@ function DeleteModal({ ingredient, onClose, onDeleted }: DeleteModalProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Page
+// Legacy /app/inventory → role-based default page
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'ingredient_mgmt' | 'stock_refill' | 'inventory';
-
+/** @deprecated Prefer IngredientManagement / InventoryManagement / StockRefill routes */
 export function Inventory() {
-  const dispatch = useAppDispatch();
   const role = useAppSelector(selectAuthRole);
   const canRestockPerm = useAppSelector(selectCanRestockInventory);
-  const ingredients = useAppSelector(selectInventoryIngredients);
 
-  const isAdmin = canViewIngredientManagement(role);
-  const canRestock = role === 'admin' || role === 'manager' || canRestockPerm;
-
-  // Tab visibility mirrors the mobile app:
-  // Ingredient Mgmt → admin only
-  // Inventory       → admin / manager / chef
-  // Stock Refill    → admin / manager / staff+canRestock / chef+canRestock
-  const visibleTabs: { id: Tab; label: string }[] = [
-    ...(isAdmin ? [{ id: 'ingredient_mgmt' as Tab, label: 'Ingredient Mgmt' }] : []),
-    ...(role === 'admin' || role === 'manager' || role === 'chef'
-      ? [{ id: 'inventory' as Tab, label: 'Inventory' }]
-      : []),
-    ...(canRestock ? [{ id: 'stock_refill' as Tab, label: 'Stock Refill' }] : []),
-  ];
-
-  const defaultTab = visibleTabs[0]?.id ?? 'stock_refill';
-  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editTarget, setEditTarget] = useState<InventoryIngredient | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<InventoryIngredient | null>(null);
-
-  const fetchIngredients = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiClient.listIngredients();
-      dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
-    } finally {
-      setLoading(false);
-    }
-  }, [dispatch]);
-
-  useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
-
-  async function handleRestock(id: string, quantity: number) {
-    const result = await apiClient.restockIngredient(id, quantity);
-    dispatch(upsertInventoryIngredient(toInventoryIngredient(result)));
+  if (canViewIngredientManagement(role)) {
+    return <Navigate to="/app/ingredient-management" replace />;
   }
-
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Inventory"
-        subtitle="Manage ingredients, stock levels, and recipes"
-      />
-
-      {/* Tab bar */}
-      {visibleTabs.length > 1 && (
-        <div className="flex rounded-2xl border border-gray-100 bg-white p-1.5 shadow-sm">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
-                activeTab === tab.id
-                  ? 'border-2 border-primary bg-primary/10 text-primary'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Tab content */}
-      {activeTab === 'ingredient_mgmt' ? (
-        <IngredientMgmtTab isAdmin={isAdmin} />
-      ) : activeTab === 'stock_refill' ? (
-        loading ? (
-          <div className="flex justify-center py-16"><Spinner size="lg" className="text-primary" /></div>
-        ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-            {error}
-            <button onClick={fetchIngredients} className="ml-3 font-semibold underline">Retry</button>
-          </div>
-        ) : (
-          <StockRefillTab ingredients={ingredients} canRestock={canRestock} onRestock={handleRestock} />
-        )
-      ) : (
-        loading ? (
-          <div className="flex justify-center py-16"><Spinner size="lg" className="text-primary" /></div>
-        ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-            {error}
-            <button onClick={fetchIngredients} className="ml-3 font-semibold underline">Retry</button>
-          </div>
-        ) : (
-          <InventoryTab
-            ingredients={ingredients}
-            isAdmin={isAdmin}
-            onEdit={setEditTarget}
-            onDelete={setDeleteTarget}
-          />
-        )
-      )}
-
-      {/* Modals */}
-      <EditStockModal
-        ingredient={editTarget}
-        onClose={() => setEditTarget(null)}
-        onSaved={(updated) => dispatch(upsertInventoryIngredient(updated))}
-      />
-      <DeleteModal
-        ingredient={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onDeleted={(id) => dispatch(removeInventoryIngredient(id))}
-      />
-    </div>
-  );
+  if (canViewInventory(role)) {
+    return <Navigate to="/app/inventory-management" replace />;
+  }
+  if (canRestockInventory(role, canRestockPerm)) {
+    return <Navigate to="/app/stock-refill" replace />;
+  }
+  return <Navigate to="/app/dashboard" replace />;
 }
