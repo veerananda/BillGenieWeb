@@ -7,6 +7,7 @@ import { Badge } from '../../components/app/Badge';
 import {
   apiClient,
   type SupportIssue,
+  type SupportIssueScreenshot,
   type SupportIssueCategory,
   type SupportIssueStatus,
 } from '../../services/api';
@@ -15,6 +16,28 @@ const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
 
 const MAX_SCREENSHOT_BYTES = 2.5 * 1024 * 1024;
+const MAX_SCREENSHOTS = 5;
+
+type ScreenshotAttachment = {
+  dataUrl: string;
+  name: string;
+  contentType: string;
+};
+
+function toScreenshotPayload(screenshot: ScreenshotAttachment) {
+  return {
+    data_url: screenshot.dataUrl,
+    name: screenshot.name,
+    content_type: screenshot.contentType,
+  };
+}
+
+function getScreenshotCount(issue: SupportIssue) {
+  if (typeof issue.screenshot_count === 'number') return issue.screenshot_count;
+  if (issue.screenshots?.length) return issue.screenshots.length;
+  if (issue.screenshot_data_url) return 1;
+  return 0;
+}
 
 function statusVariant(status: SupportIssueStatus): 'pending' | 'warning' | 'success' | 'info' {
   if (status === 'resolved' || status === 'closed') return 'success';
@@ -72,15 +95,14 @@ export function Support() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewScreenshots, setPreviewScreenshots] = useState<SupportIssueScreenshot[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [category, setCategory] = useState<SupportIssueCategory>('problem');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [screenshot, setScreenshot] = useState<{
-    dataUrl: string;
-    name: string;
-    contentType: string;
-  } | null>(null);
+  const [screenshots, setScreenshots] = useState<ScreenshotAttachment[]>([]);
 
   const loadIssues = useCallback(async () => {
     setLoading(true);
@@ -95,21 +117,59 @@ export function Support() {
     }
   }, []);
 
+  const openIssueScreenshots = async (issue: SupportIssue) => {
+    setError(null);
+    setPreviewLoading(true);
+    try {
+      const existing = issue.screenshots?.length ? issue.screenshots : null;
+      if (existing) {
+        setPreviewScreenshots(existing);
+        setPreviewIndex(0);
+        return;
+      }
+
+      const res = await apiClient.getSupportIssueScreenshots(issue.id);
+      const screenshots = res?.screenshots ?? [];
+      setPreviewScreenshots(screenshots);
+      setPreviewIndex(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load screenshots.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadIssues();
   }, [loadIssues]);
 
   async function handleScreenshotChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = '';
-    if (!file) return;
+    if (!files.length) return;
 
     setError(null);
     try {
-      setScreenshot(await readImageFile(file));
+      const remainingSlots = MAX_SCREENSHOTS - screenshots.length;
+      if (remainingSlots <= 0) {
+        setError(`You can attach up to ${MAX_SCREENSHOTS} screenshots.`);
+        return;
+      }
+
+      const selectedFiles = files.slice(0, remainingSlots);
+      if (files.length > remainingSlots) {
+        setError(`Only ${remainingSlots} more screenshot${remainingSlots === 1 ? '' : 's'} can be added.`);
+      }
+
+      const nextScreenshots = await Promise.all(selectedFiles.map((file) => readImageFile(file)));
+      setScreenshots((prev) => [...prev, ...nextScreenshots]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not attach screenshot.');
     }
+  }
+
+  function removeScreenshot(index: number) {
+    setScreenshots((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -131,14 +191,12 @@ export function Support() {
         category,
         title: title.trim(),
         description: description.trim(),
-        screenshot_data_url: screenshot?.dataUrl,
-        screenshot_name: screenshot?.name,
-        screenshot_content_type: screenshot?.contentType,
+        screenshots: screenshots.map(toScreenshotPayload),
       });
       setIssues((prev) => [issue, ...prev]);
       setTitle('');
       setDescription('');
-      setScreenshot(null);
+      setScreenshots([]);
       setCategory('problem');
       setMessage('Your report was sent to BillGenie support.');
     } catch (err) {
@@ -218,27 +276,42 @@ export function Support() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <Camera className="h-4 w-4 text-gray-400" />
-                  Screenshot is optional
+                  Screenshots are optional ({screenshots.length}/{MAX_SCREENSHOTS})
                 </div>
-                <label className="cursor-pointer rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200">
-                  Attach image
-                  <input type="file" accept="image/*" onChange={handleScreenshotChange} className="hidden" />
+                <label
+                  className={`cursor-pointer rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 ${
+                    screenshots.length >= MAX_SCREENSHOTS ? 'pointer-events-none opacity-50' : ''
+                  }`}
+                >
+                  Add images
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleScreenshotChange}
+                    className="hidden"
+                    disabled={screenshots.length >= MAX_SCREENSHOTS}
+                  />
                 </label>
               </div>
-              {screenshot ? (
-                <div className="mt-3 flex items-center gap-3 rounded-lg bg-gray-50 p-2">
-                  <img src={screenshot.dataUrl} alt="" className="h-14 w-14 rounded-lg object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-800">{screenshot.name}</p>
-                    <p className="text-xs text-gray-500">Attached to this request</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setScreenshot(null)}
-                    className="rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-700"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+              {screenshots.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {screenshots.map((screenshot, index) => (
+                    <div key={`${screenshot.name}-${index}`} className="flex items-center gap-3 rounded-lg bg-gray-50 p-2">
+                      <img src={screenshot.dataUrl} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-gray-800">{screenshot.name}</p>
+                        <p className="text-xs text-gray-500">Attached to this request</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeScreenshot(index)}
+                        className="rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -273,7 +346,9 @@ export function Support() {
             />
           ) : (
             <div className="mt-4 space-y-3">
-              {issues.map((issue) => (
+              {issues.map((issue) => {
+                const screenshotCount = getScreenshotCount(issue);
+                return (
                 <article key={issue.id} className="rounded-xl border border-gray-100 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -285,16 +360,15 @@ export function Support() {
                         {issue.category} · {formatDate(issue.created_at)}
                       </p>
                     </div>
-                    {issue.screenshot_data_url ? (
-                      <a
-                        href={issue.screenshot_data_url}
-                        target="_blank"
-                        rel="noreferrer"
+                    {screenshotCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openIssueScreenshots(issue)}
                         className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-200"
                       >
                         <Image className="h-3.5 w-3.5" />
-                        Image
-                      </a>
+                        View screenshots{screenshotCount > 1 ? ` (${screenshotCount})` : ''}
+                      </button>
                     ) : null}
                   </div>
                   <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700">{issue.description}</p>
@@ -305,11 +379,83 @@ export function Support() {
                     </div>
                   ) : null}
                 </article>
-              ))}
+              );
+              })}
             </div>
           )}
         </section>
       </div>
+
+      {previewScreenshots.length ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => {
+            setPreviewScreenshots([]);
+            setPreviewIndex(0);
+          }}
+        >
+          <div
+            className="max-h-[90vh] max-w-4xl overflow-hidden rounded-2xl bg-white"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-gray-900">
+                  {previewScreenshots[previewIndex]?.name || `Screenshot ${previewIndex + 1}`}
+                </p>
+                {previewScreenshots.length > 1 ? (
+                  <p className="text-xs text-gray-500">
+                    {previewIndex + 1} of {previewScreenshots.length}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                {previewScreenshots.length > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewIndex((i) => (i - 1 + previewScreenshots.length) % previewScreenshots.length)}
+                      className="rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-100"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewIndex((i) => (i + 1) % previewScreenshots.length)}
+                      className="rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-100"
+                    >
+                      Next
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewScreenshots([]);
+                    setPreviewIndex(0);
+                  }}
+                  className="rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-100"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[calc(90vh-56px)] overflow-auto p-4">
+              {previewLoading ? (
+                <div className="flex justify-center py-16">
+                  <Spinner />
+                </div>
+              ) : (
+                <img
+                  src={previewScreenshots[previewIndex]?.data_url}
+                  alt={previewScreenshots[previewIndex]?.name || `Screenshot ${previewIndex + 1}`}
+                  className="mx-auto max-h-[75vh] max-w-full rounded-lg object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
