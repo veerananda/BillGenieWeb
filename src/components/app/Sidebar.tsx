@@ -9,6 +9,8 @@ import {
   Receipt,
   Users,
   Package,
+  PackagePlus,
+  ChefHat,
   Store,
   HelpCircle,
   LogOut,
@@ -18,6 +20,11 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectAuthName, selectCanRestockInventory, clearAuth } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import {
+  canViewIngredientManagement,
+  canViewInventory,
+  canRestockInventory,
+} from '../../lib/inventoryAlerts';
 import apiClient from '../../services/api';
 import wsService from '../../services/websocket';
 import { clearOrders } from '../../store/ordersSlice';
@@ -32,7 +39,8 @@ interface NavItem {
   icon: React.ElementType;
   roles?: string[];           // if set, only these roles can see it
   subscriptionKey?: string;   // hide when subscription flag is false
-  inventoryAccess?: boolean;  // special combined inventory+role check
+  /** Role-gated inventory pages (mirrors mobile HomeScreen cards) */
+  inventoryKind?: 'ingredients' | 'inventory' | 'stock';
 }
 
 // Mirrors HomeScreen.tsx in the mobile app exactly.
@@ -44,7 +52,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Kitchen',            to: '/app/kitchen',   icon: Flame,           roles: ['admin', 'manager', 'chef'],  subscriptionKey: 'kitchen' },
   { label: 'Sales Info',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
   { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
-  { label: 'Inventory',          to: '/app/inventory', icon: Package,         inventoryAccess: true },
+  { label: 'Ingredient Mgmt',    to: '/app/ingredient-management', icon: ChefHat,     inventoryKind: 'ingredients' },
+  { label: 'Inventory',          to: '/app/inventory-management',   icon: Package,     inventoryKind: 'inventory' },
+  { label: 'Stock Refill',       to: '/app/stock-refill',           icon: PackagePlus, inventoryKind: 'stock' },
   { label: 'Staff Management',   to: '/app/staff',     icon: Users,           roles: ['admin'] },
   { label: 'Restaurant Profile', to: '/app/profile',   icon: Store,           roles: ['admin', 'manager'] },
   { label: 'Customer Support',   to: '/app/support',   icon: HelpCircle },
@@ -75,12 +85,12 @@ export function Sidebar({ onClose }: Props) {
     if (item.subscriptionKey === 'counter_enabled' && !limits.counter_enabled) return false;
     if (item.subscriptionKey === 'kitchen' && !limits.kitchen_dine_in && !limits.kitchen_counter) return false;
 
-    // Inventory: subscription must be enabled, then role-specific access
-    if (item.inventoryAccess) {
+    // Inventory pages: subscription must be enabled, then role-specific access
+    if (item.inventoryKind) {
       if (!limits.inventory) return false;
-      // admin/manager/chef always have access; staff only if canRestock flag
-      if (role === 'admin' || role === 'manager' || role === 'chef') return true;
-      if (role === 'staff') return canRestock;
+      if (item.inventoryKind === 'ingredients') return canViewIngredientManagement(role);
+      if (item.inventoryKind === 'inventory') return canViewInventory(role);
+      if (item.inventoryKind === 'stock') return canRestockInventory(role, canRestock);
       return false;
     }
 
