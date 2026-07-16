@@ -279,6 +279,40 @@ export interface RecipeIngredientInput {
   quantity_used: number;
 }
 
+export type SupportIssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type SupportIssueCategory = 'query' | 'problem' | 'other';
+
+export interface SupportIssue {
+  id: string;
+  restaurant_id: string;
+  restaurant_name?: string;
+  restaurant_code?: string;
+  user_id?: string;
+  reporter_name?: string;
+  reporter_role?: string;
+  category: SupportIssueCategory;
+  title: string;
+  description: string;
+  screenshot_data_url?: string;
+  screenshot_name?: string;
+  screenshot_content_type?: string;
+  status: SupportIssueStatus;
+  resolution_note?: string;
+  resolved_by?: string;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CreateSupportIssueRequest {
+  category: SupportIssueCategory;
+  title: string;
+  description: string;
+  screenshot_data_url?: string;
+  screenshot_name?: string;
+  screenshot_content_type?: string;
+}
+
 // ─── API Client ───────────────────────────────────────────────────────────────
 
 class APIClient {
@@ -533,7 +567,7 @@ class APIClient {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }
 
-  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number }[]): Promise<Order> {
+  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number; notes?: string }[]): Promise<Order> {
     try {
       const r = await this.makeRequest(`/orders/${orderId}/add-items`, 'POST', { items });
       return r?.order ?? r;
@@ -674,6 +708,19 @@ class APIClient {
   async setMenuItemIngredients(menuItemId: string, ingredients: RecipeIngredientInput[]): Promise<MenuItemIngredient[]> {
     const r = await this.makeRequest(`/menu/${menuItemId}/ingredients`, 'PUT', { ingredients });
     return r?.menu_item_ingredients ?? [];
+  }
+
+  // ── Support ───────────────────────────────────────────────────────────────
+
+  async listSupportIssues(status?: SupportIssueStatus): Promise<{ issues: SupportIssue[]; total: number }> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const r = await this.makeRequest(`/support/issues${query}`);
+    return { issues: r?.issues ?? [], total: r?.total ?? 0 };
+  }
+
+  async createSupportIssue(data: CreateSupportIssueRequest): Promise<SupportIssue> {
+    const r = await this.makeRequest('/support/issues', 'POST', data);
+    return r?.issue ?? r;
   }
 
   // ── Subscription / Payment ─────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
   Plus,
   Calendar,
   Camera,
+  CreditCard,
 } from 'lucide-react';
 import { apiClient, type RestaurantTable, type RestaurantProfile } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -14,6 +15,11 @@ import { isValidUpiId } from '../../lib/upiPayment';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
+import {
+  DEFAULT_SUBSCRIPTION_SELECTION,
+  formatSubscriptionPlanName,
+  type SubscriptionSelection,
+} from '../../data/pricing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +75,37 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function getSubscriptionSelection(profile: RestaurantProfile | null): SubscriptionSelection | null {
+  const selection = profile?.subscription_selection as SubscriptionSelection | undefined;
+  if (selection?.operation_mode) {
+    return { ...DEFAULT_SUBSCRIPTION_SELECTION, ...selection };
+  }
+
+  const config = profile?.subscription_config as { selection?: SubscriptionSelection } | undefined;
+  if (config?.selection?.operation_mode) {
+    return { ...DEFAULT_SUBSCRIPTION_SELECTION, ...config.selection };
+  }
+
+  return null;
+}
+
+function getPlanDisplayName(profile: RestaurantProfile | null): string {
+  const plan = String(profile?.subscription_plan || '').toLowerCase();
+  if (plan === 'trial') {
+    return 'BillGenie Trial';
+  }
+  if (plan === 'customised' || plan === 'customized') {
+    return 'BillGenie Customised';
+  }
+
+  const selection = getSubscriptionSelection(profile);
+  if (selection) {
+    return formatSubscriptionPlanName(selection, { phase: profile?.subscription_phase });
+  }
+
+  return `BillGenie ${capitalize(profile?.subscription_plan ?? 'Basic')}`;
+}
+
 // ─── Section Card ─────────────────────────────────────────────────────────────
 
 function SectionCard({
@@ -83,7 +120,7 @@ function SectionCard({
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="border-b border-gray-100 px-6 py-4">
-        <h2 className="text-sm font-semibold text-gray-700">{title}</h2>
+        <h2 className="text-lg font-bold text-gray-900">{title}</h2>
         {subtitle && <p className="mt-0.5 text-xs text-gray-400">{subtitle}</p>}
       </div>
       <div className="px-6 py-5 space-y-4">{children}</div>
@@ -200,7 +237,7 @@ function ServiceModeRadio({ value, onChange }: ServiceModeRadioProps) {
 function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }) {
   const limits = profile?.subscription_limits;
   const usage = profile?.subscription_usage;
-  const planName = capitalize(profile?.subscription_plan ?? 'Basic');
+  const planName = getPlanDisplayName(profile);
   const subEnd = profile?.subscription_end;
   const daysLeft = subEnd ? getDaysRemaining(subEnd) : null;
   const monthlyPrice = profile?.subscription_monthly_price?.toLocaleString('en-IN') ?? '799';
@@ -259,7 +296,10 @@ function SubscriptionInfoCard({ profile }: { profile: RestaurantProfile | null }
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="border-b border-gray-100 px-6 py-4">
-        <h2 className="text-sm font-semibold text-gray-700">Subscription Status</h2>
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-bold text-primary">Subscription Status</h2>
+        </div>
       </div>
 
       {!limits ? (
@@ -660,8 +700,128 @@ export function Profile() {
           </div>
         </SectionCard>
 
-        {/* Section 2: Payment */}
-        <SectionCard title="Payment">
+        {/* Section 2: Tables */}
+        <SectionCard
+          title="Tables"
+          subtitle={`${tableCount} / ${maxTables} tables`}
+        >
+          {/* Error banner */}
+          {tablesError && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{tablesError}</span>
+              <button
+                type="button"
+                onClick={loadTables}
+                className="ml-1 font-semibold underline underline-offset-2 shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Loading state */}
+          {tablesLoading && tables.length === 0 && (
+            <div className="flex items-center justify-center py-8">
+              <Spinner size="md" className="text-primary" />
+            </div>
+          )}
+
+          {/* Add New Table button */}
+          <button
+            type="button"
+            onClick={openAddTableModal}
+            disabled={atTableLimit || tablesLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/40 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {atTableLimit ? `Table limit reached (${maxTables} max)` : 'Add New Table'}
+          </button>
+
+          {/* Tables grid */}
+          {tables.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-medium text-gray-500">
+                Existing Tables ({tables.length}) — tap to edit
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {tables.map((table) => (
+                  <button
+                    key={table.id}
+                    type="button"
+                    onClick={() => openEditTableModal(table)}
+                    className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+                  >
+                    {table.name}
+                    {table.capacity ? (
+                      <span className="ml-1 text-xs font-normal opacity-80">
+                        ({table.capacity})
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!tablesLoading && tables.length === 0 && !tablesError && (
+            <p className="py-2 text-center text-sm text-gray-400">
+              No tables yet. Add your first table above.
+            </p>
+          )}
+        </SectionCard>
+
+        {/* Section 3: Billing & Tax */}
+        <SectionCard
+          title="Billing & Tax"
+          subtitle="Controls how GST is shown on customer bills"
+        >
+          <Toggle
+            checked={form.prices_include_gst}
+            onChange={(v) => set('prices_include_gst', v)}
+            label="Menu prices include GST"
+            description={
+              form.prices_include_gst
+                ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
+                : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
+            }
+          />
+        </SectionCard>
+
+        {/* Section 4: Ordering Settings */}
+        <SectionCard title="Ordering Settings">
+          <Toggle
+            checked={form.is_self_service}
+            onChange={(v) => set('is_self_service', v)}
+            label="Self-service QR ordering"
+            description="Customers can scan a QR code to place their own orders"
+          />
+          {storedProfile?.subscription_limits?.counter_enabled ? (
+            <div className="border-t border-gray-100 pt-4">
+              <Field label="Counter service mode">
+                <ServiceModeRadio
+                  value={form.counter_service_modes}
+                  onChange={(v) => set('counter_service_modes', v)}
+                />
+                <p className="mt-1.5 text-xs text-gray-400">
+                  Choose which order types are available at the counter
+                </p>
+              </Field>
+            </div>
+          ) : storedProfile?.subscription_limits ? (
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-sm text-gray-500">
+                Counter / takeaway is not on your current plan.
+              </p>
+            </div>
+          ) : null}
+        </SectionCard>
+
+        {/* Section 5: UPI ID */}
+        <SectionCard
+          title="UPI ID (VPA)"
+          subtitle="Used to generate payment QR with the exact bill amount"
+        >
           <Field label="UPI ID" optional>
             <div className="relative">
               <input
@@ -697,12 +857,14 @@ export function Profile() {
               </p>
             )}
           </Field>
+        </SectionCard>
 
-          {/* UPI QR Code */}
+        {/* Section 6: UPI QR Code */}
+        <SectionCard
+          title="UPI QR Code (optional)"
+          subtitle="Optional static QR fallback if you prefer not to use dynamic UPI ID"
+        >
           <Field label="UPI QR Code" optional>
-            <p className="mb-2 text-xs text-gray-400">
-              Optional static QR fallback if you prefer not to use dynamic UPI ID
-            </p>
             {form.upi_qr_code ? (
               <div className="rounded-xl border border-gray-200 p-4 flex flex-col items-center gap-3">
                 <img
@@ -753,124 +915,7 @@ export function Profile() {
             />
           </Field>
         </SectionCard>
-
-        {/* Section 2b: Billing & Tax */}
-        <SectionCard
-          title="Billing & Tax"
-          subtitle="Controls how GST is shown on customer bills"
-        >
-          <Toggle
-            checked={form.prices_include_gst}
-            onChange={(v) => set('prices_include_gst', v)}
-            label="Menu prices include GST"
-            description={
-              form.prices_include_gst
-                ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
-                : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
-            }
-          />
-        </SectionCard>
-
-        {/* Section 3: Service Mode */}
-        <SectionCard title="Service Mode">
-          <Toggle
-            checked={form.is_self_service}
-            onChange={(v) => set('is_self_service', v)}
-            label="Self-service QR ordering"
-            description="Customers can scan a QR code to place their own orders"
-          />
-          {storedProfile?.subscription_limits?.counter_enabled ? (
-            <div className="border-t border-gray-100 pt-4">
-              <Field label="Counter service mode">
-                <ServiceModeRadio
-                  value={form.counter_service_modes}
-                  onChange={(v) => set('counter_service_modes', v)}
-                />
-                <p className="mt-1.5 text-xs text-gray-400">
-                  Choose which order types are available at the counter
-                </p>
-              </Field>
-            </div>
-          ) : storedProfile?.subscription_limits ? (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-sm text-gray-500">
-                Counter / takeaway is not on your current plan.
-              </p>
-            </div>
-          ) : null}
-        </SectionCard>
       </form>
-
-      {/* ── Section 4: Tables ────────────────────────────────────────────── */}
-      <SectionCard
-        title="Tables"
-        subtitle={`${tableCount} / ${maxTables} tables`}
-      >
-        {/* Error banner */}
-        {tablesError && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span className="flex-1">{tablesError}</span>
-            <button
-              type="button"
-              onClick={loadTables}
-              className="ml-1 font-semibold underline underline-offset-2 shrink-0"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* Loading state */}
-        {tablesLoading && tables.length === 0 && (
-          <div className="flex items-center justify-center py-8">
-            <Spinner size="md" className="text-primary" />
-          </div>
-        )}
-
-        {/* Add New Table button */}
-        <button
-          type="button"
-          onClick={openAddTableModal}
-          disabled={atTableLimit || tablesLoading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/40 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          {atTableLimit ? `Table limit reached (${maxTables} max)` : 'Add New Table'}
-        </button>
-
-        {/* Tables grid */}
-        {tables.length > 0 && (
-          <div>
-            <p className="mb-2 text-xs font-medium text-gray-500">
-              Existing Tables ({tables.length}) — tap to edit
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {tables.map((table) => (
-                <button
-                  key={table.id}
-                  type="button"
-                  onClick={() => openEditTableModal(table)}
-                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
-                >
-                  {table.name}
-                  {table.capacity ? (
-                    <span className="ml-1 text-xs font-normal opacity-80">
-                      ({table.capacity})
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!tablesLoading && tables.length === 0 && !tablesError && (
-          <p className="py-2 text-center text-sm text-gray-400">
-            No tables yet. Add your first table above.
-          </p>
-        )}
-      </SectionCard>
 
       {/* Feedback messages */}
       {successMsg && (

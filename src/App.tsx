@@ -29,6 +29,7 @@ const History = lazy(() => import('./pages/app/History').then((m) => ({ default:
 const Staff = lazy(() => import('./pages/app/Staff').then((m) => ({ default: m.Staff })));
 const Profile = lazy(() => import('./pages/app/Profile').then((m) => ({ default: m.Profile })));
 const Inventory = lazy(() => import('./pages/app/Inventory').then((m) => ({ default: m.Inventory })));
+const Support = lazy(() => import('./pages/app/Support').then((m) => ({ default: m.Support })));
 
 function AppRouteFallback() {
   return (
@@ -92,6 +93,7 @@ function App() {
         <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
         <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
         <Route path="inventory" element={<LazyAppPage><Inventory /></LazyAppPage>} />
+        <Route path="support" element={<LazyAppPage><Support /></LazyAppPage>} />
       </Route>
 
       {/* Fallback */}

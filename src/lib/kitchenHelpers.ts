@@ -1,6 +1,10 @@
 import type { Order } from '../services/api';
 import type { RestaurantTable } from '../services/api';
-import { getCounterTicketNumber, isCounterOrder, resolveOrderItemName } from './orderHelpers';
+import {
+  getCounterTicketNumber,
+  isCounterOrder,
+  resolveOrderItemParts,
+} from './orderHelpers';
 
 export type KitchenItemStatus = 'pending' | 'cooking' | 'ready' | 'served';
 
@@ -8,6 +12,7 @@ export interface KotTicketItem {
   id: string;
   orderId: string;
   name: string;
+  category?: string;
   quantity: number;
   notes?: string;
   status: KitchenItemStatus;
@@ -32,6 +37,7 @@ export interface KotTicket {
 export interface PrepSummaryLine {
   menuId: string;
   name: string;
+  category?: string;
   totalQty: number;
 }
 
@@ -109,13 +115,15 @@ export function buildKotTickets(
       const subId = ticketSubId(item, order.id);
       const key = `${order.id}:${subId}`;
       const created = parseItemCreatedAt(item, order);
+      const parts = resolveOrderItemParts(item, menuItems);
 
       const kotItem: KotTicketItem = {
         id: item.id,
         orderId: order.id,
-        name: resolveOrderItemName(item, menuItems),
+        name: parts.name,
+        category: parts.category || undefined,
         quantity: item.quantity,
-        notes: item.notes,
+        notes: item.notes?.trim() || undefined,
         status: (item.status || 'pending') as KitchenItemStatus,
         menuId: item.menu_id,
         createdAt: created,
@@ -166,7 +174,7 @@ export function buildPrepSummary(tickets: KotTicket[]): PrepSummaryLine[] {
   for (const ticket of tickets) {
     for (const item of ticket.items) {
       if (!isActiveKitchenItem(item.status)) continue;
-      const menuId = item.menuId || item.name;
+      const menuId = item.menuId || `${item.name}::${item.category || ''}`;
       const existing = totals.get(menuId);
       if (existing) {
         existing.totalQty += item.quantity;
@@ -174,6 +182,7 @@ export function buildPrepSummary(tickets: KotTicket[]): PrepSummaryLine[] {
         totals.set(menuId, {
           menuId,
           name: item.name,
+          category: item.category,
           totalQty: item.quantity,
         });
       }
