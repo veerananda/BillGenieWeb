@@ -184,6 +184,9 @@ export interface RestaurantProfile {
   subscription_end?: string;
   subscription_phase?: string;
   requires_plan_selection?: boolean;
+  can_change_plan?: boolean;
+  pending_selection?: import('../data/pricing').SubscriptionSelection | null;
+  pending_change_at?: string | null;
   subscription_plan?: string;
   subscription_monthly_price?: number;
   subscription_config?: unknown;
@@ -771,6 +774,67 @@ class APIClient {
   }): Promise<SubscriptionVerifyResult> {
     return this.makeRequest('/subscription/verify-payment', 'POST', data);
   }
+
+  async getPlanChangeQuote(
+    selection: import('../data/pricing').SubscriptionSelection
+  ): Promise<PlanChangeQuote> {
+    return this.makeRequest('/subscription/change-quote', 'POST', { selection });
+  }
+
+  async createPlanChangeOrder(
+    selection: import('../data/pricing').SubscriptionSelection
+  ): Promise<SubscriptionRenewalOrder> {
+    return this.makeRequest('/subscription/change-order', 'POST', { selection });
+  }
+
+  async verifyPlanChangePayment(data: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    selection?: import('../data/pricing').SubscriptionSelection;
+  }): Promise<SubscriptionVerifyResult> {
+    return this.makeRequest('/subscription/verify-change-payment', 'POST', data);
+  }
+
+  async schedulePlanChange(
+    selection: import('../data/pricing').SubscriptionSelection
+  ): Promise<SchedulePlanChangeResult> {
+    return this.makeRequest('/subscription/schedule-change', 'POST', { selection });
+  }
+
+  async cancelScheduledPlanChange(): Promise<{ message: string }> {
+    return this.makeRequest('/subscription/cancel-scheduled-change', 'POST');
+  }
+}
+
+export interface PlanChangeQuote {
+  change_type: 'upgrade' | 'downgrade' | 'noop';
+  billing_cycle: 'monthly' | 'annual';
+  remaining_days: number;
+  period_days: number;
+  current_selection: import('../data/pricing').SubscriptionSelection;
+  new_selection: import('../data/pricing').SubscriptionSelection;
+  current_period_amount_inr: number;
+  new_period_amount_inr: number;
+  proration_delta_inr: number;
+  next_period_amount_inr: number;
+  amount_due_inr: number;
+  amount_paise: number;
+  gst_inr: number;
+  subtotal_inr: number;
+  line_items: { id: string; label: string; amount: number }[];
+  effective_at: string;
+  new_subscription_end: string;
+  current_subscription_end: string;
+  pending_change_at?: string | null;
+  has_pending_downgrade?: boolean;
+}
+
+export interface SchedulePlanChangeResult {
+  message: string;
+  pending_selection: import('../data/pricing').SubscriptionSelection;
+  pending_change_at: string;
+  subscription_end: string;
 }
 
 export const apiClient = new APIClient();

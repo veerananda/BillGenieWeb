@@ -282,7 +282,7 @@ import {
 
 const TABLE_STAFF_BUNDLE_PRICE = PRICING.table_staff_bundle;
 
-function PlanPicker({ value, onChange }: { value: SubscriptionSelection; onChange: (s: SubscriptionSelection) => void }) {
+export function PlanPicker({ value, onChange, lockBillingCycle = false }: { value: SubscriptionSelection; onChange: (s: SubscriptionSelection) => void; lockBillingCycle?: boolean }) {
   function set(patch: Partial<SubscriptionSelection>) {
     onChange({ ...value, ...patch });
   }
@@ -306,17 +306,25 @@ function PlanPicker({ value, onChange }: { value: SubscriptionSelection; onChang
       {/* Billing cycle */}
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Billing cycle</p>
-        <div className="flex gap-2">
-          {(['monthly', 'annual'] as const).map((c) => (
-            <button
-              key={c}
-              onClick={() => set({ billing_cycle: c })}
-              className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
-            >
-              {c === 'monthly' ? 'Monthly' : 'Annual (2 months free)'}
-            </button>
-          ))}
-        </div>
+        {lockBillingCycle ? (
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 capitalize">
+            {value.billing_cycle}
+            <span className="ml-2 text-xs font-normal text-gray-500">(locked mid-cycle)</span>
+          </p>
+        ) : (
+          <div className="flex gap-2">
+            {(['monthly', 'annual'] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ billing_cycle: c })}
+                className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+              >
+                {c === 'monthly' ? 'Monthly' : 'Annual (2 months free)'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Service mode */}
