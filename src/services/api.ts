@@ -282,6 +282,12 @@ export interface RecipeIngredientInput {
 export type SupportIssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 export type SupportIssueCategory = 'query' | 'problem' | 'other';
 
+export interface SupportIssueScreenshot {
+  data_url: string;
+  name: string;
+  content_type: string;
+}
+
 export interface SupportIssue {
   id: string;
   restaurant_id: string;
@@ -293,9 +299,11 @@ export interface SupportIssue {
   category: SupportIssueCategory;
   title: string;
   description: string;
+  screenshot_count?: number;
   screenshot_data_url?: string;
   screenshot_name?: string;
   screenshot_content_type?: string;
+  screenshots?: SupportIssueScreenshot[];
   status: SupportIssueStatus;
   resolution_note?: string;
   resolved_by?: string;
@@ -308,6 +316,7 @@ export interface CreateSupportIssueRequest {
   category: SupportIssueCategory;
   title: string;
   description: string;
+  screenshots?: SupportIssueScreenshot[];
   screenshot_data_url?: string;
   screenshot_name?: string;
   screenshot_content_type?: string;
@@ -721,6 +730,12 @@ class APIClient {
   async createSupportIssue(data: CreateSupportIssueRequest): Promise<SupportIssue> {
     const r = await this.makeRequest('/support/issues', 'POST', data);
     return r?.issue ?? r;
+  }
+
+  async getSupportIssueScreenshots(
+    issueId: string
+  ): Promise<{ screenshots: SupportIssueScreenshot[] }> {
+    return this.makeRequest(`/support/issues/${issueId}/screenshots`);
   }
 
   // ── Subscription / Payment ─────────────────────────────────────────────────
