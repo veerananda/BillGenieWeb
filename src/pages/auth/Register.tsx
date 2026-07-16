@@ -485,7 +485,7 @@ export function Register() {
       navigate('/login', {
         replace: true,
         state: {
-          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}.`,
+          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}. Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
         },
       });
     } catch (err) {
