@@ -12,6 +12,7 @@ function replaceExtension(filename: string, extension: string): string {
   return `${base || 'support-screenshot'}.${extension}`;
 }
 
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
