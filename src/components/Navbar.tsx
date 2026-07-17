@@ -56,7 +56,7 @@ export function Navbar() {
             to="/register"
             className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-primary-dark hover:shadow-md active:scale-95"
           >
-            Start free trial
+            Sign up
           </Link>
         </div>
 
@@ -97,7 +97,7 @@ export function Navbar() {
               className="mt-1 rounded-full bg-primary px-5 py-2.5 text-center text-sm font-semibold text-white"
               onClick={() => setOpen(false)}
             >
-              Start free trial
+              Sign up
             </Link>
           </nav>
         </div>
