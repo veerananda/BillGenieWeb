@@ -16,7 +16,7 @@ import { Spinner } from '../../components/app/Spinner';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SummaryPeriod = 'today' | 'month';
-type ChartPeriod = 'week' | 'month';
+type ChartPeriod = 'week' | 'last_week' | 'month';
 
 interface SalesSummary {
   total_revenue: number;
@@ -40,7 +40,7 @@ interface SalesAnalytics {
     orders_change_pct: number;
     direction: 'up' | 'down' | 'flat';
   };
-  top_items: Array<{ name: string; quantity: number; revenue: number }>;
+  top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,6 +53,24 @@ function formatCompact(amount: number): string {
   if (amount >= 100000) return `${(amount / 100000).toFixed(1)}L`;
   if (amount >= 1000) return `${(amount / 1000).toFixed(1)}k`;
   return `${Math.round(amount)}`;
+}
+
+function chartPeriodLabel(period: ChartPeriod): string {
+  if (period === 'last_week') return 'Last week';
+  if (period === 'month') return 'This month';
+  return 'This week';
+}
+
+function previousPeriodLabel(period: ChartPeriod): string {
+  if (period === 'month') return 'last month';
+  if (period === 'last_week') return 'the week before';
+  return 'last week';
+}
+
+function formatCategory(category: string): string {
+  const trimmed = (category || '').trim();
+  if (!trimmed) return 'Uncategorized';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -102,20 +120,18 @@ function SkeletonCards() {
   );
 }
 
-// ─── Bar Chart ────────────────────────────────────────────────────────────────
+// ─── Line Chart ───────────────────────────────────────────────────────────────
 
-function SalesBarChart({ series }: { series: SalesAnalytics['series'] }) {
+function SalesLineChart({ series }: { series: SalesAnalytics['series'] }) {
   const maxRevenue = Math.max(...series.map((p) => p.revenue), 0) || 1;
   const height = 200;
-  const width = Math.max(480, series.length * 28);
+  const width = Math.max(480, series.length * 36);
   const padL = 40;
-  const padR = 12;
-  const padT = 12;
+  const padR = 16;
+  const padT = 16;
   const padB = 28;
   const chartW = width - padL - padR;
   const chartH = height - padT - padB;
-  const gap = series.length > 14 ? 2 : 4;
-  const barW = Math.max(4, (chartW - gap * (series.length - 1)) / series.length);
   const showEvery = series.length > 14 ? Math.ceil(series.length / 10) : 1;
 
   if (series.length === 0) {
@@ -126,9 +142,25 @@ function SalesBarChart({ series }: { series: SalesAnalytics['series'] }) {
     );
   }
 
+  const step = series.length === 1 ? 0 : chartW / (series.length - 1);
+  const points = series.map((point, index) => {
+    const x = padL + index * step;
+    const y = padT + chartH - (point.revenue / maxRevenue) * chartH;
+    return { ...point, x, y };
+  });
+  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
+
   return (
     <div className="w-full overflow-x-auto">
       <svg width={width} height={height} className="min-w-full">
+        <line
+          x1={padL}
+          y1={padT}
+          x2={padL}
+          y2={padT + chartH}
+          stroke="#e5e7eb"
+          strokeWidth={1}
+        />
         <line
           x1={padL}
           y1={padT + chartH}
@@ -143,38 +175,33 @@ function SalesBarChart({ series }: { series: SalesAnalytics['series'] }) {
         <text x={4} y={padT + chartH} fill="#9ca3af" fontSize="10">
           0
         </text>
-        {series.map((point, index) => {
-          const barH = (point.revenue / maxRevenue) * chartH;
-          const x = padL + index * (barW + gap);
-          const y = padT + chartH - barH;
-          return (
-            <g key={point.date}>
-              <title>
-                {point.date}: {formatCurrency(point.revenue)} ({point.orders} orders)
-              </title>
-              <rect
-                x={x}
-                y={y}
-                width={barW}
-                height={Math.max(barH, point.revenue > 0 ? 2 : 0)}
-                rx={3}
-                fill="#1bae76"
-                opacity={point.revenue > 0 ? 1 : 0.2}
-              />
-              {index % showEvery === 0 && (
-                <text
-                  x={x + barW / 2}
-                  y={padT + chartH + 16}
-                  fill="#9ca3af"
-                  fontSize="10"
-                  textAnchor="middle"
-                >
-                  {point.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        <polyline
+          points={polyline}
+          fill="none"
+          stroke="#1bae76"
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {points.map((point, index) => (
+          <g key={point.date}>
+            <title>
+              {point.date}: {formatCurrency(point.revenue)} ({point.orders} orders)
+            </title>
+            <circle cx={point.x} cy={point.y} r={3.5} fill="#1bae76" />
+            {index % showEvery === 0 && (
+              <text
+                x={point.x}
+                y={padT + chartH + 16}
+                fill="#9ca3af"
+                fontSize="10"
+                textAnchor="middle"
+              >
+                {point.label}
+              </text>
+            )}
+          </g>
+        ))}
       </svg>
     </div>
   );
@@ -255,8 +282,8 @@ export function Sales() {
       ]
     : [];
 
-  const chartPeriodLabel = chartPeriod === 'week' ? 'This week' : 'This month';
-  const previousLabel = chartPeriod === 'week' ? 'last week' : 'last month';
+  const selectedChartLabel = chartPeriodLabel(chartPeriod);
+  const previousLabel = previousPeriodLabel(chartPeriod);
   const comparison = analytics?.comparison;
   const ComparisonIcon =
     comparison?.direction === 'up'
@@ -290,7 +317,7 @@ export function Sales() {
               onClick={() => setMenuOpen((v) => !v)}
               className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary"
             >
-              {chartPeriodLabel}
+              {selectedChartLabel}
               <ChevronDown className="h-4 w-4" />
             </button>
             {menuOpen && (
@@ -298,6 +325,7 @@ export function Sales() {
                 {(
                   [
                     { value: 'week', label: 'This week' },
+                    { value: 'last_week', label: 'Last week' },
                     { value: 'month', label: 'This month' },
                   ] as const
                 ).map((option) => (
@@ -342,7 +370,7 @@ export function Sales() {
                 {formatCurrency(analytics.total_revenue)} · {analytics.total_orders} orders
               </span>
             </div>
-            <SalesBarChart series={analytics.series} />
+            <SalesLineChart series={analytics.series} />
           </>
         ) : (
           <div className="flex h-40 items-center justify-center text-sm text-gray-400">
@@ -423,7 +451,7 @@ export function Sales() {
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-bold text-gray-900">Top selling items</h2>
-          <span className="text-xs font-semibold text-primary">{chartPeriodLabel}</span>
+          <span className="text-xs font-semibold text-primary">{selectedChartLabel}</span>
         </div>
 
         {analyticsLoading && !analytics ? (
@@ -440,7 +468,9 @@ export function Sales() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                  <p className="text-xs text-gray-500">{item.quantity} sold</p>
+                  <p className="text-xs text-gray-500">
+                    {formatCategory(item.category)} · {item.quantity} sold
+                  </p>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
                     <div
                       className="h-full rounded-full bg-primary"
