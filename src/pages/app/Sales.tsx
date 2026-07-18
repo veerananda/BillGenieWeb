@@ -307,7 +307,66 @@ export function Sales() {
     <div className="space-y-8">
       <PageHeader title="Sales" />
 
-      {/* 1. Graph */}
+      {/* 1. Sales info */}
+      <section>
+        <h2 className="mb-3 text-base font-bold text-gray-900">Sales info</h2>
+        <div className="mb-6 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+          {(['today', 'month'] as SummaryPeriod[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setSummaryPeriod(p)}
+              className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all ${
+                summaryPeriod === p
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {p === 'today' ? "Today's Sales" : 'Monthly Revenue'}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="mb-6 flex items-center gap-3 rounded-xl bg-red-50 px-5 py-4 text-sm text-red-600">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{error}</span>
+            <button
+              onClick={() => fetchSummary(summaryPeriod)}
+              className="ml-auto shrink-0 rounded-lg bg-red-100 px-3 py-1 font-semibold hover:bg-red-200 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {summaryLoading && !summary ? (
+          <SkeletonCards />
+        ) : summary ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {stats.map((stat) => (
+              <StatCard key={stat.label} {...stat} />
+            ))}
+          </div>
+        ) : null}
+
+        {summary && !summaryLoading && (
+          <p className="mt-4 text-xs text-gray-400">
+            Showing data for:{' '}
+            <span className="font-medium capitalize text-gray-500">
+              {summaryPeriod === 'today' ? "Today's Sales" : 'Monthly Revenue'}
+            </span>
+          </p>
+        )}
+
+        {summaryLoading && summary && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <Spinner size="sm" className="text-primary" />
+            Updating...
+          </div>
+        )}
+      </section>
+
+      {/* 2. Graph */}
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-gray-900">Sales trend</h2>
@@ -375,65 +434,6 @@ export function Sales() {
         ) : (
           <div className="flex h-40 items-center justify-center text-sm text-gray-400">
             Could not load sales chart
-          </div>
-        )}
-      </section>
-
-      {/* 2. Sales info */}
-      <section>
-        <h2 className="mb-3 text-base font-bold text-gray-900">Sales info</h2>
-        <div className="mb-6 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
-          {(['today', 'month'] as SummaryPeriod[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setSummaryPeriod(p)}
-              className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all ${
-                summaryPeriod === p
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {p === 'today' ? "Today's Sales" : 'Monthly Revenue'}
-            </button>
-          ))}
-        </div>
-
-        {error && (
-          <div className="mb-6 flex items-center gap-3 rounded-xl bg-red-50 px-5 py-4 text-sm text-red-600">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <span>{error}</span>
-            <button
-              onClick={() => fetchSummary(summaryPeriod)}
-              className="ml-auto shrink-0 rounded-lg bg-red-100 px-3 py-1 font-semibold hover:bg-red-200 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {summaryLoading && !summary ? (
-          <SkeletonCards />
-        ) : summary ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {stats.map((stat) => (
-              <StatCard key={stat.label} {...stat} />
-            ))}
-          </div>
-        ) : null}
-
-        {summary && !summaryLoading && (
-          <p className="mt-4 text-xs text-gray-400">
-            Showing data for:{' '}
-            <span className="font-medium capitalize text-gray-500">
-              {summaryPeriod === 'today' ? "Today's Sales" : 'Monthly Revenue'}
-            </span>
-          </p>
-        )}
-
-        {summaryLoading && summary && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
-            <Spinner size="sm" className="text-primary" />
-            Updating...
           </div>
         )}
       </section>
