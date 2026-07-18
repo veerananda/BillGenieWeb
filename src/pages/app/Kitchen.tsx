@@ -92,10 +92,7 @@ function KOTCard({
             {formatKitchenElapsed(ticket.firedAt)} · Fired {formatKitchenTime(ticket.firedAt)}
           </p>
         </div>
-        <div className="ml-3 flex shrink-0 flex-col items-end gap-2">
-          <span className="text-sm font-semibold text-gray-700">
-            {formatKitchenTime(ticket.firedAt)}
-          </span>
+        <div className="ml-3 flex shrink-0 flex-col items-end">
           <button
             onClick={handleReadyAll}
             disabled={readyAllLoading}
@@ -321,7 +318,7 @@ export function Kitchen() {
           description="Each save from dine-in or counter creates a numbered ticket in FIFO order"
         />
       ) : (
-        <div className="mx-auto max-w-2xl space-y-3">
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {tickets.map((ticket) => (
             <KOTCard key={ticket.key} ticket={ticket} onItemReady={onItemReady} />
           ))}

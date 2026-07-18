@@ -13,7 +13,7 @@ export function TermsOfService() {
       <h2>Service description</h2>
       <p>
         BillGenie provides restaurant management software including billing, order management,
-        kitchen display, staff management, and related features on a subscription basis.
+        kitchen display, team management, and related features on a subscription basis.
       </p>
 
       <h2>Accounts</h2>

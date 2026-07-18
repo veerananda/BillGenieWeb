@@ -786,7 +786,7 @@ export function Staff() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Staff Management"
+        title="Team Management"
         subtitle={
           loading
             ? 'Loading…'
