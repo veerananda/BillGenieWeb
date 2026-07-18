@@ -413,16 +413,7 @@ export function Sales() {
 
         {summaryLoading && !summary ? (
           <SkeletonCards />
-        ) : !summaryLoading && (summary === null || summary.total_orders === 0) ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-100 bg-white py-16 text-center shadow-sm">
-            <p className="text-base font-semibold text-gray-700">
-              No sales recorded for {summaryPeriod === 'today' ? 'today' : 'this month'}
-            </p>
-            <p className="mt-1 text-sm text-gray-400">
-              Orders will appear here once customers place them
-            </p>
-          </div>
-        ) : summary && summary.total_orders > 0 ? (
+        ) : summary ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
             {stats.map((stat) => (
               <StatCard key={stat.label} {...stat} />
