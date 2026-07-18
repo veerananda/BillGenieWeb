@@ -33,7 +33,7 @@ export function Home() {
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-ink-soft leading-relaxed">
             BillGenie brings dine-in billing, counter orders, QR self-service, a live kitchen
-            display, and staff management together — synced in real time across every device.
+            display, and team management together — synced in real time across every device.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">

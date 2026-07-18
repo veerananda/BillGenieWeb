@@ -118,7 +118,7 @@ export const BASIC_FEATURES = [
   '1 admin + 2 staff accounts',
   '10 dine-in tables included',
   'Dine-in or counter (pick one) — staff sync, no kitchen screen',
-  'Menu & staff management',
+  'Menu & team management',
   'Sales summary',
   `Order history — last 30 days`,
   `${TRIAL_DURATION_DAYS}-day free trial`,
