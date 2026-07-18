@@ -593,6 +593,26 @@ class APIClient {
     return this.makeRequest(`/orders/sales-summary?period=${period}`);
   }
 
+  async getSalesAnalytics(period: 'week' | 'month'): Promise<{
+    period: string;
+    from: string;
+    to: string;
+    total_revenue: number;
+    total_orders: number;
+    average_order_value: number;
+    series: Array<{ date: string; label: string; revenue: number; orders: number }>;
+    comparison: {
+      previous_revenue: number;
+      previous_orders: number;
+      revenue_change_pct: number;
+      orders_change_pct: number;
+      direction: 'up' | 'down' | 'flat';
+    };
+    top_items: Array<{ name: string; quantity: number; revenue: number }>;
+  }> {
+    return this.makeRequest(`/orders/sales-analytics?period=${period}`);
+  }
+
   async listOrderHistory(params: { from: string; to: string; order_type?: string; limit?: number; offset?: number }): Promise<{ orders: Order[]; total: number; limit: number; offset: number }> {
     const p = new URLSearchParams({
       from: params.from,
