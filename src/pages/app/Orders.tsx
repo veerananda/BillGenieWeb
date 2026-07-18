@@ -123,70 +123,84 @@ function TableCard({
     ? (order?.items?.filter((i) => i.status === 'ready').length ?? 0)
     : 0;
 
+  // Solid fill per status: blue = assistance, yellow = items ready, green = in use.
+  const fill: 'blue' | 'yellow' | 'green' | null = needsAssistance
+    ? 'blue'
+    : derived === 'ready'
+    ? 'yellow'
+    : occupied
+    ? 'green'
+    : null;
+  const onDarkFill = fill === 'green' || fill === 'blue';
+  const nameClass = onDarkFill ? 'text-white' : fill === 'yellow' ? 'text-amber-950' : 'text-gray-900';
+  const chipClass = onDarkFill ? 'bg-white/25 text-white' : 'bg-white/60 text-amber-900';
+
   return (
     <button
       onClick={onClick}
       className={`group flex w-full flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-        needsAssistance
-          ? 'border-sky-500 bg-sky-50 hover:border-sky-600'
-          : derived === 'ready'
-          ? 'border-amber-400 bg-amber-50 hover:border-amber-500'
-          : occupied
-          ? 'border-red-400 bg-red-50 hover:border-red-500'
+        fill === 'blue'
+          ? 'border-[#3419e2] bg-[#3419e2]'
+          : fill === 'yellow'
+          ? 'border-amber-300 bg-amber-300'
+          : fill === 'green'
+          ? 'border-primary bg-primary'
           : 'border-gray-200 bg-white hover:border-gray-300'
       }`}
     >
       {/* Badge row */}
       <div className="flex items-start justify-between gap-2">
-        <Badge variant={needsAssistance ? 'warning' : derived === 'ready' ? 'warning' : occupied ? 'occupied' : 'vacant'}>
-          <span className="flex items-center gap-1">
-            {needsAssistance ? (
-              <>Needs attention</>
-            ) : derived === 'ready' ? (
-              <>
-                <CheckCircle className="h-3 w-3" />
-                Ready to serve
-              </>
-            ) : occupied ? (
-              'In use'
-            ) : (
-              'Vacant'
-            )}
+        {fill ? (
+          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${chipClass}`}>
+            <span className="flex items-center gap-1">
+              {fill === 'blue' ? (
+                <>Needs attention</>
+              ) : fill === 'yellow' ? (
+                <>
+                  <CheckCircle className="h-3 w-3" />
+                  Ready to serve
+                </>
+              ) : (
+                'In use'
+              )}
+            </span>
           </span>
-        </Badge>
+        ) : (
+          <Badge variant="vacant">Vacant</Badge>
+        )}
       </div>
 
       {/* Table name */}
-      <span className="text-base font-bold text-gray-900">
+      <span className={`text-base font-bold ${nameClass}`}>
         {table.name}{table.capacity ? ` (${table.capacity})` : ''}
       </span>
 
       {/* Content */}
       {needsAssistance ? (
         <div className="space-y-1">
-          <p className="text-xs font-bold text-sky-700">Customer requested assistance</p>
-          <p className="text-xs text-sky-600">Tap to acknowledge</p>
+          <p className="text-xs font-bold text-white">Customer requested assistance</p>
+          <p className="text-xs text-white/80">Tap to acknowledge</p>
         </div>
       ) : occupied && order ? (
         <div className="space-y-1">
           {derived === 'ready' ? (
             <>
-              <p className="text-xs font-bold text-red-600">
+              <p className="text-xs font-bold text-amber-950">
                 {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
               </p>
             </>
           ) : (
             <>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-white/85">
                 {(order.items?.length ?? 0) > 0
                   ? (() => { const qty = (order.items ?? []).reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
                   : 'No items yet'}
               </p>
               {(order.items?.length ?? 0) > 0 && (
-                <p className="text-sm font-semibold text-primary">{fmt(billSubtotal(order))}</p>
+                <p className="text-sm font-semibold text-white">{fmt(billSubtotal(order))}</p>
               )}
               {kitchenEnabled && derived === 'cooking' && (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                <span className="inline-flex items-center rounded-full bg-white/25 px-2 py-0.5 text-xs font-medium text-white">
                   Cooking…
                 </span>
               )}
@@ -194,7 +208,7 @@ function TableCard({
           )}
         </div>
       ) : occupied ? (
-        <p className="text-xs text-gray-500">Occupied</p>
+        <p className="text-xs text-white/85">Occupied</p>
       ) : (
         <p className="text-xs text-gray-400">Tap to take an order</p>
       )}
