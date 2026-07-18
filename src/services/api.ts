@@ -593,7 +593,7 @@ class APIClient {
     return this.makeRequest(`/orders/sales-summary?period=${period}`);
   }
 
-  async getSalesAnalytics(period: 'week' | 'month'): Promise<{
+  async getSalesAnalytics(period: 'week' | 'last_week' | 'month'): Promise<{
     period: string;
     from: string;
     to: string;
@@ -608,7 +608,7 @@ class APIClient {
       orders_change_pct: number;
       direction: 'up' | 'down' | 'flat';
     };
-    top_items: Array<{ name: string; quantity: number; revenue: number }>;
+    top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
   }> {
     return this.makeRequest(`/orders/sales-analytics?period=${period}`);
   }
