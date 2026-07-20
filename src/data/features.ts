@@ -12,6 +12,7 @@ import {
   Package,
   Moon,
   Smartphone,
+  Bell,
 } from 'lucide-react';
 
 export type FeatureCategory = 'operations' | 'kitchen' | 'staff' | 'insights';
@@ -51,6 +52,14 @@ export const FEATURES: Feature[] = [
     title: 'Self-service QR ordering',
     description:
       'Customers scan a table QR code and place their own order — it lands straight in the same order flow.',
+    category: 'operations',
+    comingSoon: true,
+  },
+  {
+    icon: Bell,
+    title: 'Customer assistance QR',
+    description:
+      'A QR code at each table lets customers call for assistance or review their bill — staff are notified instantly on any device.',
     category: 'operations',
   },
   {
@@ -120,9 +129,9 @@ export const FEATURES: Feature[] = [
 
 export const HOME_HIGHLIGHTS: Feature[] = [
   FEATURES[0], // Dine-in table billing
-  FEATURES[2], // Self-service QR ordering
-  FEATURES[3], // Cash & UPI checkout
-  FEATURES[4], // Kitchen display
-  FEATURES[5], // Real-time sync
-  FEATURES[11], // Inventory & stock management
+  FEATURES[3], // Customer assistance QR
+  FEATURES[4], // Cash & UPI checkout
+  FEATURES[5], // Kitchen display
+  FEATURES[6], // Real-time sync
+  FEATURES[12], // Inventory & stock management
 ];

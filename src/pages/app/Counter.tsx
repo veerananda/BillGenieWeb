@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Plus, X, Minus, Search, ShoppingCart, ChevronRight, Percent, Tag,
-  ArrowLeftRight, Banknote, Smartphone, Leaf, Beef,
+  Plus, X, Minus, Search, ShoppingCart, ChevronRight,
+  ArrowLeftRight, Banknote, CreditCard, Printer, Leaf, Beef,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
 import type { Order, MenuItem, CompletePaymentRequest } from '../../services/api';
@@ -15,8 +15,6 @@ import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/m
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
-import { subtotalLabel, taxLabel } from '../../lib/orderTax';
-import { hasUpiPaymentConfigured } from '../../lib/upiPayment';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -114,66 +112,6 @@ function VegDot({ isVeg }: { isVeg: boolean }) {
 }
 
 
-function OrderSummaryBlock({
-  cart,
-  subtotal,
-  taxAmount,
-  discountValue,
-  finalAmount,
-  pricesIncludeGst,
-}: {
-  cart: CartItem[];
-  subtotal: number;
-  taxAmount: number;
-  discountValue: number;
-  finalAmount: number;
-  pricesIncludeGst: boolean;
-}) {
-  return (
-    <div className="rounded-xl bg-gray-50 p-4 space-y-2">
-      {cart.map((c) => (
-        <div key={c.menuItemId} className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <VegDot isVeg={c.isVeg} />
-              <span className="truncate text-sm text-gray-700">{c.name}</span>
-            </div>
-            {c.category ? (
-              <p className="ml-4 truncate text-xs text-gray-400">{c.category}</p>
-            ) : null}
-            {c.notes?.trim() ? (
-              <p className="ml-4 mt-0.5 text-xs italic text-amber-600">{c.notes.trim()}</p>
-            ) : null}
-          </div>
-          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
-            {c.quantity}× {fmt(c.price)}
-          </span>
-        </div>
-      ))}
-      <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
-        <div className="flex justify-between text-sm text-gray-600">
-          <span>{subtotalLabel(pricesIncludeGst)}</span>
-          <span>{fmt(subtotal)}</span>
-        </div>
-        <div className="flex justify-between text-sm text-gray-600">
-          <span>{taxLabel()}</span>
-          <span>{fmt(taxAmount)}</span>
-        </div>
-        {discountValue > 0 && (
-          <div className="flex justify-between text-sm text-green-600">
-            <span>Discount</span>
-            <span>−{fmt(discountValue)}</span>
-          </div>
-        )}
-        <div className="flex justify-between text-base font-bold text-gray-900 pt-1 border-t border-gray-200">
-          <span>Total</span>
-          <span>{fmt(finalAmount)}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── New Order Slide-over ─────────────────────────────────────────────────────
 
 interface NewOrderPanelProps {
@@ -201,10 +139,8 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [discountValue, setDiscountValue] = useState('');
 
   const [showCheckout, setShowCheckout] = useState(false);
-  const [showCashModal, setShowCashModal] = useState(false);
-  const [showUpiModal, setShowUpiModal] = useState(false);
-  const [showSplitCashModal, setShowSplitCashModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
 
   const [cashReceived, setCashReceived] = useState('');
   const [upiTxnId, setUpiTxnId] = useState('');
@@ -234,14 +170,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setDietFilter('all');
       setActiveCategory(categories[0] ?? '');
       setShowCheckout(false);
-      setShowCashModal(false);
-      setShowUpiModal(false);
-      setShowSplitCashModal(false);
       setServiceMode(counterModes === 'takeaway' ? 'takeaway' : 'eat_here');
       setCustomerName('');
       setCustomerPhone('');
       setDiscountType('amount');
       setDiscountValue('');
+      setSplitPhase('cash');
+      setPaymentMethod('cash');
       resetPaymentFields();
       setTimeout(() => searchRef.current?.focus(), 50);
     }
@@ -290,7 +225,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const splitUpiAmount = Math.max(0, finalAmount - splitCashPortionAmount);
   const splitCashGivenAmount = parseFloat(splitCashGiven) || 0;
   const splitChange = Math.max(0, splitCashGivenAmount - splitCashPortionAmount);
-  const activeUpiAmount = paymentMethod === 'split' ? splitUpiAmount : finalAmount;
   const isSplitCashValid =
     splitCashPortionAmount > 0 && splitUpiAmount > 0.01 && splitCashGivenAmount >= splitCashPortionAmount;
 
@@ -355,9 +289,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         null;
 
       setShowCheckout(false);
-      setShowCashModal(false);
-      setShowUpiModal(false);
-      setShowSplitCashModal(false);
       onCreated(paidOrder);
       onPaymentComplete({ ticket, trackingUrl: url, summary });
       resetForNextOrder();
@@ -425,28 +356,41 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     resetPaymentFields();
   }
 
-  const paymentFlowActive =
-    processing || showCheckout || showCashModal || showUpiModal || showSplitCashModal;
+  const paymentFlowActive = processing || showCheckout;
 
-  function openUpiModal(method: PaymentMethod) {
-    setPaymentMethod(method);
-    setShowCheckout(false);
-    if (!hasUpiPaymentConfigured(profile)) {
-      setError('Add a UPI ID in Restaurant Profile to show a payment QR with the exact amount.');
+  function handlePrintBill() {
+    const html = `<html><body style="font-family:monospace;padding:20px;max-width:400px;margin:auto">
+      <h2 style="text-align:center">Counter Order</h2>
+      ${customerName.trim() ? `<p>Customer: ${customerName.trim()}</p>` : ''}
+      <hr/>
+      ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${c.name} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
+      <hr/>
+      <div style="display:flex;justify-content:space-between"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>
+      ${discountAmt > 0 ? `<div style="display:flex;justify-content:space-between;color:green"><span>Discount</span><span>-₹${discountAmt.toFixed(2)}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:4px;border-top:1px solid #ccc;padding-top:4px"><span>Total</span><span>₹${finalAmount.toFixed(2)}</span></div>
+    </body></html>`;
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); w.print(); }
+  }
+
+  async function handleConfirmPayment() {
+    if (paymentMethod === 'cash') {
+      await handleCashPayment();
+    } else if (paymentMethod === 'upi') {
+      await handleUpiPayment();
+    } else {
+      if (splitPhase === 'cash') {
+        if (!isSplitCashValid) { setError('Enter a valid cash portion and amount received.'); return; }
+        setError(null);
+        setSplitPhase('upi');
+      } else {
+        await handleUpiPayment();
+      }
     }
-    setTimeout(() => setShowUpiModal(true), 150);
   }
 
   if (!open) return null;
-
-  const summaryProps = {
-    cart,
-    subtotal,
-    taxAmount,
-    discountValue: discountAmt,
-    finalAmount,
-    pricesIncludeGst,
-  };
 
   return (
     <>
@@ -702,241 +646,232 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         </div>
       </div>
 
-      {/* Checkout review — pick payment method (matches mobile) */}
-      <Modal open={showCheckout} onClose={() => setShowCheckout(false)} title="Checkout" maxWidth="sm">
-        <div className="space-y-5">
-          <OrderSummaryBlock {...summaryProps} />
-
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-700">
-              Customer <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </p>
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Customer name"
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <input
-              type="tel"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              placeholder="Phone number"
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-700">
-              Discount <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setDiscountType('amount')}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium ${
-                  discountType === 'amount' ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-600'
-                }`}
-              >
-                <Tag className="h-3.5 w-3.5" /> Amount (₹)
-              </button>
-              <button
-                onClick={() => setDiscountType('percent')}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium ${
-                  discountType === 'percent' ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-600'
-                }`}
-              >
-                <Percent className="h-3.5 w-3.5" /> Percent (%)
-              </button>
-            </div>
-            <input
-              type="number"
-              value={discountValue}
-              onChange={(e) => setDiscountValue(e.target.value)}
-              placeholder={discountType === 'amount' ? 'Discount amount' : 'Discount %'}
-              min="0"
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-700">Payment Method</p>
-            <button
-              onClick={() => {
-                setPaymentMethod('cash');
-                setShowCheckout(false);
-                resetPaymentFields();
-                setTimeout(() => setShowCashModal(true), 150);
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
-            >
-              <Banknote className="h-4 w-4" /> Pay by Cash
-            </button>
-            <button
-              onClick={() => {
-                resetPaymentFields();
-                openUpiModal('upi');
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
-            >
-              <Smartphone className="h-4 w-4" /> Pay by UPI
-            </button>
-            <button
-              onClick={() => {
-                setPaymentMethod('split');
-                resetPaymentFields();
-                setShowCheckout(false);
-                setTimeout(() => setShowSplitCashModal(true), 150);
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-800 hover:border-primary hover:bg-primary/5"
-            >
-              <ArrowLeftRight className="h-4 w-4" /> Split payment
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Cash payment */}
+      {/* Checkout — consolidated two-column modal matching Orders & Billing */}
       <Modal
-        open={showCashModal}
-        onClose={() => { setShowCashModal(false); setTimeout(() => setShowCheckout(true), 150); }}
-        title="Enter Cash Received"
-        maxWidth="sm"
+        open={showCheckout}
+        onClose={() => { if (!processing) { setShowCheckout(false); setSplitPhase('cash'); setError(null); } }}
+        title="Checkout"
+        maxWidth="3xl"
       >
-        <div className="space-y-4">
-          <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-            <p className="text-xs font-medium text-gray-500">Bill Amount</p>
-            <p className="text-2xl font-bold text-primary">{fmt(finalAmount)}</p>
-          </div>
-          <input
-            type="number"
-            value={cashReceived}
-            onChange={(e) => setCashReceived(e.target.value)}
-            placeholder={`Amount received (min ${fmt(finalAmount)})`}
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          {cashGiven > 0 && (
-            <div className="flex items-center justify-between rounded-xl bg-green-50 px-4 py-3">
-              <span className="text-sm font-medium text-green-700">Change Due</span>
-              <span className="text-lg font-bold text-green-700">{fmt(changeDue)}</span>
-            </div>
-          )}
-          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
-          <button
-            onClick={() => void handleCashPayment()}
-            disabled={processing || cashGiven < finalAmount}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
-          >
-            {processing && <Spinner size="sm" className="text-white" />}
-            Payment Complete
-          </button>
-        </div>
-      </Modal>
-
-      {/* Split — cash portion */}
-      <Modal
-        open={showSplitCashModal}
-        onClose={() => { setShowSplitCashModal(false); setTimeout(() => setShowCheckout(true), 150); }}
-        title="Split — Cash Portion"
-        maxWidth="sm"
-      >
-        <div className="space-y-4">
-          <div className="rounded-xl bg-gray-50 px-4 py-4 text-center">
-            <p className="text-xs font-medium text-gray-500">Total Bill</p>
-            <p className="text-2xl font-bold text-primary">{fmt(finalAmount)}</p>
-          </div>
-          <input
-            type="number"
-            value={splitCashPortion}
-            onChange={(e) => setSplitCashPortion(e.target.value)}
-            placeholder="Cash portion (₹)"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          {splitCashPortionAmount > 0 && splitUpiAmount > 0 && (
-            <div className="flex justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
-              <span className="text-blue-700">UPI remainder</span>
-              <span className="font-bold text-blue-700">{fmt(splitUpiAmount)}</span>
-            </div>
-          )}
-          <input
-            type="number"
-            value={splitCashGiven}
-            onChange={(e) => setSplitCashGiven(e.target.value)}
-            placeholder={splitCashPortionAmount > 0 ? `Cash received (min ${fmt(splitCashPortionAmount)})` : 'Cash received'}
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          {splitChange > 0 && (
-            <div className="flex justify-between rounded-xl bg-green-50 px-4 py-3 text-sm">
-              <span className="text-green-700">Change Due</span>
-              <span className="font-bold text-green-700">{fmt(splitChange)}</span>
-            </div>
-          )}
-          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
-          <button
-            onClick={() => {
-              if (!isSplitCashValid) {
-                setError('Enter a valid cash portion and amount received.');
-                return;
-              }
-              setShowSplitCashModal(false);
-              openUpiModal('split');
-            }}
-            disabled={!isSplitCashValid}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
-          >
-            Accept cash & pay UPI
-          </button>
-        </div>
-      </Modal>
-
-      {/* UPI payment (full or split remainder) */}
-      <Modal
-        open={showUpiModal}
-        onClose={() => {
-          setShowUpiModal(false);
-          setUpiTxnId('');
-          if (paymentMethod === 'split') {
-            setTimeout(() => setShowSplitCashModal(true), 150);
-          } else {
-            setTimeout(() => setShowCheckout(true), 150);
-          }
-        }}
-        title={paymentMethod === 'split' ? 'UPI — remaining balance' : 'UPI Payment'}
-        maxWidth="sm"
-        zIndexClass="z-[55]"
-      >
-        <div className="space-y-4">
-          <UpiPaymentDisplay profile={profile} amount={activeUpiAmount} transactionNote="Counter order" />
-
-          {paymentMethod === 'split' && (
-            <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-blue-700">Cash portion paid</span>
-                <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
+        <div className="flex gap-6">
+          {/* ── Left: order items + subtotal + GST ── */}
+          <div className="w-64 shrink-0">
+            <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 space-y-2">
+              <p className="text-sm font-semibold text-gray-800">Order items</p>
+              <div className="space-y-2">
+                {cart.map((c) => (
+                  <div key={c.menuItemId} className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <VegDot isVeg={c.isVeg} />
+                        <span className="truncate text-sm text-gray-700">{c.name}</span>
+                      </div>
+                      {c.category ? <p className="ml-4 text-xs text-gray-400">{c.category}</p> : null}
+                    </div>
+                    <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {c.quantity}× {fmt(c.price)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-200 pt-2 space-y-1.5">
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{fmt(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>GST (5%)</span>
+                  <span>{fmt(taxAmount)}</span>
+                </div>
               </div>
             </div>
-          )}
+          </div>
 
-          <input
-            type="text"
-            value={upiTxnId}
-            onChange={(e) => setUpiTxnId(e.target.value)}
-            placeholder="UPI transaction ID"
-            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+          {/* ── Right: discount + print + payment ── */}
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
 
-          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
+            {/* Apply Discount */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Apply Discount (Optional)</p>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  placeholder="0"
+                  min="0"
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  onClick={() => { setDiscountType('amount'); setDiscountValue(''); }}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
+                    discountType === 'amount' ? 'border-primary bg-primary text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >₹</button>
+                <button
+                  onClick={() => { setDiscountType('percent'); setDiscountValue(''); }}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
+                    discountType === 'percent' ? 'border-primary bg-primary text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >%</button>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
+                <span className="text-sm font-semibold text-gray-700">Total Amount</span>
+                <span className="text-lg font-bold text-primary">{fmt(finalAmount)}</span>
+              </div>
+            </div>
 
-          <button
-            onClick={() => void handleUpiPayment()}
-            disabled={processing || (paymentMethod !== 'split' && !upiTxnId.trim())}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white disabled:opacity-50"
-          >
-            {processing && <Spinner size="sm" className="text-white" />}
-            Payment Complete
-          </button>
+            {/* Staff print */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Staff print</p>
+              <button
+                type="button"
+                onClick={handlePrintBill}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Printer className="h-4 w-4" />
+                Print bill
+              </button>
+            </div>
+
+            {/* Payment Method */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Payment Method</p>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  {([
+                    { value: 'cash' as PaymentMethod, label: 'Pay by Cash', icon: <Banknote className="h-4 w-4" /> },
+                    { value: 'upi' as PaymentMethod, label: 'Pay by UPI', icon: <CreditCard className="h-4 w-4" /> },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.value}
+                      onClick={() => { setPaymentMethod(tab.value); setSplitPhase('cash'); setError(null); resetPaymentFields(); }}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
+                        paymentMethod === tab.value ? 'border-primary bg-primary/10 text-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {tab.icon}{tab.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => { setPaymentMethod('split'); setSplitPhase('cash'); setError(null); resetPaymentFields(); }}
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium transition-colors ${
+                    paymentMethod === 'split' ? 'border-primary bg-primary/10 text-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <ArrowLeftRight className="h-4 w-4" />Split payment
+                </button>
+              </div>
+
+              {/* Cash inputs */}
+              {paymentMethod === 'cash' && (
+                <div className="space-y-2 pt-1">
+                  <label className="block text-xs font-medium text-gray-600">Amount received (₹)</label>
+                  <input
+                    type="number"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder={String(finalAmount)}
+                    min={finalAmount}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {cashGiven > 0 && !isNaN(cashGiven) && (
+                    <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-2.5 text-sm">
+                      <span className="text-gray-600">Change to Return</span>
+                      <span className={`font-semibold ${changeDue < 0 ? 'text-red-600' : 'text-gray-900'}`}>{fmt(Math.max(0, changeDue))}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* UPI inputs */}
+              {paymentMethod === 'upi' && (
+                <div className="space-y-3 pt-1">
+                  <UpiPaymentDisplay profile={profile} amount={finalAmount} transactionNote="Counter order" />
+                  <input
+                    type="text"
+                    value={upiTxnId}
+                    onChange={(e) => setUpiTxnId(e.target.value)}
+                    placeholder="Enter transaction ID after payment (optional)"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {/* Split — cash phase */}
+              {paymentMethod === 'split' && splitPhase === 'cash' && (
+                <div className="space-y-3 pt-1">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Cash portion</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                      <input type="number" value={splitCashPortion} onChange={(e) => setSplitCashPortion(e.target.value)} placeholder="0" min={0} max={finalAmount}
+                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                    {splitCashPortionAmount > 0 && <p className="mt-1 text-xs text-gray-500">UPI remainder: <span className="font-semibold text-primary">{fmt(splitUpiAmount)}</span></p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Cash received</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₹</span>
+                      <input type="number" value={splitCashGiven} onChange={(e) => setSplitCashGiven(e.target.value)} placeholder={String(splitCashPortionAmount || 0)} min={splitCashPortionAmount}
+                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-8 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                    {splitChange > 0 && <p className="mt-1 text-xs text-gray-500">Change to return: <span className="font-semibold">{fmt(splitChange)}</span></p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Split — UPI phase */}
+              {paymentMethod === 'split' && splitPhase === 'upi' && (
+                <div className="space-y-3 pt-1">
+                  <UpiPaymentDisplay profile={profile} amount={splitUpiAmount} transactionNote="Counter order (UPI portion)" />
+                  <div className="flex justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
+                    <span className="text-blue-700">Cash paid</span>
+                    <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={upiTxnId}
+                    onChange={(e) => setUpiTxnId(e.target.value)}
+                    placeholder="Enter UPI transaction ID (optional)"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (paymentMethod === 'split' && splitPhase === 'upi') { setSplitPhase('cash'); setError(null); }
+                  else { setShowCheckout(false); setSplitPhase('cash'); setError(null); }
+                }}
+                disabled={processing}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => void handleConfirmPayment()}
+                disabled={processing || (paymentMethod === 'cash' && cashGiven > 0 && cashGiven < finalAmount)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                {processing ? <Spinner size="sm" className="text-white" /> : null}
+                <span className="text-center leading-tight">
+                  {paymentMethod === 'split' && splitPhase === 'cash' ? <>Accept Cash<br />&amp; Pay UPI</> : 'Confirm Payment'}
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       </Modal>
+
     </>
   );
 }
