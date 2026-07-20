@@ -649,7 +649,17 @@ function OrderDetailPanel({
     setAssistanceOpen(true);
     setAssistanceLoading(true);
     setAssistanceUrl(null);
+    setPaymentError(null);
     try {
+      // Ensure table is linked to this order before requesting QR.
+      if (order.id) {
+        try {
+          const linked = await apiClient.setTableOccupied(table.id, order.id);
+          dispatch(upsertTable(linked));
+        } catch (occupyErr) {
+          console.warn('[Orders] could not ensure table occupied before assistance QR', occupyErr);
+        }
+      }
       const response = await apiClient.getTableAssistanceQr(table.id);
       setAssistanceUrl(response.assistance_url);
     } catch (err: unknown) {
