@@ -6,7 +6,7 @@ import {
   resolveOrderItemParts,
 } from './orderHelpers';
 
-export type KitchenItemStatus = 'pending' | 'cooking' | 'ready' | 'served';
+export type KitchenItemStatus = 'pending' | 'cooking' | 'ready' | 'served' | 'cancelled';
 
 export interface KotTicketItem {
   id: string;
@@ -44,7 +44,7 @@ export interface PrepSummaryLine {
 const LEGACY_SUB_PREFIX = '__legacy__';
 
 export function isActiveKitchenItem(status?: string): boolean {
-  return status !== 'ready' && status !== 'served';
+  return status !== 'ready' && status !== 'served' && status !== 'cancelled';
 }
 
 export function isReadilyAvailableMenuItem(

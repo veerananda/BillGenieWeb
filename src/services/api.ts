@@ -571,7 +571,7 @@ class APIClient {
     });
   }
 
-  async updateOrderItemStatus(orderId: string, itemId: string, status: 'pending' | 'cooking' | 'ready' | 'served'): Promise<void> {
+  async updateOrderItemStatus(orderId: string, itemId: string, status: 'pending' | 'cooking' | 'ready' | 'served' | 'cancelled'): Promise<void> {
     await this.makeRequest(`/orders/${orderId}/items/${itemId}/status`, 'PUT', { status });
   }
 
