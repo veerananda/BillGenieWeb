@@ -75,10 +75,18 @@ function resolveItemTotal(item: OrderItem, menuMap: Map<string, MenuItem>): numb
 }
 
 function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
-  const items = order.items ?? [];
+  const items = (order.items ?? []).filter((i) => i.status !== 'cancelled');
   if (items.some((i) => i.status === 'ready')) return 'ready';
   if (items.some((i) => i.status === 'cooking')) return 'cooking';
   return null;
+}
+
+function hasKitchenCancelledItems(order: Order | undefined): boolean {
+  return Boolean(order?.items?.some((i) => i.status === 'cancelled'));
+}
+
+function billableItems(order: Order | undefined): OrderItem[] {
+  return (order?.items ?? []).filter((i) => i.status !== 'cancelled');
 }
 
 function VegBadge({ isVeg }: { isVeg: boolean }) {
@@ -92,7 +100,7 @@ function VegBadge({ isVeg }: { isVeg: boolean }) {
 // ── Table card ─────────────────────────────────────────────────────────────────
 
 function billSubtotal(order: Order): number {
-  const fromItems = (order.items ?? []).reduce((sum, item) => {
+  const fromItems = billableItems(order).reduce((sum, item) => {
     if (item.total > 0) return sum + item.total;
     return sum + (item.unit_rate || 0) * item.quantity;
   }, 0);
@@ -118,22 +126,41 @@ function TableCard({
   const occupied = table.is_occupied;
   const needsAssistance = tableNeedsAssistance(table);
   const derived = kitchenEnabled && occupied && order ? getDerivedItemStatus(order) : null;
+  const kitchenCancelled = kitchenEnabled && occupied && hasKitchenCancelledItems(order);
+  const cancelledCount = kitchenEnabled
+    ? (order?.items?.filter((i) => i.status === 'cancelled').length ?? 0)
+    : 0;
 
   const readyCount = kitchenEnabled
     ? (order?.items?.filter((i) => i.status === 'ready').length ?? 0)
     : 0;
+  const activeItems = billableItems(order);
 
-  // Solid fill per status: blue = assistance, yellow = items ready, green = in use.
-  const fill: 'blue' | 'yellow' | 'green' | null = needsAssistance
+  // Solid fill: blue = assistance, yellow = ready, rose = kitchen cancelled, green = in use.
+  const fill: 'blue' | 'yellow' | 'rose' | 'green' | null = needsAssistance
     ? 'blue'
     : derived === 'ready'
     ? 'yellow'
+    : kitchenCancelled
+    ? 'rose'
     : occupied
     ? 'green'
     : null;
   const onDarkFill = fill === 'green' || fill === 'blue';
-  const nameClass = onDarkFill ? 'text-white' : fill === 'yellow' ? 'text-amber-950' : 'text-gray-900';
-  const chipClass = onDarkFill ? 'bg-white/25 text-white' : 'bg-white/60 text-amber-900';
+  const nameClass =
+    onDarkFill
+      ? 'text-white'
+      : fill === 'yellow'
+        ? 'text-amber-950'
+        : fill === 'rose'
+          ? 'text-rose-950'
+          : 'text-gray-900';
+  const chipClass =
+    onDarkFill
+      ? 'bg-white/25 text-white'
+      : fill === 'rose'
+        ? 'bg-white/70 text-rose-900'
+        : 'bg-white/60 text-amber-900';
 
   return (
     <button
@@ -143,6 +170,8 @@ function TableCard({
           ? 'border-[#3419e2] bg-[#3419e2]'
           : fill === 'yellow'
           ? 'border-amber-300 bg-amber-300'
+          : fill === 'rose'
+          ? 'border-rose-400 bg-rose-400'
           : fill === 'green'
           ? 'border-primary bg-primary'
           : 'border-gray-200 bg-white hover:border-gray-300'
@@ -160,6 +189,8 @@ function TableCard({
                   <CheckCircle className="h-3 w-3" />
                   Ready to serve
                 </>
+              ) : fill === 'rose' ? (
+                <>Cancelled</>
               ) : (
                 'In use'
               )}
@@ -189,15 +220,22 @@ function TableCard({
                 {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
               </p>
             </>
+          ) : kitchenCancelled ? (
+            <>
+              <p className="text-xs font-bold text-rose-950">
+                {cancelledCount} {cancelledCount === 1 ? 'item' : 'items'} cancelled by kitchen
+              </p>
+              <p className="text-xs text-rose-900/80">Kitchen cancelled item</p>
+            </>
           ) : (
             <>
-              <p className="text-xs text-white/85">
-                {(order.items?.length ?? 0) > 0
-                  ? (() => { const qty = (order.items ?? []).reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
+              <p className={`text-xs ${onDarkFill ? 'text-white/85' : 'text-gray-500'}`}>
+                {activeItems.length > 0
+                  ? (() => { const qty = activeItems.reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
                   : 'No items yet'}
               </p>
-              {(order.items?.length ?? 0) > 0 && (
-                <p className="text-sm font-semibold text-white">{fmt(billSubtotal(order))}</p>
+              {activeItems.length > 0 && (
+                <p className={`text-sm font-semibold ${onDarkFill ? 'text-white' : 'text-gray-900'}`}>{fmt(billSubtotal(order))}</p>
               )}
               {kitchenEnabled && derived === 'cooking' && (
                 <span className="inline-flex items-center rounded-full bg-white/25 px-2 py-0.5 text-xs font-medium text-white">
@@ -404,10 +442,11 @@ function OrderDetailPanel({
     }
   };
 
-  // ── Group duplicate menu items by menu_id ────────────────────────────────
+  // ── Group duplicate menu items by menu_id (exclude kitchen-cancelled lines) ─
   const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
+  const kitchenCancelledCount = (order.items ?? []).filter((i) => i.status === 'cancelled').length;
   const groupedItems = Object.values(
-    (order.items ?? []).reduce<
+    billableItems(order).reduce<
       Record<string, {
         groupKey: string;
         menuId: string;
@@ -674,6 +713,11 @@ function OrderDetailPanel({
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
+          {kitchenCancelledCount > 0 ? (
+            <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900">
+              {kitchenCancelledCount} {kitchenCancelledCount === 1 ? 'item was' : 'items were'} cancelled by kitchen and removed from this table order.
+            </div>
+          ) : null}
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-400">
             Items ({groupedItems.length})
           </p>

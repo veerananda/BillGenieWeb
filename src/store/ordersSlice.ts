@@ -15,9 +15,10 @@ const initialState: OrdersState = {
   hydrated: false,
 };
 
-// Higher rank = more advanced status; prevents WS events from reverting optimistic updates
+// Higher rank = more advanced status; prevents WS events from reverting optimistic updates.
+// cancelled is terminal for a line item (kitchen void) so it outranks prep statuses.
 const STATUS_RANK: Record<string, number> = {
-  pending: 0, cooking: 1, ready: 2, served: 3, completed: 4,
+  pending: 0, cooking: 1, ready: 2, served: 3, completed: 4, cancelled: 5,
 };
 
 function upsertOrder(list: Order[], incoming: Order): Order[] {

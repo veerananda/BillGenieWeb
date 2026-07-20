@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChefHat, Check, Wifi } from 'lucide-react';
+import { ChefHat, Check, X, Wifi } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
@@ -21,6 +21,7 @@ import {
   formatKitchenElapsed,
   formatKitchenTime,
   getKotTableLabel,
+  isActiveKitchenItem,
   type KotTicket,
   type KotTicketItem,
 } from '../../lib/kitchenHelpers';
@@ -28,16 +29,19 @@ import {
 function KOTCard({
   ticket,
   onItemReady,
+  onItemCancel,
 }: {
   ticket: KotTicket;
   onItemReady: (orderId: string, itemId: string) => void;
+  onItemCancel: (orderId: string, itemId: string) => void;
 }) {
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [readyAllLoading, setReadyAllLoading] = useState(false);
   const tableLabel = getKotTableLabel(ticket);
 
   async function handleItemReady(item: KotTicketItem) {
-    if (markingId || readyAllLoading) return;
+    if (markingId || cancellingId || readyAllLoading) return;
     setMarkingId(item.id);
     try {
       onItemReady(item.orderId, item.id);
@@ -49,12 +53,30 @@ function KOTCard({
     }
   }
 
+  async function handleItemCancel(item: KotTicketItem) {
+    if (ticket.isSelfService) return;
+    if (markingId || cancellingId || readyAllLoading) return;
+    if (!window.confirm(`Cancel "${item.name}" from this KOT? It will be removed from the table order.`)) {
+      return;
+    }
+    setCancellingId(item.id);
+    try {
+      onItemCancel(item.orderId, item.id);
+      await apiClient.updateOrderItemStatus(item.orderId, item.id, 'cancelled');
+    } catch {
+      // WS will eventually sync the correct state
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
   async function handleReadyAll() {
     setReadyAllLoading(true);
-    ticket.items.forEach((item) => onItemReady(item.orderId, item.id));
+    const active = ticket.items.filter((item) => isActiveKitchenItem(item.status));
+    active.forEach((item) => onItemReady(item.orderId, item.id));
     try {
       await Promise.all(
-        ticket.items.map((item) =>
+        active.map((item) =>
           apiClient.updateOrderItemStatus(item.orderId, item.id, 'ready')
         )
       );
@@ -119,18 +141,34 @@ function KOTCard({
               ) : null}
             </div>
             <span className="shrink-0 text-sm font-bold text-primary">{item.quantity}x</span>
-            <button
-              onClick={() => handleItemReady(item)}
-              disabled={markingId === item.id || readyAllLoading}
-              className="flex min-w-12 flex-col items-center rounded-lg bg-green-500 px-2.5 py-1.5 text-white transition-colors hover:bg-green-600 disabled:opacity-50"
-            >
-              {markingId === item.id ? (
-                <Spinner size="sm" className="text-white" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              <span className="mt-0.5 text-[9px] font-bold">Ready</span>
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {!ticket.isSelfService ? (
+                <button
+                  onClick={() => handleItemCancel(item)}
+                  disabled={markingId === item.id || cancellingId === item.id || readyAllLoading}
+                  className="flex min-w-12 flex-col items-center rounded-lg bg-red-500 px-2.5 py-1.5 text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                >
+                  {cancellingId === item.id ? (
+                    <Spinner size="sm" className="text-white" />
+                  ) : (
+                    <X className="h-4 w-4" />
+                  )}
+                  <span className="mt-0.5 text-[9px] font-bold">Cancel</span>
+                </button>
+              ) : null}
+              <button
+                onClick={() => handleItemReady(item)}
+                disabled={markingId === item.id || cancellingId === item.id || readyAllLoading}
+                className="flex min-w-12 flex-col items-center rounded-lg bg-green-500 px-2.5 py-1.5 text-white transition-colors hover:bg-green-600 disabled:opacity-50"
+              >
+                {markingId === item.id ? (
+                  <Spinner size="sm" className="text-white" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                <span className="mt-0.5 text-[9px] font-bold">Ready</span>
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -195,6 +233,13 @@ export function Kitchen() {
   const onItemReady = useCallback(
     (orderId: string, itemId: string) => {
       dispatch(patchOrderItemStatus({ orderId, itemId, status: 'ready' }));
+    },
+    [dispatch]
+  );
+
+  const onItemCancel = useCallback(
+    (orderId: string, itemId: string) => {
+      dispatch(patchOrderItemStatus({ orderId, itemId, status: 'cancelled' }));
     },
     [dispatch]
   );
@@ -320,7 +365,12 @@ export function Kitchen() {
       ) : (
         <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {tickets.map((ticket) => (
-            <KOTCard key={ticket.key} ticket={ticket} onItemReady={onItemReady} />
+            <KOTCard
+              key={ticket.key}
+              ticket={ticket}
+              onItemReady={onItemReady}
+              onItemCancel={onItemCancel}
+            />
           ))}
         </div>
       )}
