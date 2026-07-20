@@ -84,6 +84,18 @@ export function Login() {
             </div>
           )}
 
+          {logoutReason === 'restaurant_closed' && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Restaurant is closed</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  The owner closed the restaurant. Contact them to reopen before signing in.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Heading */}
           <div className="mt-8 text-center">
             <h1 className="text-2xl font-bold text-ink">Welcome back</h1>
