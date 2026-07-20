@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChefHat, Check, X, Wifi, Printer } from 'lucide-react';
+import { ChefHat, Check, X, Wifi } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
@@ -25,7 +25,6 @@ import {
   type KotTicket,
   type KotTicketItem,
 } from '../../lib/kitchenHelpers';
-import { printKotTicket } from '../../lib/kotPrint';
 
 function KOTCard({
   ticket,
@@ -115,16 +114,7 @@ function KOTCard({
             {formatKitchenElapsed(ticket.firedAt)} · Fired {formatKitchenTime(ticket.firedAt)}
           </p>
         </div>
-        <div className="ml-3 flex shrink-0 flex-col items-end gap-1.5">
-          <button
-            type="button"
-            onClick={() => printKotTicket(ticket)}
-            className="flex items-center justify-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50"
-            title="Print KOT"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print
-          </button>
+        <div className="ml-3 flex shrink-0 flex-col items-end">
           <button
             onClick={handleReadyAll}
             disabled={readyAllLoading}
