@@ -579,6 +579,12 @@ class APIClient {
     await this.makeRequest(`/orders/${orderId}/items/${itemId}`, 'DELETE');
   }
 
+  /** Manager/admin: set line quantity (0 removes the item). Restores stock server-side. */
+  async adjustOrderItemQuantity(orderId: string, itemId: string, quantity: number): Promise<Order> {
+    const r = await this.makeRequest(`/orders/${orderId}/items/${itemId}/quantity`, 'PUT', { quantity });
+    return (r?.order ?? r) as Order;
+  }
+
   async completeOrderWithPayment(id: string, payment: CompletePaymentRequest): Promise<CompletePaymentResponse> {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }

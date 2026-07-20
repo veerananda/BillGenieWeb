@@ -17,6 +17,7 @@ import {
   Clock,
   Leaf,
   Beef,
+  Trash2,
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
@@ -365,6 +366,7 @@ function OrderDetailPanel({
   onOrderCompleted,
   onAddItems,
   canCancel,
+  canAdjustItems,
 }: {
   order: Order;
   table: RestaurantTable;
@@ -373,6 +375,7 @@ function OrderDetailPanel({
   onOrderCompleted: (orderId: string, tableId: string) => void;
   onAddItems?: () => void;
   canCancel: boolean;
+  canAdjustItems: boolean;
 }) {
   const dispatch = useAppDispatch();
   const menuItems = useAppSelector(selectMenuItems);
@@ -451,6 +454,7 @@ function OrderDetailPanel({
 
   const [servingId, setServingId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
 
   const handleServe = async (itemId: string) => {
     setServingId(itemId);
@@ -481,6 +485,42 @@ function OrderDetailPanel({
       console.error('[Orders] dismiss cancelled item failed', err);
     } finally {
       setDismissingId(null);
+    }
+  };
+
+  const applyItemQuantity = async (itemId: string, quantity: number) => {
+    setAdjustingId(itemId);
+    try {
+      const updated = await apiClient.adjustOrderItemQuantity(order.id, itemId, quantity);
+      dispatch(upsertActiveOrder(updated));
+    } catch (err) {
+      console.error('[Orders] adjust item quantity failed', err);
+      window.alert(err instanceof Error ? err.message : 'Could not update item');
+    } finally {
+      setAdjustingId(null);
+    }
+  };
+
+  const reduceGroupByOne = async (ids: string[], itemName: string) => {
+    if (adjustingId || ids.length === 0) return;
+    const lines = (order.items ?? []).filter((i) => ids.includes(i.id) && i.status !== 'cancelled');
+    if (lines.length === 0) return;
+    const target =
+      [...lines].sort((a, b) => b.quantity - a.quantity).find((i) => i.quantity > 1) || lines[0];
+    const nextQty = target.quantity - 1;
+    if (nextQty <= 0) {
+      if (!window.confirm(`Remove ${itemName} from this order?`)) return;
+      await applyItemQuantity(target.id, 0);
+      return;
+    }
+    await applyItemQuantity(target.id, nextQty);
+  };
+
+  const removeGroup = async (ids: string[], itemName: string) => {
+    if (adjustingId || ids.length === 0) return;
+    if (!window.confirm(`Remove all ${itemName} from this order? Stock will be restored.`)) return;
+    for (const id of ids) {
+      await applyItemQuantity(id, 0);
     }
   };
 
@@ -852,6 +892,36 @@ function OrderDetailPanel({
                       <Badge variant="cooking">Cooking</Badge>
                     ) : kitchenEnabled && isServed ? (
                       <Badge variant="served">Served</Badge>
+                    ) : null}
+                    {canAdjustItems ? (
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          title="Reduce quantity by 1"
+                          disabled={Boolean(adjustingId)}
+                          onClick={() => reduceGroupByOne(item.ids, item.name)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {adjustingId && item.ids.includes(adjustingId) ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            <>
+                              <Minus className="h-3.5 w-3.5" />
+                              Qty
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          title="Remove item"
+                          disabled={Boolean(adjustingId)}
+                          onClick={() => removeGroup(item.ids, item.name)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -1629,6 +1699,7 @@ export function Orders() {
   const canCancelOrders = useAppSelector(selectCanCancelOrders);
   // Admins and managers can always cancel; staff only if explicitly permitted
   const canCancel = role === 'admin' || role === 'manager' || canCancelOrders;
+  const canAdjustItems = role === 'admin' || role === 'manager';
   const kitchenEnabled = hasKitchenAccess(
     parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
   );
@@ -1872,6 +1943,7 @@ export function Orders() {
             onOrderCompleted={handleOrderCompleted}
             onAddItems={() => setPanelMode('add-items')}
             canCancel={canCancel}
+            canAdjustItems={canAdjustItems}
           />
         );
       })()}
