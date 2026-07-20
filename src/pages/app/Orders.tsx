@@ -491,8 +491,10 @@ function OrderDetailPanel({
   const applyItemQuantity = async (itemId: string, quantity: number) => {
     setAdjustingId(itemId);
     try {
-      const updated = await apiClient.adjustOrderItemQuantity(order.id, itemId, quantity);
-      dispatch(upsertActiveOrder(updated));
+      await apiClient.adjustOrderItemQuantity(order.id, itemId, quantity);
+      // Refetch — adjust response historically omitted items (Order.Items is json:"-").
+      const fresh = await apiClient.getOrder(order.id);
+      dispatch(upsertActiveOrder(fresh));
     } catch (err) {
       console.error('[Orders] adjust item quantity failed', err);
       window.alert(err instanceof Error ? err.message : 'Could not update item');
