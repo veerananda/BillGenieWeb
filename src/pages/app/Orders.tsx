@@ -1688,7 +1688,7 @@ function TakeOrderPanel({
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {placing ? <Spinner size="sm" className="text-white" /> : <CheckCircle className="h-4 w-4" />}
-                {existingOrder ? 'Save New Items' : 'Save Order'}
+                Save Order
               </button>
             </div>
           </div>
