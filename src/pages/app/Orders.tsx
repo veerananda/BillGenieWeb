@@ -31,6 +31,8 @@ import {
   setActiveOrders,
   upsertActiveOrder,
   removeActiveOrder,
+  acknowledgeKitchenCancels,
+  selectAcknowledgedCancelledByOrderId,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import type { MenuItem } from '../../store/menuSlice';
@@ -81,8 +83,22 @@ function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
   return null;
 }
 
-function hasKitchenCancelledItems(order: Order | undefined): boolean {
-  return Boolean(order?.items?.some((i) => i.status === 'cancelled'));
+function hasUnacknowledgedKitchenCancels(
+  order: Order | undefined,
+  acknowledgedByOrderId: Record<string, string[]>
+): boolean {
+  if (!order?.items?.length) return false;
+  const acked = new Set(acknowledgedByOrderId[order.id] || []);
+  return order.items.some((i) => i.status === 'cancelled' && !acked.has(i.id));
+}
+
+function getUnacknowledgedCancelledCount(
+  order: Order | undefined,
+  acknowledgedByOrderId: Record<string, string[]>
+): number {
+  if (!order?.items?.length) return 0;
+  const acked = new Set(acknowledgedByOrderId[order.id] || []);
+  return order.items.filter((i) => i.status === 'cancelled' && !acked.has(i.id)).length;
 }
 
 function billableItems(order: Order | undefined): OrderItem[] {
@@ -117,18 +133,21 @@ function TableCard({
   order,
   onClick,
   kitchenEnabled,
+  acknowledgedCancelledByOrderId,
 }: {
   table: RestaurantTable;
   order: Order | undefined;
   onClick: () => void;
   kitchenEnabled: boolean;
+  acknowledgedCancelledByOrderId: Record<string, string[]>;
 }) {
   const occupied = table.is_occupied;
   const needsAssistance = tableNeedsAssistance(table);
   const derived = kitchenEnabled && occupied && order ? getDerivedItemStatus(order) : null;
-  const kitchenCancelled = kitchenEnabled && occupied && hasKitchenCancelledItems(order);
+  const kitchenCancelled =
+    kitchenEnabled && occupied && hasUnacknowledgedKitchenCancels(order, acknowledgedCancelledByOrderId);
   const cancelledCount = kitchenEnabled
-    ? (order?.items?.filter((i) => i.status === 'cancelled').length ?? 0)
+    ? getUnacknowledgedCancelledCount(order, acknowledgedCancelledByOrderId)
     : 0;
 
   const readyCount = kitchenEnabled
@@ -136,13 +155,13 @@ function TableCard({
     : 0;
   const activeItems = billableItems(order);
 
-  // Solid fill: blue = assistance, yellow = ready, rose = kitchen cancelled, green = in use.
+  // Solid fill: blue = assistance, rose = kitchen cancelled, yellow = ready, green = in use.
   const fill: 'blue' | 'yellow' | 'rose' | 'green' | null = needsAssistance
     ? 'blue'
-    : derived === 'ready'
-    ? 'yellow'
     : kitchenCancelled
     ? 'rose'
+    : derived === 'ready'
+    ? 'yellow'
     : occupied
     ? 'green'
     : null;
@@ -190,7 +209,7 @@ function TableCard({
                   Ready to serve
                 </>
               ) : fill === 'rose' ? (
-                <>Cancelled</>
+                <>{cancelledCount === 1 ? '1 item cancelled' : `${cancelledCount} items cancelled`}</>
               ) : (
                 'In use'
               )}
@@ -214,18 +233,17 @@ function TableCard({
         </div>
       ) : occupied && order ? (
         <div className="space-y-1">
-          {derived === 'ready' ? (
+          {kitchenCancelled ? (
+            <>
+              <p className="text-xs font-bold text-rose-950">
+                {cancelledCount === 1 ? '1 item cancelled' : `${cancelledCount} items cancelled`}
+              </p>
+            </>
+          ) : derived === 'ready' ? (
             <>
               <p className="text-xs font-bold text-amber-950">
                 {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
               </p>
-            </>
-          ) : kitchenCancelled ? (
-            <>
-              <p className="text-xs font-bold text-rose-950">
-                {cancelledCount} {cancelledCount === 1 ? 'item' : 'items'} cancelled by kitchen
-              </p>
-              <p className="text-xs text-rose-900/80">Kitchen cancelled item</p>
             </>
           ) : (
             <>
@@ -373,9 +391,16 @@ function OrderDetailPanel({
     }
   }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Opening the table clears rose — cancelled lines stay visible until removed.
+  useEffect(() => {
+    if ((order.items ?? []).some((i) => i.status === 'cancelled')) {
+      dispatch(acknowledgeKitchenCancels({ orderId: order.id }));
+    }
+  }, [dispatch, order.id, order.items]);
+
   // Compute totals — use GST setting from profile
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
-  const computedSubtotal = (order.items ?? []).reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
+  const computedSubtotal = billableItems(order).reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
   // When prices include GST: gross = item prices as shown on menu (already GST-inclusive).
   // order.sub_total from the API is the pre-tax base (backend already extracted GST), so using it
   // here would double-extract GST. Always use computedSubtotal when prices include GST.
@@ -425,6 +450,7 @@ function OrderDetailPanel({
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const [servingId, setServingId] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
 
   const handleServe = async (itemId: string) => {
     setServingId(itemId);
@@ -442,9 +468,25 @@ function OrderDetailPanel({
     }
   };
 
+  const handleDismissCancelled = async (itemId: string) => {
+    setDismissingId(itemId);
+    try {
+      await apiClient.dismissCancelledOrderItem(order.id, itemId);
+      const updatedOrder: Order = {
+        ...order,
+        items: (order.items ?? []).filter((i) => i.id !== itemId),
+      };
+      dispatch(upsertActiveOrder(updatedOrder));
+    } catch (err) {
+      console.error('[Orders] dismiss cancelled item failed', err);
+    } finally {
+      setDismissingId(null);
+    }
+  };
+
   // ── Group duplicate menu items by menu_id (exclude kitchen-cancelled lines) ─
   const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
-  const kitchenCancelledCount = (order.items ?? []).filter((i) => i.status === 'cancelled').length;
+  const cancelledLines = (order.items ?? []).filter((i) => i.status === 'cancelled');
   const groupedItems = Object.values(
     billableItems(order).reduce<
       Record<string, {
@@ -713,11 +755,46 @@ function OrderDetailPanel({
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {kitchenCancelledCount > 0 ? (
-            <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900">
-              {kitchenCancelledCount} {kitchenCancelledCount === 1 ? 'item was' : 'items were'} cancelled by kitchen and removed from this table order.
+          {cancelledLines.length > 0 ? (
+            <div className="mb-5 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-rose-700">
+                Cancelled by kitchen ({cancelledLines.length})
+              </p>
+              {cancelledLines.map((item) => {
+                const parts = resolveOrderItemParts(item, menuItems);
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-rose-800">{parts.name}</p>
+                      {parts.category ? (
+                        <p className="truncate text-xs text-rose-600/80">{parts.category}</p>
+                      ) : null}
+                      <p className="mt-0.5 text-xs font-medium text-rose-700">Removed from bill</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleDismissCancelled(item.id)}
+                      disabled={dismissingId === item.id}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-400 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      {dismissingId === item.id ? (
+                        <Spinner size="sm" className="text-rose-700" />
+                      ) : (
+                        <>
+                          <X className="h-3.5 w-3.5" />
+                          Remove
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
+
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-400">
             Items ({groupedItems.length})
           </p>
@@ -1545,6 +1622,7 @@ export function Orders() {
   const dispatch = useAppDispatch();
   const tables = useAppSelector(selectTables);
   const activeOrders = useAppSelector(selectActiveOrders);
+  const acknowledgedCancelledByOrderId = useAppSelector(selectAcknowledgedCancelledByOrderId);
   const menuHydrated = useAppSelector(selectMenuHydrated);
   const profile = useAppSelector(selectProfile);
   const role = useAppSelector(selectAuthRole);
@@ -1654,6 +1732,10 @@ export function Orders() {
       handleClearAssistance(table);
       return;
     }
+    const order = getOrderForTable(table);
+    if (order?.id) {
+      dispatch(acknowledgeKitchenCancels({ orderId: order.id }));
+    }
     setSelectedTable(table);
     setPanelMode(table.is_occupied ? 'detail' : 'vacant');
   };
@@ -1758,6 +1840,7 @@ export function Orders() {
                   table={table}
                   order={getOrderForTable(table)}
                   kitchenEnabled={kitchenEnabled}
+                  acknowledgedCancelledByOrderId={acknowledgedCancelledByOrderId}
                   onClick={() => handleTableClick(table)}
                 />
               ))}

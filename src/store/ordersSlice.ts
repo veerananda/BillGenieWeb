@@ -7,12 +7,15 @@ interface OrdersState {
   activeOrders: Order[];
   counterOrders: Order[];
   hydrated: boolean;
+  /** Waiter viewed these cancelled line ids — clears rose tile until new cancels arrive. */
+  acknowledgedCancelledByOrderId: Record<string, string[]>;
 }
 
 const initialState: OrdersState = {
   activeOrders: [],
   counterOrders: [],
   hydrated: false,
+  acknowledgedCancelledByOrderId: {},
 };
 
 // Higher rank = more advanced status; prevents WS events from reverting optimistic updates.
@@ -56,6 +59,7 @@ const ordersSlice = createSlice({
     },
     removeActiveOrder(state, action: PayloadAction<string>) {
       state.activeOrders = state.activeOrders.filter((o) => o.id !== action.payload);
+      delete state.acknowledgedCancelledByOrderId[action.payload];
     },
     setCounterOrders(state, action: PayloadAction<Order[]>) {
       state.counterOrders = action.payload;
@@ -65,6 +69,7 @@ const ordersSlice = createSlice({
     },
     removeCounterOrder(state, action: PayloadAction<string>) {
       state.counterOrders = state.counterOrders.filter((o) => o.id !== action.payload);
+      delete state.acknowledgedCancelledByOrderId[action.payload];
     },
     patchOrderItemStatus(
       state,
@@ -80,14 +85,29 @@ const ordersSlice = createSlice({
           if (item && incomingRank >= (STATUS_RANK[item.status] ?? 0)) {
             item.status = status;
           }
+          if (status === 'cancelled') {
+            const prev = state.acknowledgedCancelledByOrderId[orderId] || [];
+            state.acknowledgedCancelledByOrderId[orderId] = prev.filter((id) => id !== itemId);
+          }
           return;
         }
       }
+    },
+    acknowledgeKitchenCancels(state, action: PayloadAction<{ orderId: string }>) {
+      const { orderId } = action.payload;
+      const order =
+        state.activeOrders.find((o) => o.id === orderId) ??
+        state.counterOrders.find((o) => o.id === orderId);
+      if (!order) return;
+      state.acknowledgedCancelledByOrderId[orderId] = (order.items ?? [])
+        .filter((i) => i.status === 'cancelled')
+        .map((i) => i.id);
     },
     clearOrders(state) {
       state.activeOrders = [];
       state.counterOrders = [];
       state.hydrated = false;
+      state.acknowledgedCancelledByOrderId = {};
     },
   },
 });
@@ -100,12 +120,15 @@ export const {
   upsertCounterOrder,
   removeCounterOrder,
   patchOrderItemStatus,
+  acknowledgeKitchenCancels,
   clearOrders,
 } = ordersSlice.actions;
 
 export const selectActiveOrders = (state: RootState) => state.orders.activeOrders;
 export const selectCounterOrders = (state: RootState) => state.orders.counterOrders;
 export const selectOrdersHydrated = (state: RootState) => state.orders.hydrated;
+export const selectAcknowledgedCancelledByOrderId = (state: RootState) =>
+  state.orders.acknowledgedCancelledByOrderId;
 
 export const selectOrderById = createSelector(
   [selectActiveOrders, selectCounterOrders, (_: RootState, id: string) => id],
