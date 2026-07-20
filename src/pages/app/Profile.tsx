@@ -36,6 +36,7 @@ interface ProfileForm {
   is_self_service: boolean;
   counter_service_modes: 'both' | 'eat_here' | 'takeaway' | '';
   prices_include_gst: boolean;
+  is_closed: boolean;
 }
 
 function profileToForm(p: RestaurantProfile): ProfileForm {
@@ -50,6 +51,7 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     is_self_service: p.is_self_service ?? false,
     counter_service_modes: p.counter_service_modes ?? '',
     prices_include_gst: p.prices_include_gst ?? false,
+    is_closed: p.is_closed ?? false,
   };
 }
 
@@ -482,6 +484,7 @@ export function Profile() {
     is_self_service: false,
     counter_service_modes: '',
     prices_include_gst: false,
+    is_closed: false,
   });
 
   const [loading, setLoading] = useState(true);
@@ -872,6 +875,72 @@ export function Profile() {
             }
           />
         </SectionCard>
+
+        {role === 'admin' ? (
+          <SectionCard
+            title="Restaurant availability"
+            subtitle="Close for holidays and manage signed-in devices"
+          >
+            <Toggle
+              checked={form.is_closed}
+              onChange={async (v) => {
+                const previous = form.is_closed;
+                set('is_closed', v);
+                try {
+                  const { restaurant } = await apiClient.updateRestaurantProfile({ is_closed: v });
+                  dispatch(updateProfile(restaurant));
+                  setSuccessMsg(
+                    v
+                      ? 'Restaurant closed. Staff can no longer sign in.'
+                      : 'Restaurant reopened.'
+                  );
+                } catch (err: unknown) {
+                  set('is_closed', previous);
+                  setSaveError(
+                    err instanceof Error ? err.message : 'Failed to update restaurant status.'
+                  );
+                }
+              }}
+              label="Restaurant closed"
+              description={
+                form.is_closed
+                  ? 'Closed — staff, managers, and kitchen cannot sign in. You can keep working and reopen anytime.'
+                  : 'Open — all team members can sign in'
+              }
+            />
+            <div className="border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      'Log out every other phone or browser using this restaurant? Your current session stays signed in.'
+                    )
+                  ) {
+                    return;
+                  }
+                  try {
+                    const result = await apiClient.logoutAllDevices();
+                    setSuccessMsg(
+                      result?.message ||
+                        `Logged out ${result?.revoked_users ?? 0} other session(s).`
+                    );
+                  } catch (err: unknown) {
+                    setSaveError(
+                      err instanceof Error ? err.message : 'Failed to log out other devices.'
+                    );
+                  }
+                }}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+              >
+                Log out all devices
+              </button>
+              <p className="mt-1.5 text-xs text-gray-400">
+                Forces every other signed-in device offline immediately.
+              </p>
+            </div>
+          </SectionCard>
+        ) : null}
 
         {/* Section 4: Ordering Settings */}
         <SectionCard title="Ordering Settings">

@@ -181,6 +181,7 @@ export interface RestaurantProfile {
   is_self_service: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
+  is_closed?: boolean;
   subscription_end?: string;
   subscription_phase?: string;
   requires_plan_selection?: boolean;
@@ -204,6 +205,7 @@ export interface UpdateProfileRequest {
   is_self_service?: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
+  is_closed?: boolean;
 }
 
 export interface CompletePaymentRequest {
@@ -371,9 +373,29 @@ class APIClient {
         throw new Error(err.error ?? 'Subscription expired. Please renew to continue.');
       }
 
+      if (response.status === 403) {
+        const err = await response.json().catch(() => ({}));
+        const code = typeof err.error === 'string' ? err.error : '';
+        const message =
+          typeof err.message === 'string'
+            ? err.message
+            : typeof err.error === 'string'
+              ? err.error
+              : 'Access denied';
+        if (code === 'restaurant_closed') {
+          const role = localStorage.getItem('user_role');
+          if (role && role !== 'admin') {
+            this.logout();
+            sessionStorage.setItem('logout_reason', 'restaurant_closed');
+            window.location.replace('/login');
+          }
+        }
+        throw new Error(message);
+      }
+
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.error ?? `Request failed: ${response.status}`);
+        throw new Error(err.message ?? err.error ?? `Request failed: ${response.status}`);
       }
 
       const parsed = await response.json().catch(() => null);
@@ -687,6 +709,11 @@ class APIClient {
 
   async updateRestaurantProfile(data: UpdateProfileRequest): Promise<{ message: string; restaurant: RestaurantProfile }> {
     return this.makeRequest('/restaurants/profile', 'PUT', data);
+  }
+
+  /** Admin only — force every other device in the restaurant to sign out. */
+  async logoutAllDevices(): Promise<{ message: string; revoked_users: number }> {
+    return this.makeRequest('/restaurants/logout-all-devices', 'POST', {});
   }
 
   // ── Staff ─────────────────────────────────────────────────────────────────
