@@ -575,6 +575,10 @@ class APIClient {
     await this.makeRequest(`/orders/${orderId}/items/${itemId}/status`, 'PUT', { status });
   }
 
+  async dismissCancelledOrderItem(orderId: string, itemId: string): Promise<void> {
+    await this.makeRequest(`/orders/${orderId}/items/${itemId}`, 'DELETE');
+  }
+
   async completeOrderWithPayment(id: string, payment: CompletePaymentRequest): Promise<CompletePaymentResponse> {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }
