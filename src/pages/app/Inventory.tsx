@@ -11,7 +11,6 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
   Circle,
   Leaf,
   Beef,
@@ -31,12 +30,10 @@ import {
   selectInventoryIngredients,
   setInventoryIngredients,
   upsertInventoryIngredient,
-  removeInventoryIngredient,
   type InventoryIngredient,
 } from '../../store/inventorySlice';
 import {
   getStockWarningLevel,
-  isLowStock,
   canViewIngredientManagement,
   canViewInventory,
   canRestockInventory,
@@ -67,23 +64,6 @@ const inputClass =
 function stockColor(current: number, alertQuantity: number) {
   const level = getStockWarningLevel(current, alertQuantity);
   return level === 'RED' ? '#ef4444' : level === 'YELLOW' ? '#f59e0b' : '#22c55e';
-}
-
-// ─── Stock bar (relative to alert quantity; hidden when alert is unset) ───────
-
-function StockBar({ current, alertQuantity }: { current: number; alertQuantity: number }) {
-  if (alertQuantity <= 0) {
-    return <div className="h-1.5 w-full rounded-full bg-gray-100" />;
-  }
-  const level = getStockWarningLevel(current, alertQuantity);
-  const pct = Math.min(100, Math.max(0, (current / Math.max(alertQuantity, current, 1)) * 100));
-  const barColor = level === 'RED' ? 'bg-red-500' : level === 'YELLOW' ? 'bg-amber-400' : 'bg-green-500';
-  const trackColor = level === 'RED' ? 'bg-red-100' : level === 'YELLOW' ? 'bg-amber-100' : 'bg-green-100';
-  return (
-    <div className={`h-1.5 w-full rounded-full ${trackColor}`}>
-      <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-    </div>
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
