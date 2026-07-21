@@ -16,14 +16,46 @@ import {
 } from '../../store/ordersSlice';
 import { setTables } from '../../store/tablesSlice';
 import { setTableOccupied, upsertTable } from '../../store/tablesSlice';
-import { upsertInventoryIngredient } from '../../store/inventorySlice';
+import { upsertInventoryIngredient, type InventoryIngredient } from '../../store/inventorySlice';
 import { addMenuItem, updateMenuItem, removeMenuItem } from '../../store/menuSlice';
 import type { Order, RestaurantTable, MenuItem } from '../../services/api';
-import type { InventoryIngredient } from '../../store/inventorySlice';
 import type { AppDispatch } from '../../store';
 
 function isCounterOrder(data: Record<string, unknown>): boolean {
   return data.order_type === 'counter' || data.orderType === 'counter';
+}
+
+/** Map WS inventory_updated payload → Redux InventoryIngredient shape. */
+function mapInventoryBroadcast(data: Record<string, unknown>): InventoryIngredient | null {
+  const kind = String(data.kind || (data.ingredient_id ? 'ingredient' : 'menu_item'));
+  if (kind !== 'ingredient') return null;
+
+  const id = (data.ingredient_id ?? data.ingredientId ?? data.id) as string | undefined;
+  if (!id) return null;
+
+  const existing = store.getState().inventory.ingredients.find((i) => i.id === id);
+  const quantityRaw = data.quantity ?? data.current_stock ?? data.currentStock;
+  const fullRaw = data.full_stock ?? data.fullStock;
+  const alertRaw = data.alert_quantity ?? data.alertQuantity;
+  const nameRaw = data.item_name ?? data.name;
+
+  return {
+    id,
+    name: nameRaw != null && String(nameRaw).trim() !== '' ? String(nameRaw) : existing?.name ?? 'Unknown',
+    unit: data.unit != null && String(data.unit).trim() !== '' ? String(data.unit) : existing?.unit ?? 'pieces',
+    currentStock:
+      quantityRaw != null && quantityRaw !== ''
+        ? Number(quantityRaw) || 0
+        : existing?.currentStock ?? 0,
+    fullStock:
+      fullRaw != null && fullRaw !== ''
+        ? Number(fullRaw) || 0
+        : existing?.fullStock ?? 0,
+    alertQuantity:
+      alertRaw != null && alertRaw !== ''
+        ? Number(alertRaw) || 0
+        : existing?.alertQuantity ?? 0,
+  };
 }
 
 function hydrateOrder(orderId: string, counter: boolean, dispatch: AppDispatch) {
@@ -191,8 +223,8 @@ export function AppShell() {
       }),
 
       wsService.on('inventory_updated', (data) => {
-        const id = (data.ingredient_id ?? data.id) as string | undefined;
-        if (id) dispatch(upsertInventoryIngredient({ ...data, id } as unknown as InventoryIngredient));
+        const mapped = mapInventoryBroadcast(data as Record<string, unknown>);
+        if (mapped) dispatch(upsertInventoryIngredient(mapped));
       }),
 
       wsService.on('menu_updated', (data) => {
