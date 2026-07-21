@@ -39,21 +39,6 @@ function stockColor(current: number, alertQuantity: number) {
   return level === 'RED' ? '#ef4444' : level === 'YELLOW' ? '#f59e0b' : '#22c55e';
 }
 
-function StockBar({ current, alertQuantity }: { current: number; alertQuantity: number }) {
-  if (alertQuantity <= 0) {
-    return <div className="h-1.5 w-full rounded-full bg-gray-100" />;
-  }
-  const level = getStockWarningLevel(current, alertQuantity);
-  const pct = Math.min(100, Math.max(0, (current / Math.max(alertQuantity, current, 1)) * 100));
-  const barColor = level === 'RED' ? 'bg-red-500' : level === 'YELLOW' ? 'bg-amber-400' : 'bg-green-500';
-  const trackColor = level === 'RED' ? 'bg-red-100' : level === 'YELLOW' ? 'bg-amber-100' : 'bg-green-100';
-  return (
-    <div className={`h-1.5 w-full rounded-full ${trackColor}`}>
-      <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-    </div>
-  );
-}
-
 export function InventoryManagement() {
   const dispatch = useAppDispatch();
   const role = useAppSelector(selectAuthRole);
@@ -204,22 +189,10 @@ export function InventoryManagement() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${isAdmin ? 'pb-24' : ''}`}>
       <PageHeader
         title="Inventory"
         subtitle="Current stock is updated from Stock Refill. Set alert quantity to get low-stock notices."
-        action={
-          isAdmin ? (
-            <button
-              onClick={() => void handleUpdateInventory()}
-              disabled={saving || editingIds.size === 0}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? <Spinner size="sm" className="text-white" /> : <Check className="h-4 w-4" />}
-              Update inventory
-            </button>
-          ) : undefined
-        }
       />
 
       {lowStockItems.length > 0 && (
@@ -276,12 +249,7 @@ export function InventoryManagement() {
                   <span className="truncate text-sm font-semibold text-gray-900">{item.name}</span>
                 </div>
 
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{item.currentStock.toFixed(2)}</p>
-                  <div className="mt-1">
-                    <StockBar current={item.currentStock} alertQuantity={item.alertQuantity} />
-                  </div>
-                </div>
+                <p className="text-sm font-semibold text-gray-800">{item.currentStock.toFixed(2)}</p>
 
                 <div className="flex items-center gap-1.5">
                   {isEditing ? (
@@ -343,6 +311,28 @@ export function InventoryManagement() {
           })}
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="sticky bottom-0 z-10 -mx-1 border-t border-gray-100 bg-white/95 px-1 py-3 backdrop-blur">
+          <button
+            type="button"
+            onClick={() => void handleUpdateInventory()}
+            disabled={saving || editingIds.size === 0}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {saving ? (
+              <Spinner size="sm" className="text-white" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
+            {saving
+              ? 'Updating…'
+              : pendingEdits.length > 0
+                ? `Update inventory (${pendingEdits.length})`
+                : 'Update inventory'}
+          </button>
+        </div>
+      )}
 
       <DeleteModal
         ingredient={deleteTarget}
