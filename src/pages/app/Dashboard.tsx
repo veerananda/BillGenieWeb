@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useAppSelector } from '../../store/hooks';
 import { selectAuthName, selectAuthRole } from '../../store/authSlice';
+import { selectProfile } from '../../store/profileSlice';
+import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { selectLowStockIngredients } from '../../store/inventorySlice';
 import { apiClient } from '../../services/api';
 import { Spinner } from '../../components/app/Spinner';
@@ -46,17 +48,25 @@ export function Dashboard() {
 
   const name = useAppSelector(selectAuthName);
   const role = useAppSelector(selectAuthRole) as UserRole | null;
+  const profile = useAppSelector(selectProfile);
   const lowStockIngredients = useAppSelector(selectLowStockIngredients);
+
+  const limits = parseSubscriptionLimits(
+    (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
+  );
 
   // Dashboard is admin-only — redirect other roles to their first relevant page
   useEffect(() => {
     if (!role) return;
     if (role === 'admin') return;
     if (role === 'manager') { navigate('/app/orders', { replace: true }); return; }
-    if (role === 'chef') { navigate('/app/kitchen', { replace: true }); return; }
+    if (role === 'chef') {
+      navigate(hasKitchenAccess(limits) ? '/app/kitchen' : '/app/support', { replace: true });
+      return;
+    }
     // staff
     navigate('/app/orders', { replace: true });
-  }, [role, navigate]);
+  }, [role, navigate, limits]);
 
   const [sales, setSales] = useState<SalesSummary | null>(null);
   const [salesLoading, setSalesLoading] = useState(true);

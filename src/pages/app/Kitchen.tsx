@@ -17,6 +17,7 @@ import { EmptyState } from '../../components/app/EmptyState';
 import wsService from '../../services/websocket';
 import {
   buildKotTickets,
+  buildKitchenSourceOrders,
   buildPrepSummary,
   formatKitchenElapsed,
   formatKitchenTime,
@@ -25,6 +26,8 @@ import {
   type KotTicket,
   type KotTicketItem,
 } from '../../lib/kitchenHelpers';
+import { selectProfile } from '../../store/profileSlice';
+import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 
 function KOTCard({
   ticket,
@@ -176,26 +179,6 @@ function KOTCard({
   );
 }
 
-function isTodayOrder(order: { created_at?: string }): boolean {
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const ts = order.created_at ? new Date(order.created_at).getTime() : 0;
-  return ts >= midnight.getTime();
-}
-
-function kitchenSourceOrders(
-  activeOrders: ReturnType<typeof selectActiveOrders>,
-  counterOrders: ReturnType<typeof selectCounterOrders>
-) {
-  const todayActive = activeOrders.filter(isTodayOrder);
-  const liveCounter = counterOrders.filter(
-    (o) => o.status !== 'completed' && o.status !== 'cancelled' && isTodayOrder(o)
-  );
-  const activeIds = new Set(todayActive.map((o) => o.id));
-  const counterOnly = liveCounter.filter((o) => !activeIds.has(o.id));
-  return [...todayActive, ...counterOnly];
-}
-
 export function Kitchen() {
   const dispatch = useAppDispatch();
   const activeOrders = useAppSelector(selectActiveOrders);
@@ -204,10 +187,18 @@ export function Kitchen() {
   const menuItems = useAppSelector(selectMenuItems);
   const menuHydrated = useAppSelector(selectMenuHydrated);
   const tablesHydrated = useAppSelector(selectTablesHydrated);
+  const profile = useAppSelector(selectProfile);
+  const limits = useMemo(
+    () =>
+      parseSubscriptionLimits(
+        (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
+      ),
+    [profile?.subscription_limits]
+  );
 
   const sourceOrders = useMemo(
-    () => kitchenSourceOrders(activeOrders, counterOrders),
-    [activeOrders, counterOrders]
+    () => buildKitchenSourceOrders(activeOrders, counterOrders, limits),
+    [activeOrders, counterOrders, limits]
   );
 
   const [loading, setLoading] = useState(false);
@@ -248,19 +239,27 @@ export function Kitchen() {
     setLoading(true);
     setError(null);
     try {
-      // Use full-order endpoints so items[] are present for buildKotTickets.
-      // listOrdersSummary omits items[] and produces empty KOT tickets.
-      const tasks: Promise<unknown>[] = [
-        apiClient.listOrders('active').then((res) => {
-          dispatch(setActiveOrders(res.orders));
-        }),
-        apiClient.listCounterOrdersToday().then((res) => {
-          const active = (res.orders ?? []).filter(
-            (o) => o.status !== 'completed' && o.status !== 'cancelled'
-          );
-          dispatch(setCounterOrders(active));
-        }),
-      ];
+      const tasks: Promise<unknown>[] = [];
+
+      if (limits.kitchen_dine_in) {
+        tasks.push(
+          apiClient.listOrders('active').then((res) => {
+            dispatch(setActiveOrders(res.orders));
+          })
+        );
+      }
+
+      if (limits.kitchen_counter) {
+        tasks.push(
+          apiClient.listCounterOrdersToday().then((res) => {
+            const active = (res.orders ?? []).filter(
+              (o) => o.status !== 'completed' && o.status !== 'cancelled'
+            );
+            dispatch(setCounterOrders(active));
+          })
+        );
+      }
+
       if (!menuHydrated) {
         tasks.push(apiClient.listMenuItems().then((items) => dispatch(setMenuItems(items))));
       }
@@ -273,7 +272,7 @@ export function Kitchen() {
     } finally {
       setLoading(false);
     }
-  }, [dispatch, menuHydrated, tablesHydrated]);
+  }, [dispatch, limits.kitchen_counter, limits.kitchen_dine_in, menuHydrated, tablesHydrated]);
 
   useEffect(() => {
     void fetchKitchenOrders();

@@ -1,5 +1,6 @@
 import type { Order } from '../services/api';
 import type { RestaurantTable } from '../services/api';
+import type { SubscriptionLimits } from './subscriptionLimits';
 import {
   getCounterTicketNumber,
   isCounterOrder,
@@ -45,6 +46,36 @@ const LEGACY_SUB_PREFIX = '__legacy__';
 
 export function isActiveKitchenItem(status?: string): boolean {
   return status !== 'ready' && status !== 'served' && status !== 'cancelled';
+}
+
+function isTodayKitchenOrder(order: { created_at?: string }): boolean {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const ts = order.created_at ? new Date(order.created_at).getTime() : 0;
+  return ts >= midnight.getTime();
+}
+
+/** Merge dine-in and counter orders for the kitchen queue, respecting plan add-ons. */
+export function buildKitchenSourceOrders(
+  activeOrders: Order[],
+  counterOrders: Order[],
+  limits: Pick<SubscriptionLimits, 'kitchen_dine_in' | 'kitchen_counter'>
+): Order[] {
+  const parts: Order[] = [];
+
+  if (limits.kitchen_dine_in) {
+    parts.push(...activeOrders.filter((o) => isTodayKitchenOrder(o) && !isCounterOrder(o)));
+  }
+
+  if (limits.kitchen_counter) {
+    const liveCounter = counterOrders.filter(
+      (o) => o.status !== 'completed' && o.status !== 'cancelled' && isTodayKitchenOrder(o)
+    );
+    const existingIds = new Set(parts.map((o) => o.id));
+    parts.push(...liveCounter.filter((o) => !existingIds.has(o.id)));
+  }
+
+  return parts;
 }
 
 export function isReadilyAvailableMenuItem(
