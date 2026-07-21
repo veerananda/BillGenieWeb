@@ -91,6 +91,7 @@ export function IngredientManagement() {
   const [ingUnit, setIngUnit] = useState<string>('pieces');
   const [ingQty, setIngQty] = useState('');
   const [unitOpen, setUnitOpen] = useState(false);
+  const [customUnitMode, setCustomUnitMode] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -135,7 +136,9 @@ export function IngredientManagement() {
     setEditingIngId(null);
     setIngName('');
     setIngUnit('pieces');
+    setCustomUnitMode(false);
     setIngQty('');
+    setUnitOpen(false);
     setModalError(null);
     setModalOpen(true);
   }
@@ -143,14 +146,18 @@ export function IngredientManagement() {
   function openEdit(ing: MenuItemIngredient) {
     setEditingIngId(ing.id);
     setIngName(ing.name);
+    const known = (UNIT_OPTIONS as readonly string[]).includes(ing.unit);
     setIngUnit(ing.unit);
+    setCustomUnitMode(!known);
     setIngQty(String(ing.quantity_used));
+    setUnitOpen(false);
     setModalError(null);
     setModalOpen(true);
   }
 
   async function handleSaveIngredient() {
     if (!ingName.trim()) { setModalError('Ingredient name is required.'); return; }
+    if (!ingUnit.trim()) { setModalError('Unit is required.'); return; }
     const qty = parseFloat(ingQty);
     if (isNaN(qty) || qty <= 0) { setModalError('Enter a valid quantity.'); return; }
     if (!selectedItem) return;
@@ -158,11 +165,12 @@ export function IngredientManagement() {
     setSaving(true);
     setModalError(null);
     try {
+      const unit = ingUnit.trim();
       let newList: RecipeIngredientInput[];
       if (editingIngId) {
         newList = (selectedItem.ingredients).map((ing) =>
           ing.id === editingIngId
-            ? { ingredient_id: ing.ingredient_id, name: ingName.trim(), unit: ingUnit, quantity_used: qty }
+            ? { ingredient_id: ing.ingredient_id, name: ingName.trim(), unit, quantity_used: qty }
             : { ingredient_id: ing.ingredient_id, name: ing.name, unit: ing.unit, quantity_used: ing.quantity_used }
         );
       } else {
@@ -173,7 +181,7 @@ export function IngredientManagement() {
             unit: ing.unit,
             quantity_used: ing.quantity_used,
           })),
-          { name: ingName.trim(), unit: ingUnit, quantity_used: qty },
+          { name: ingName.trim(), unit, quantity_used: qty },
         ];
       }
       await apiClient.setMenuItemIngredients(selectedItem.id, newList);
@@ -386,26 +394,53 @@ export function IngredientManagement() {
                 onClick={() => setUnitOpen((v) => !v)}
                 className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 transition-colors hover:border-gray-300 focus:outline-none"
               >
-                {ingUnit}
+                {customUnitMode ? (ingUnit.trim() || 'Custom unit') : ingUnit}
                 {unitOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
               </button>
               {unitOpen && (
-                <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
                   {UNIT_OPTIONS.map((u) => (
                     <button
                       key={u}
                       type="button"
-                      onClick={() => { setIngUnit(u); setUnitOpen(false); }}
+                      onClick={() => {
+                        setIngUnit(u);
+                        setCustomUnitMode(false);
+                        setUnitOpen(false);
+                      }}
                       className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
-                        ingUnit === u ? 'font-semibold text-primary' : 'text-gray-700'
+                        !customUnitMode && ingUnit === u ? 'font-semibold text-primary' : 'text-gray-700'
                       }`}
                     >
                       {u}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomUnitMode(true);
+                      setIngUnit('');
+                      setUnitOpen(false);
+                    }}
+                    className={`w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-gray-50 ${
+                      customUnitMode ? 'text-primary' : 'text-primary'
+                    }`}
+                  >
+                    + Add new unit
+                  </button>
                 </div>
               )}
             </div>
+            {customUnitMode && (
+              <input
+                type="text"
+                value={ingUnit}
+                onChange={(e) => { setIngUnit(e.target.value); setModalError(null); }}
+                placeholder="Enter unit (e.g. pinch, pack)"
+                className={`${inputClass} mt-2`}
+                autoFocus
+              />
+            )}
           </div>
 
           <div>
