@@ -49,7 +49,14 @@ import { EmptyState } from '../../components/app/EmptyState';
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 function toInventoryIngredient(i: Ingredient): InventoryIngredient {
-  return { id: i.id, name: i.name, unit: i.unit, currentStock: i.current_stock, fullStock: i.full_stock };
+  return {
+    id: i.id,
+    name: i.name,
+    unit: i.unit,
+    currentStock: i.current_stock,
+    fullStock: i.full_stock,
+    alertQuantity: i.alert_quantity ?? 0,
+  };
 }
 
 const UNIT_OPTIONS = ['pieces', 'grams', 'kg', 'ml', 'liters', 'cups', 'tablespoons', 'teaspoons'] as const;
@@ -57,16 +64,19 @@ const UNIT_OPTIONS = ['pieces', 'grams', 'kg', 'ml', 'liters', 'cups', 'tablespo
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
 
-function stockColor(current: number, full: number) {
-  const level = getStockWarningLevel(current, full);
+function stockColor(current: number, alertQuantity: number) {
+  const level = getStockWarningLevel(current, alertQuantity);
   return level === 'RED' ? '#ef4444' : level === 'YELLOW' ? '#f59e0b' : '#22c55e';
 }
 
-// ─── Stock bar ────────────────────────────────────────────────────────────────
+// ─── Stock bar (relative to alert quantity; hidden when alert is unset) ───────
 
-function StockBar({ current, full }: { current: number; full: number }) {
-  const level = getStockWarningLevel(current, full);
-  const pct = full > 0 ? Math.min(100, (current / full) * 100) : 100;
+function StockBar({ current, alertQuantity }: { current: number; alertQuantity: number }) {
+  if (alertQuantity <= 0) {
+    return <div className="h-1.5 w-full rounded-full bg-gray-100" />;
+  }
+  const level = getStockWarningLevel(current, alertQuantity);
+  const pct = Math.min(100, Math.max(0, (current / Math.max(alertQuantity, current, 1)) * 100));
   const barColor = level === 'RED' ? 'bg-red-500' : level === 'YELLOW' ? 'bg-amber-400' : 'bg-green-500';
   const trackColor = level === 'RED' ? 'bg-red-100' : level === 'YELLOW' ? 'bg-amber-100' : 'bg-green-100';
   return (
@@ -501,9 +511,10 @@ export function StockRefill() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const sorted = [...ingredients].sort((a, b) => {
-      const ra = a.fullStock > 0 ? a.currentStock / a.fullStock : 1;
-      const rb = b.fullStock > 0 ? b.currentStock / b.fullStock : 1;
-      return ra - rb;
+      const aLow = a.alertQuantity > 0 && a.currentStock <= a.alertQuantity ? 0 : 1;
+      const bLow = b.alertQuantity > 0 && b.currentStock <= b.alertQuantity ? 0 : 1;
+      if (aLow !== bLow) return aLow - bLow;
+      return a.name.localeCompare(b.name);
     });
     if (!q) return sorted;
     return sorted.filter((i) => i.name.toLowerCase().includes(q));
@@ -635,7 +646,7 @@ export function StockRefill() {
           </div>
           <div className="divide-y divide-gray-50">
             {filtered.map((item) => {
-              const color = stockColor(item.currentStock, item.fullStock);
+              const color = stockColor(item.currentStock, item.alertQuantity);
               const addRaw = refillAmounts[item.id] ?? '';
               return (
                 <div
@@ -696,363 +707,15 @@ export function StockRefill() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TAB 3 — Inventory
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// TAB 3 — Inventory (see InventoryManagementPage.tsx)
+// -----------------------------------------------------------------------------
 
-export function InventoryManagement() {
-  const dispatch = useAppDispatch();
-  const role = useAppSelector(selectAuthRole);
-  const ingredients = useAppSelector(selectInventoryIngredients);
-  const isAdmin = canViewIngredientManagement(role);
+export { InventoryManagement } from './InventoryManagementPage';
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editTarget, setEditTarget] = useState<InventoryIngredient | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<InventoryIngredient | null>(null);
-
-  const fetchIngredients = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiClient.listIngredients();
-      dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
-    } finally {
-      setLoading(false);
-    }
-  }, [dispatch]);
-
-  useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
-
-  const lowStockItems = ingredients.filter((i) => isLowStock(i.currentStock, i.fullStock));
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
-        <div className="flex justify-center py-16"><Spinner size="lg" className="text-primary" /></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
-        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-          <button onClick={fetchIngredients} className="ml-3 font-semibold underline">Retry</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (ingredients.length === 0) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
-        <EmptyState
-          icon={Package}
-          title="No ingredients yet"
-          description="Add ingredients from Ingredient Management."
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Inventory" subtitle="Track stock levels across ingredients" />
-
-      {/* Low stock banner */}
-      {lowStockItems.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-bold text-amber-700">Low Stock Alert</p>
-            <p className="text-sm text-amber-600">
-              {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} below 25% — check Stock Refill.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-        {/* Header */}
-        <div
-          className="grid gap-4 px-4 py-3 text-xs font-bold uppercase tracking-wide text-white"
-          style={{
-            backgroundColor: 'var(--color-primary)',
-            gridTemplateColumns: isAdmin ? '1fr 1fr 80px 80px' : '1fr 1fr 80px',
-          }}
-        >
-          <span>Ingredient</span>
-          <span>Current / Full</span>
-          <span className="text-center">Unit</span>
-          {isAdmin && <span className="text-center">Actions</span>}
-        </div>
-
-        <div className="divide-y divide-gray-50">
-          {ingredients.map((item) => {
-            const color = stockColor(item.currentStock, item.fullStock);
-            return (
-              <div
-                key={item.id}
-                className="grid items-center gap-4 px-4 py-3"
-                style={{
-                  gridTemplateColumns: isAdmin ? '1fr 1fr 80px 80px' : '1fr 1fr 80px',
-                }}
-              >
-                {/* Name */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <Circle className="h-3 w-3 shrink-0" style={{ color, fill: color }} />
-                  <span className="truncate text-sm font-semibold text-gray-900">{item.name}</span>
-                </div>
-
-                {/* Stock */}
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>
-                    {item.currentStock.toFixed(2)} / {item.fullStock.toFixed(2)}
-                  </p>
-                  <div className="mt-1">
-                    <StockBar current={item.currentStock} full={item.fullStock} />
-                  </div>
-                </div>
-
-                {/* Unit */}
-                <div className="text-center">
-                  <span className="text-sm text-gray-500">{item.unit}</span>
-                </div>
-
-                {/* Actions */}
-                {isAdmin && (
-                  <div className="flex items-center justify-center gap-1">
-                    <button
-                      onClick={() => setEditTarget(item)}
-                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(item)}
-                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <EditStockModal
-        ingredient={editTarget}
-        onClose={() => setEditTarget(null)}
-        onSaved={(updated) => dispatch(upsertInventoryIngredient(updated))}
-      />
-      <DeleteModal
-        ingredient={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onDeleted={(id) => dispatch(removeInventoryIngredient(id))}
-      />
-    </div>
-  );
-}
-
-// ─── Edit Stock Modal ─────────────────────────────────────────────────────────
-
-interface EditStockModalProps {
-  ingredient: InventoryIngredient | null;
-  onClose: () => void;
-  onSaved: (updated: InventoryIngredient) => void;
-}
-
-function EditStockModal({ ingredient, onClose, onSaved }: EditStockModalProps) {
-  const [currentStock, setCurrentStock] = useState('');
-  const [fullStock, setFullStock] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (ingredient) {
-      setCurrentStock(String(ingredient.currentStock));
-      setFullStock(String(ingredient.fullStock));
-      setError(null);
-    }
-  }, [ingredient]);
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    const cur = parseFloat(currentStock);
-    const full = parseFloat(fullStock);
-    if (isNaN(cur) || cur < 0) { setError('Current stock must be a non-negative number.'); return; }
-    if (isNaN(full) || full <= 0) { setError('Full stock must be a positive number.'); return; }
-    if (!ingredient) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await apiClient.updateIngredient(ingredient.id, {
-        name: ingredient.name,
-        unit: ingredient.unit,
-        current_stock: cur,
-        full_stock: full,
-      });
-      onSaved(toInventoryIngredient(result));
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal open={!!ingredient} onClose={onClose} title="Edit Inventory" maxWidth="sm">
-      {ingredient && (
-        <form onSubmit={(e) => void handleSave(e)} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Ingredient Name</label>
-            <input
-              type="text"
-              value={ingredient.name}
-              disabled
-              className={`${inputClass} bg-gray-50 text-gray-500 cursor-not-allowed`}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Unit</label>
-            <input
-              type="text"
-              value={ingredient.unit}
-              disabled
-              className={`${inputClass} bg-gray-50 text-gray-500 cursor-not-allowed`}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Current Stock <span className="text-red-500">*</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={currentStock}
-                  onChange={(e) => { setCurrentStock(e.target.value); setError(null); }}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Full Stock <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                step="any"
-                value={fullStock}
-                onChange={(e) => { setFullStock(e.target.value); setError(null); }}
-                className={inputClass}
-              />
-            </div>
-          </div>
-          {/* Unit badges */}
-          <p className="text-xs text-gray-400">Unit: <span className="font-semibold text-gray-600">{ingredient.unit}</span></p>
-
-          {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {saving && <Spinner size="sm" className="text-white" />}
-              Save
-            </button>
-          </div>
-        </form>
-      )}
-    </Modal>
-  );
-}
-
-// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
-
-interface DeleteModalProps {
-  ingredient: InventoryIngredient | null;
-  onClose: () => void;
-  onDeleted: (id: string) => void;
-}
-
-function DeleteModal({ ingredient, onClose, onDeleted }: DeleteModalProps) {
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleDelete() {
-    if (!ingredient) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      await apiClient.deleteIngredient(ingredient.id);
-      onDeleted(ingredient.id);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete.');
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <Modal open={!!ingredient} onClose={onClose} title="Delete Ingredient" maxWidth="sm">
-      <p className="text-sm text-gray-600">
-        Are you sure you want to delete{' '}
-        <span className="font-semibold text-gray-900">{ingredient?.name}</span>? This cannot be undone.
-      </p>
-      {error && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-      )}
-      <div className="mt-5 flex gap-3">
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => void handleDelete()}
-          disabled={deleting}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {deleting && <Spinner size="sm" className="text-white" />}
-          Delete
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Legacy /app/inventory → role-based default page
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 /** @deprecated Prefer IngredientManagement / InventoryManagement / StockRefill routes */
 export function Inventory() {
