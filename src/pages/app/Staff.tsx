@@ -17,7 +17,7 @@ import { apiClient, type StaffMember } from '../../services/api';
 import { useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
-import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { parseSubscriptionLimits, canAssignChefRole } from '../../lib/subscriptionLimits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -229,6 +229,11 @@ function StaffFormModal({
     }
   }, [open, editTarget]);
 
+  useEffect(() => {
+    if (!open || isEdit || kitchenEnabled || form.role !== 'chef') return;
+    setForm((f) => ({ ...f, role: 'staff', can_cancel_orders: false }));
+  }, [open, isEdit, kitchenEnabled, form.role]);
+
   function handleClose() {
     onDismissKey();
     onClose();
@@ -252,6 +257,14 @@ function StaffFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
+
+    const wasChef = editTarget?.role === 'chef';
+    const assigningChef = form.role === 'chef';
+    if (!isAdmin && assigningChef && !kitchenEnabled && !wasChef) {
+      setError('Chef accounts require a kitchen add-on on your plan.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -428,7 +441,13 @@ function StaffFormModal({
         {!isAdmin && !newlyCreatedKey && (
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">Role</label>
-            <div className="flex gap-3">
+            {!kitchenEnabled && isEdit && editTarget?.role === 'chef' ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                <span className="font-semibold">Chef</span> — role kept; kitchen screen is locked until a kitchen
+                add-on is enabled. You can change role to Staff or Manager below.
+              </div>
+            ) : null}
+            <div className="mt-2 flex gap-3">
               <RoleTile
                 icon={User}
                 label="Staff"
@@ -716,7 +735,7 @@ export function Staff() {
   const limits = profile
     ? parseSubscriptionLimits(profile.subscription_limits as Record<string, unknown> | undefined)
     : null;
-  const kitchenEnabled = !!(limits?.kitchen_dine_in || limits?.kitchen_counter);
+  const kitchenEnabled = limits ? canAssignChefRole(limits) : false;
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);

@@ -41,6 +41,11 @@ export function hasKitchenAccess(limits: SubscriptionLimits): boolean {
   return limits.kitchen_dine_in || limits.kitchen_counter;
 }
 
+/** True when admin can assign the chef role (create or promote). */
+export function canAssignChefRole(limits: SubscriptionLimits): boolean {
+  return hasKitchenAccess(limits);
+}
+
 export function canAddStaff(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
   return usage.staff_and_chefs < limits.max_staff_and_chefs;
 }

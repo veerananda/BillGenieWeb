@@ -13,6 +13,7 @@ import { ForgotLogin } from './pages/auth/ForgotLogin';
 import { VerifyEmail } from './pages/auth/VerifyEmail';
 import { EmailVerificationPending } from './pages/auth/EmailVerificationPending';
 import { ProtectedRoute } from './components/app/ProtectedRoute';
+import { KitchenRoute } from './components/app/KitchenRoute';
 import { AppShell } from './components/app/AppShell';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
@@ -96,7 +97,7 @@ function App() {
         <Route path="menu" element={<LazyAppPage><Menu /></LazyAppPage>} />
         <Route path="orders" element={<LazyAppPage><Orders /></LazyAppPage>} />
         <Route path="counter" element={<LazyAppPage><Counter /></LazyAppPage>} />
-        <Route path="kitchen" element={<LazyAppPage><Kitchen /></LazyAppPage>} />
+        <Route path="kitchen" element={<LazyAppPage><KitchenRoute><Kitchen /></KitchenRoute></LazyAppPage>} />
         <Route path="sales" element={<LazyAppPage><Sales /></LazyAppPage>} />
         <Route path="history" element={<LazyAppPage><History /></LazyAppPage>} />
         <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />

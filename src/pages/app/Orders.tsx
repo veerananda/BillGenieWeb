@@ -22,7 +22,7 @@ import {
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
 import { resolveOrderItemParts, getOrderItemGroupKey } from '../../lib/orderHelpers';
-import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
@@ -381,9 +381,9 @@ function OrderDetailPanel({
   const menuItems = useAppSelector(selectMenuItems);
   const profile = useAppSelector(selectProfile);
   const menuMap = new Map(menuItems.map((m) => [m.id, m]));
-  const kitchenEnabled = hasKitchenAccess(
-    parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
-  );
+  const kitchenEnabled = parseSubscriptionLimits(
+    profile?.subscription_limits as Record<string, unknown> | undefined
+  ).kitchen_dine_in;
 
   // Hydrate full order (with items) when the panel opens or items are missing
   useEffect(() => {
@@ -1712,9 +1712,9 @@ export function Orders() {
   // Admins and managers can always cancel; staff only if explicitly permitted
   const canCancel = role === 'admin' || role === 'manager' || canCancelOrders;
   const canAdjustItems = role === 'admin' || role === 'manager';
-  const kitchenEnabled = hasKitchenAccess(
-    parseSubscriptionLimits(profile?.subscription_limits as Record<string, unknown> | undefined)
-  );
+  const kitchenEnabled = parseSubscriptionLimits(
+    profile?.subscription_limits as Record<string, unknown> | undefined
+  ).kitchen_dine_in;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
