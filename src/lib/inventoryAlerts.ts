@@ -1,6 +1,6 @@
 /**
  * Ported from BillGenieFrontEnd/src/utils/inventoryAlerts.ts
- * No RN Alert dependency — low-stock check only.
+ * Low stock = current_stock <= alert_quantity (alert_quantity <= 0 means no alert).
  */
 import type { InventoryIngredient } from '../store/inventorySlice';
 
@@ -34,25 +34,23 @@ export function canRestockInventory(
   return false;
 }
 
+/** RED when at/below half of alert qty; YELLOW when at/below alert qty. */
 export function getStockWarningLevel(
   currentStock: number,
-  fullStock: number
+  alertQuantity: number
 ): 'GREEN' | 'YELLOW' | 'RED' {
-  if (fullStock <= 0) return 'GREEN';
-  const ratio = currentStock / fullStock;
-  if (ratio <= 0.1) return 'RED';
-  if (ratio <= 0.25) return 'YELLOW';
+  if (alertQuantity <= 0) return 'GREEN';
+  if (currentStock <= alertQuantity * 0.5) return 'RED';
+  if (currentStock <= alertQuantity) return 'YELLOW';
   return 'GREEN';
 }
 
-export function isLowStock(currentStock: number, fullStock: number): boolean {
-  return fullStock > 0 && currentStock / fullStock <= 0.25;
+export function isLowStock(currentStock: number, alertQuantity: number): boolean {
+  return alertQuantity > 0 && currentStock <= alertQuantity;
 }
 
 export function getLowStockIngredients(
   ingredients: InventoryIngredient[]
 ): InventoryIngredient[] {
-  return ingredients.filter(
-    (item) => item.fullStock > 0 && isLowStock(item.currentStock, item.fullStock)
-  );
+  return ingredients.filter((item) => isLowStock(item.currentStock, item.alertQuantity));
 }

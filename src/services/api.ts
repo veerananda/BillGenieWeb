@@ -128,6 +128,7 @@ export interface Ingredient {
   unit: string;
   current_stock: number;
   full_stock: number;
+  alert_quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -749,14 +750,36 @@ class APIClient {
     return r?.ingredients ?? [];
   }
 
-  async createIngredient(data: { name: string; unit: string; current_stock: number; full_stock: number }): Promise<Ingredient> {
+  async createIngredient(data: {
+    name: string;
+    unit: string;
+    current_stock?: number;
+    full_stock?: number;
+    alert_quantity?: number;
+  }): Promise<Ingredient> {
     const r = await this.makeRequest('/ingredients', 'POST', data);
     return r?.ingredient;
   }
 
-  async updateIngredient(id: string, data: { name?: string; unit?: string; current_stock: number; full_stock: number }): Promise<Ingredient> {
+  async updateIngredient(
+    id: string,
+    data: {
+      name?: string;
+      unit?: string;
+      current_stock?: number;
+      full_stock?: number;
+      alert_quantity?: number;
+    }
+  ): Promise<Ingredient> {
     const r = await this.makeRequest(`/ingredients/${id}`, 'PUT', data);
     return r?.ingredient;
+  }
+
+  async bulkUpdateIngredients(
+    items: Array<{ ingredient_id: string; alert_quantity?: number; full_stock?: number }>
+  ): Promise<Ingredient[]> {
+    const r = await this.makeRequest('/ingredients/bulk', 'PUT', { items });
+    return r?.ingredients ?? [];
   }
 
   async restockIngredient(id: string, quantity: number): Promise<Ingredient> {

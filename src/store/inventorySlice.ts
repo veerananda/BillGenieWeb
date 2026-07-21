@@ -8,6 +8,7 @@ export interface InventoryIngredient {
   unit: string;
   currentStock: number;
   fullStock: number;
+  alertQuantity: number;
 }
 
 interface InventoryState {
@@ -58,7 +59,7 @@ export const selectInventoryIngredients = (state: RootState) => state.inventory.
 export const selectInventoryHydrated = (state: RootState) => state.inventory.hydrated;
 export const selectLowStockIngredients = (state: RootState) =>
   state.inventory.ingredients.filter(
-    (i) => i.fullStock > 0 && i.currentStock / i.fullStock <= 0.25
+    (i) => i.alertQuantity > 0 && i.currentStock <= i.alertQuantity
   );
 
 export default inventorySlice.reducer;
