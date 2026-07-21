@@ -52,9 +52,8 @@ function mapInventoryBroadcast(data: Record<string, unknown>): InventoryIngredie
         ? Number(fullRaw) || 0
         : existing?.fullStock ?? 0,
     alertQuantity:
-      alertRaw != null && alertRaw !== ''
-        ? Number(alertRaw) || 0
-        : existing?.alertQuantity ?? 0,
+      // Missing alert_quantity on the wire means 0 (no alert). Do not keep a stale threshold.
+      alertRaw != null && alertRaw !== '' ? Number(alertRaw) || 0 : 0,
   };
 }
 
