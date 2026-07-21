@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Package, Pencil, Trash2, Check, AlertTriangle, Circle } from 'lucide-react';
+import { Package, Pencil, Trash2, Check, AlertTriangle, Circle, Search } from 'lucide-react';
 import { apiClient, type Ingredient } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
@@ -53,6 +53,7 @@ export function InventoryManagement() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const fetchIngredients = useCallback(async () => {
     setLoading(true);
@@ -72,6 +73,18 @@ export function InventoryManagement() {
   }, [fetchIngredients]);
 
   const lowStockItems = ingredients.filter((i) => isLowStock(i.currentStock, i.alertQuantity));
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const sorted = [...ingredients].sort((a, b) => {
+      const aLow = isLowStock(a.currentStock, a.alertQuantity) ? 0 : 1;
+      const bLow = isLowStock(b.currentStock, b.alertQuantity) ? 0 : 1;
+      if (aLow !== bLow) return aLow - bLow;
+      return a.name.localeCompare(b.name);
+    });
+    if (!q) return sorted;
+    return sorted.filter((i) => i.name.toLowerCase().includes(q));
+  }, [ingredients, search]);
 
   const pendingEdits = useMemo(() => {
     const items: Array<{ ingredient_id: string; alert_quantity: number }> = [];
@@ -217,6 +230,17 @@ export function InventoryManagement() {
         </div>
       )}
 
+      <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
+        <Search className="h-4 w-4 shrink-0 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search ingredient..."
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+        />
+      </div>
+
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div
           className="grid gap-3 px-4 py-3 text-xs font-bold uppercase tracking-wide text-white"
@@ -233,13 +257,19 @@ export function InventoryManagement() {
         </div>
 
         <div className="divide-y divide-gray-50">
-          {ingredients.map((item) => {
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">No ingredients match your search.</p>
+          ) : null}
+          {filtered.map((item) => {
             const color = stockColor(item.currentStock, item.alertQuantity);
             const isEditing = editingIds.has(item.id);
+            const lowStock = isLowStock(item.currentStock, item.alertQuantity);
             return (
               <div
                 key={item.id}
-                className="grid items-center gap-3 px-4 py-3"
+                className={`grid items-center gap-3 px-4 py-3 ${
+                  lowStock ? 'bg-red-50 ring-1 ring-inset ring-red-200' : ''
+                }`}
                 style={{
                   gridTemplateColumns: isAdmin ? '1.4fr 1fr 1.2fr 80px 56px' : '1.4fr 1fr 1fr 80px',
                 }}
