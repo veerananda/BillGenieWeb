@@ -147,6 +147,9 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [splitPhase, setSplitPhase] = useState<'cash' | 'upi'>('cash');
 
   const [cashReceived, setCashReceived] = useState('');
+  const [cashInputError, setCashInputError] = useState(false);
+  const [cashInputShake, setCashInputShake] = useState(false);
+  const cashInputRef = useRef<HTMLInputElement>(null);
   const [upiTxnId, setUpiTxnId] = useState('');
   const [splitCashPortion, setSplitCashPortion] = useState('');
   const [splitCashGiven, setSplitCashGiven] = useState('');
@@ -306,7 +309,11 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
 
   async function handleCashPayment() {
     if (cashGiven < finalAmount) {
-      setError(`Please enter amount ≥ ${fmt(finalAmount)}`);
+      setCashInputError(true);
+      setCashInputShake(true);
+      setTimeout(() => setCashInputShake(false), 500);
+      cashInputRef.current?.focus();
+      cashInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     await saveOrder(
@@ -407,7 +414,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         className="fixed inset-0 z-40 bg-black/30"
         onClick={() => { if (!paymentFlowActive) onClose(); }}
       />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-5xl flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
@@ -560,7 +567,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
           </div>
 
           {/* Right — cart */}
-          <div className="flex w-60 shrink-0 flex-col border-l border-gray-100">
+          <div className="flex w-96 shrink-0 flex-col border-l border-gray-100">
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -781,14 +788,17 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               {/* Cash inputs */}
               {paymentMethod === 'cash' && (
                 <div className="space-y-2 pt-1">
-                  <label className="block text-xs font-medium text-gray-600">Amount received (₹)</label>
+                  <label className={`block text-xs font-medium ${cashInputError ? 'text-red-500' : 'text-gray-600'}`}>
+                    Amount received (₹){cashInputError && <span className="ml-1">— please enter the amount</span>}
+                  </label>
                   <input
+                    ref={cashInputRef}
                     type="number"
                     value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
+                    onChange={(e) => { setCashReceived(e.target.value); setCashInputError(false); }}
                     placeholder={String(finalAmount)}
                     min={finalAmount}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    className={`w-full rounded-xl border px-4 py-2.5 text-sm focus:outline-none focus:ring-1 ${cashInputShake ? 'shake' : ''} ${cashInputError ? 'border-red-400 bg-red-50 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-primary focus:ring-primary'}`}
                   />
                   {cashGiven > 0 && !isNaN(cashGiven) && (
                     <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-2.5 text-sm">
