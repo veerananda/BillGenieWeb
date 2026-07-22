@@ -19,7 +19,7 @@ import {
   Beef,
   Trash2,
 } from 'lucide-react';
-import { calculateOrderTax } from '../../lib/orderTax';
+import { calculateRestaurantOrderTax, splitItemGross, subtotalLabel, taxLabel } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
 import {
   resolveOrderItemParts,
@@ -406,16 +406,20 @@ function OrderDetailPanel({
     }
   }, [dispatch, order.id, order.items]);
 
-  // Compute totals — use GST setting from profile
+  const compositeScheme = profile?.composite_scheme ?? false;
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
-  const computedSubtotal = billableItems(order).reduce((sum, item) => sum + resolveItemTotal(item, menuMap), 0);
-  // When prices include GST: gross = item prices as shown on menu (already GST-inclusive).
-  // order.sub_total from the API is the pre-tax base (backend already extracted GST), so using it
-  // here would double-extract GST. Always use computedSubtotal when prices include GST.
-  // When prices exclude GST: gross = pre-tax amount (API sub_total or computed fallback).
-  const gross = pricesIncludeGst
-    ? (computedSubtotal > 0 ? computedSubtotal : order.sub_total)
-    : (order.sub_total > 0 ? order.sub_total : computedSubtotal);
+  const taxableLines = billableItems(order).map((item) => {
+    const lineTotal = resolveItemTotal(item, menuMap);
+    const qty = item.quantity || 1;
+    return {
+      price: lineTotal / qty,
+      quantity: qty,
+      isTaxable: menuMap.get(item.menu_id)?.is_taxable !== false,
+    };
+  });
+  const { taxableGross, nonTaxableGross } = splitItemGross(taxableLines);
+  const computedSubtotal = taxableGross + nonTaxableGross;
+  const gross = computedSubtotal;
 
   const [customerNameDraft, setCustomerNameDraft] = useState(order.customer_name ?? '');
   const [savingName, setSavingName] = useState(false);
@@ -596,10 +600,14 @@ function OrderDetailPanel({
   const discountValue = discountType === '%'
     ? Math.min(gross, gross * discountInput / 100)
     : discountInput;
-  const taxResult = calculateOrderTax(gross, discountValue, pricesIncludeGst);
+  const taxResult = calculateRestaurantOrderTax(taxableGross, nonTaxableGross, discountValue, {
+    pricesIncludeGst,
+    compositeScheme,
+  });
   const displaySubtotal = taxResult.subtotal;
   const displayTax = taxResult.taxAmount;
   const displayTotal = taxResult.finalAmount;
+  const showTax = taxResult.showTax;
   const effectiveTotal = displayTotal;
 
   const changeAmount =
@@ -694,6 +702,7 @@ function OrderDetailPanel({
         discountValue: discountValue || order.discount_amount || 0,
         finalAmount: displayTotal,
         pricesIncludeGst,
+        compositeScheme,
       },
       groupedItems.map((item) => ({
         name: item.name,
@@ -1062,12 +1071,12 @@ function OrderDetailPanel({
               </div>
               <div className="border-t border-gray-200 pt-2 space-y-1.5">
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Subtotal</span>
+                  <span>{subtotalLabel(pricesIncludeGst, compositeScheme)}</span>
                   <span>{fmt(displaySubtotal)}</span>
                 </div>
-                {displayTax > 0 && (
+                {showTax && (
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>GST (5%)</span>
+                    <span>{taxLabel()}</span>
                     <span>{fmt(displayTax)}</span>
                   </div>
                 )}

@@ -1,8 +1,9 @@
-import { calculateOrderTax } from './orderTax';
+import { calculateRestaurantOrderTax, splitItemGross, type RestaurantTaxOptions } from './orderTax';
 
 export interface OrderItemLike {
   price: number;
   quantity: number;
+  isTaxable?: boolean;
 }
 
 export interface OrderCalculation {
@@ -12,15 +13,18 @@ export interface OrderCalculation {
   finalAmount: number;
   grossSubtotal: number;
   pricesIncludeGst: boolean;
+  compositeScheme: boolean;
+  showTax: boolean;
 }
 
 export function calculateOrderTotals(
   items: OrderItemLike[],
   discountAmount: string | number = 0,
   discountType: 'amount' | 'percent' = 'amount',
-  options: { pricesIncludeGst?: boolean } = {}
+  options: RestaurantTaxOptions = {}
 ): OrderCalculation {
-  const grossSubtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const { taxableGross, nonTaxableGross } = splitItemGross(items);
+  const grossSubtotal = taxableGross + nonTaxableGross;
   const discountNum = typeof discountAmount === 'string' ? parseFloat(discountAmount) || 0 : discountAmount;
 
   let discountValue = 0;
@@ -31,7 +35,7 @@ export function calculateOrderTotals(
   }
   discountValue = Math.min(grossSubtotal, Math.max(0, discountValue));
 
-  const tax = calculateOrderTax(grossSubtotal, discountValue, options.pricesIncludeGst ?? false);
+  const tax = calculateRestaurantOrderTax(taxableGross, nonTaxableGross, discountValue, options);
 
   return {
     subtotal: tax.subtotal,
@@ -40,5 +44,7 @@ export function calculateOrderTotals(
     finalAmount: tax.finalAmount,
     grossSubtotal,
     pricesIncludeGst: options.pricesIncludeGst ?? false,
+    compositeScheme: options.compositeScheme ?? false,
+    showTax: tax.showTax,
   };
 }

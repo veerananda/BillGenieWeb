@@ -128,6 +128,7 @@ export function Menu() {
   const [itemVeg, setItemVeg] = useState(false);
   const [itemAvailable, setItemAvailable] = useState(true);
   const [itemReadilyAvailable, setItemReadilyAvailable] = useState(false);
+  const [itemTaxable, setItemTaxable] = useState(true);
   const [itemModalError, setItemModalError] = useState('');
   const [itemModalLoading, setItemModalLoading] = useState(false);
 
@@ -277,6 +278,7 @@ export function Menu() {
     setItemVeg(false);
     setItemAvailable(true);
     setItemReadilyAvailable(false);
+    setItemTaxable(true);
     setItemModalError('');
     setItemModalOpen(true);
   }
@@ -289,6 +291,7 @@ export function Menu() {
     setItemVeg(item.is_veg);
     setItemAvailable(item.is_available);
     setItemReadilyAvailable(item.readily_available ?? false);
+    setItemTaxable(item.is_taxable !== false);
     setItemModalError('');
     setItemModalOpen(true);
   }
@@ -315,6 +318,7 @@ export function Menu() {
           is_veg: itemVeg,
           is_available: itemAvailable,
           readily_available: itemReadilyAvailable,
+          is_taxable: itemTaxable,
         });
         dispatch(updateMenuItemAction(updated));
       } else {
@@ -324,6 +328,7 @@ export function Menu() {
           is_veg: itemVeg,
           is_available: itemAvailable,
           readily_available: itemReadilyAvailable,
+          is_taxable: itemTaxable,
           category: itemModalCategory,
         });
         // Remove from local-only if it was empty
@@ -673,6 +678,16 @@ export function Menu() {
           <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
             <p className="text-sm font-medium text-gray-700">Available</p>
             <Toggle checked={itemAvailable} onChange={() => setItemAvailable((v) => !v)} />
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Taxable</p>
+              <Toggle checked={itemTaxable} onChange={() => setItemTaxable((v) => !v)} />
+            </div>
+            <p className="text-xs text-gray-400">
+              Turn off for MRP items like water bottles that are already taxed at purchase.
+            </p>
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1">

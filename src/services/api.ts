@@ -123,6 +123,7 @@ export interface MenuItem {
   is_veg: boolean;
   is_available: boolean;
   readily_available?: boolean;
+  is_taxable?: boolean;
 }
 
 export interface Ingredient {
@@ -186,6 +187,7 @@ export interface RestaurantProfile {
   is_self_service: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
+  composite_scheme?: boolean;
   is_closed?: boolean;
   subscription_end?: string;
   subscription_phase?: string;
@@ -210,6 +212,7 @@ export interface UpdateProfileRequest {
   is_self_service?: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
+  composite_scheme?: boolean;
   is_closed?: boolean;
 }
 

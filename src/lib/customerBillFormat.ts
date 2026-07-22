@@ -21,6 +21,7 @@ export interface CustomerBillData {
   discountAmount: number;
   total: number;
   pricesIncludeGst?: boolean;
+  compositeScheme?: boolean;
   paymentMethod?: string;
   isPaid?: boolean;
 }
@@ -78,11 +79,11 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     .join('');
 
   const subtotalRow =
-    data.subtotal > 0
-      ? `<div class="row"><span>${subtotalLabel(Boolean(data.pricesIncludeGst))}</span><span>${formatCurrency(data.subtotal)}</span></div>`
+    data.subtotal > 0 && !data.compositeScheme
+      ? `<div class="row"><span>${subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme))}</span><span>${formatCurrency(data.subtotal)}</span></div>`
       : '';
   const taxRow =
-    data.taxAmount > 0
+    data.taxAmount > 0 && !data.compositeScheme
       ? `<div class="row"><span>${taxLabel()}</span><span>${formatCurrency(data.taxAmount)}</span></div>`
       : '';
   const discountRow =
@@ -241,6 +242,7 @@ export function buildCustomerBillFromOrder(
     discountValue: number;
     finalAmount: number;
     pricesIncludeGst: boolean;
+    compositeScheme?: boolean;
   },
   items: CustomerBillLineItem[],
 ): string {
@@ -258,6 +260,7 @@ export function buildCustomerBillFromOrder(
     discountAmount: totals.discountValue,
     total: totals.finalAmount,
     pricesIncludeGst: totals.pricesIncludeGst,
+    compositeScheme: totals.compositeScheme,
     isPaid: false,
   });
 }

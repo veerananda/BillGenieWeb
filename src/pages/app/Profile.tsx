@@ -36,6 +36,7 @@ interface ProfileForm {
   is_self_service: boolean;
   counter_service_modes: 'both' | 'eat_here' | 'takeaway' | '';
   prices_include_gst: boolean;
+  composite_scheme: boolean;
   is_closed: boolean;
 }
 
@@ -51,6 +52,7 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     is_self_service: p.is_self_service ?? false,
     counter_service_modes: p.counter_service_modes ?? '',
     prices_include_gst: p.prices_include_gst ?? false,
+    composite_scheme: p.composite_scheme ?? false,
     is_closed: p.is_closed ?? false,
   };
 }
@@ -484,6 +486,7 @@ export function Profile() {
     is_self_service: false,
     counter_service_modes: '',
     prices_include_gst: false,
+    composite_scheme: false,
     is_closed: false,
   });
 
@@ -587,7 +590,8 @@ export function Profile() {
           form.counter_service_modes !== ''
             ? (form.counter_service_modes as 'both' | 'eat_here' | 'takeaway')
             : undefined,
-        prices_include_gst: form.prices_include_gst,
+        prices_include_gst: form.composite_scheme ? undefined : form.prices_include_gst,
+        composite_scheme: form.composite_scheme,
       };
       const { restaurant } = await apiClient.updateRestaurantProfile(payload);
       dispatch(updateProfile(restaurant));
@@ -865,15 +869,27 @@ export function Profile() {
           subtitle="Controls how GST is shown on customer bills"
         >
           <Toggle
-            checked={form.prices_include_gst}
-            onChange={(v) => set('prices_include_gst', v)}
-            label="Menu prices include GST"
+            checked={form.composite_scheme}
+            onChange={(v) => set('composite_scheme', v)}
+            label="Restaurant is under GST composite scheme"
             description={
-              form.prices_include_gst
-                ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
-                : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
+              form.composite_scheme
+                ? 'No GST is charged or shown on bills. Menu prices are final.'
+                : 'Enable if your restaurant is registered under the GST composition scheme.'
             }
           />
+          {!form.composite_scheme && (
+            <Toggle
+              checked={form.prices_include_gst}
+              onChange={(v) => set('prices_include_gst', v)}
+              label="Menu prices include GST"
+              description={
+                form.prices_include_gst
+                  ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
+                  : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
+              }
+            />
+          )}
         </SectionCard>
 
         {role === 'admin' ? (
