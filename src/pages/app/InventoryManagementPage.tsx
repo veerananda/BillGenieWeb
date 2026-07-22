@@ -15,6 +15,13 @@ import {
   isLowStock,
   canViewIngredientManagement,
 } from '../../lib/inventoryAlerts';
+import {
+  bestDisplayUnit,
+  convertQuantity,
+  entryUnitsFor,
+  formatInventoryQty,
+  shortUnitLabel,
+} from '../../lib/inventoryUnits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -49,6 +56,7 @@ export function InventoryManagement() {
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InventoryIngredient | null>(null);
   const [draftAlerts, setDraftAlerts] = useState<Record<string, string>>({});
+  const [draftAlertUnits, setDraftAlertUnits] = useState<Record<string, string>>({});
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -87,24 +95,33 @@ export function InventoryManagement() {
   }, [ingredients, search]);
 
   const pendingEdits = useMemo(() => {
-    const items: Array<{ ingredient_id: string; alert_quantity: number }> = [];
+    const items: Array<{ ingredient_id: string; alert_quantity: number; unit: string }> = [];
     for (const id of editingIds) {
       const raw = draftAlerts[id];
       if (raw === undefined) continue;
       const qty = parseFloat(raw);
       if (Number.isNaN(qty) || qty < 0) continue;
       const original = ingredients.find((i) => i.id === id);
-      if (!original || qty === original.alertQuantity) continue;
-      items.push({ ingredient_id: id, alert_quantity: qty });
+      if (!original) continue;
+      const entryUnit = draftAlertUnits[id] || bestDisplayUnit(original.alertQuantity || 1, original.unit);
+      const storageQty = convertQuantity(qty, entryUnit, original.unit);
+      if (Math.abs(storageQty - original.alertQuantity) < 1e-9) continue;
+      items.push({ ingredient_id: id, alert_quantity: qty, unit: entryUnit });
     }
     return items;
-  }, [editingIds, draftAlerts, ingredients]);
+  }, [editingIds, draftAlerts, draftAlertUnits, ingredients]);
 
   function startEdit(item: InventoryIngredient) {
+    const displayUnit = bestDisplayUnit(item.alertQuantity > 0 ? item.alertQuantity : 1, item.unit);
+    const displayQty = convertQuantity(item.alertQuantity, item.unit, displayUnit);
     setEditingIds((prev) => new Set(prev).add(item.id));
     setDraftAlerts((prev) => ({
       ...prev,
-      [item.id]: prev[item.id] ?? String(item.alertQuantity),
+      [item.id]: prev[item.id] ?? String(displayQty),
+    }));
+    setDraftAlertUnits((prev) => ({
+      ...prev,
+      [item.id]: prev[item.id] ?? displayUnit,
     }));
     setSaveError(null);
     setSaveSuccess(null);
@@ -117,6 +134,11 @@ export function InventoryManagement() {
       return next;
     });
     setDraftAlerts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDraftAlertUnits((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
@@ -139,6 +161,7 @@ export function InventoryManagement() {
     if (pendingEdits.length === 0) {
       setEditingIds(new Set());
       setDraftAlerts({});
+      setDraftAlertUnits({});
       setSaveSuccess('No alert quantity changes to save.');
       return;
     }
@@ -153,6 +176,7 @@ export function InventoryManagement() {
       }
       setEditingIds(new Set());
       setDraftAlerts({});
+      setDraftAlertUnits({});
       setSaveSuccess(
         `Updated alert quantity for ${pendingEdits.length} item${pendingEdits.length === 1 ? '' : 's'}.`
       );
@@ -279,7 +303,9 @@ export function InventoryManagement() {
                   <span className="truncate text-sm font-semibold text-gray-900">{item.name}</span>
                 </div>
 
-                <p className="text-sm font-semibold text-gray-800">{item.currentStock.toFixed(2)}</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {formatInventoryQty(item.currentStock, item.unit)}
+                </p>
 
                 <div className="flex items-center gap-1.5">
                   {isEditing ? (
@@ -294,6 +320,25 @@ export function InventoryManagement() {
                         }
                         className={`${inputClass} py-1.5`}
                       />
+                      {entryUnitsFor(item.unit).length > 1 ? (
+                        <select
+                          value={draftAlertUnits[item.id] || item.unit}
+                          onChange={(e) =>
+                            setDraftAlertUnits((prev) => ({ ...prev, [item.id]: e.target.value }))
+                          }
+                          className="w-[64px] shrink-0 rounded-lg border border-gray-200 bg-white px-1 py-1.5 text-xs font-semibold text-gray-700"
+                        >
+                          {entryUnitsFor(item.unit).map((u) => (
+                            <option key={u} value={u}>
+                              {shortUnitLabel(u)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="shrink-0 text-xs font-semibold text-gray-500">
+                          {shortUnitLabel(draftAlertUnits[item.id] || item.unit)}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => cancelEdit(item.id)}
@@ -306,7 +351,9 @@ export function InventoryManagement() {
                   ) : (
                     <>
                       <span className="min-w-0 flex-1 text-sm font-medium text-gray-800">
-                        {item.alertQuantity > 0 ? item.alertQuantity.toFixed(2) : '—'}
+                        {item.alertQuantity > 0
+                          ? formatInventoryQty(item.alertQuantity, item.unit)
+                          : '—'}
                       </span>
                       {isAdmin && (
                         <button
