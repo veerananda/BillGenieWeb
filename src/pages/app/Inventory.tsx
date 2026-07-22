@@ -38,6 +38,12 @@ import {
   canViewInventory,
   canRestockInventory,
 } from '../../lib/inventoryAlerts';
+import {
+  defaultEntryUnit,
+  entryUnitsFor,
+  formatInventoryQty,
+  shortUnitLabel,
+} from '../../lib/inventoryUnits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -335,6 +341,7 @@ export function IngredientManagement() {
                     <p className="text-sm font-semibold text-gray-900">{ing.name}</p>
                     <p className="text-xs text-gray-500">
                       {ing.quantity_used} {ing.unit}
+                      {(ing.unit === 'kg' || ing.unit === 'liters') ? ' (inventory unit)' : ''}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -388,6 +395,9 @@ export function IngredientManagement() {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Unit</label>
+            <p className="mb-1.5 text-xs text-gray-500">
+              Weight and volume are tracked in inventory as kg and liters (e.g. 50 grams saves as 0.05 kg).
+            </p>
             <div className="relative">
               <button
                 type="button"
@@ -504,6 +514,7 @@ export function StockRefill() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [refillAmounts, setRefillAmounts] = useState<Record<string, string>>({});
+  const [refillUnits, setRefillUnits] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -536,14 +547,16 @@ export function StockRefill() {
   }, [ingredients, search]);
 
   const pendingItems = useMemo(() => {
-    const items: Array<{ ingredient_id: string; quantity: number }> = [];
+    const items: Array<{ ingredient_id: string; quantity: number; unit: string }> = [];
     for (const [id, raw] of Object.entries(refillAmounts)) {
       const qty = parseFloat((raw ?? '').trim());
       if (!raw?.trim() || Number.isNaN(qty) || qty <= 0) continue;
-      items.push({ ingredient_id: id, quantity: qty });
+      const ingredient = ingredients.find((i) => i.id === id);
+      const unit = refillUnits[id] || defaultEntryUnit(ingredient?.unit ?? '');
+      items.push({ ingredient_id: id, quantity: qty, unit });
     }
     return items;
-  }, [refillAmounts]);
+  }, [refillAmounts, refillUnits, ingredients]);
 
   async function handleBulkRefill() {
     if (pendingItems.length === 0) {
@@ -559,6 +572,7 @@ export function StockRefill() {
         dispatch(upsertInventoryIngredient(toInventoryIngredient(ing)));
       }
       setRefillAmounts({});
+      setRefillUnits({});
       setSuccessMsg(`Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
@@ -632,7 +646,7 @@ export function StockRefill() {
         />
       </div>
       <p className="text-xs text-gray-500">
-        Enter add qty for the items you are restocking. Leave 0 or blank to skip. Then tap Stock Refill.
+        Enter add qty and choose g/kg or ml/L when available. Values convert into the inventory unit (kg / liters).
       </p>
 
       {successMsg && (
@@ -653,7 +667,7 @@ export function StockRefill() {
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
           <div
             className="grid gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500"
-            style={{ gridTemplateColumns: '1fr 120px 110px' }}
+            style={{ gridTemplateColumns: '1fr 120px 180px' }}
           >
             <span>Ingredient</span>
             <span className="text-right">Current</span>
@@ -663,35 +677,58 @@ export function StockRefill() {
             {filtered.map((item) => {
               const color = stockColor(item.currentStock, item.alertQuantity);
               const addRaw = refillAmounts[item.id] ?? '';
+              const entryChoices = entryUnitsFor(item.unit);
+              const selectedUnit = refillUnits[item.id] || defaultEntryUnit(item.unit);
               return (
                 <div
                   key={item.id}
                   className="grid items-center gap-3 px-4 py-3"
-                  style={{ gridTemplateColumns: '1fr 120px 110px' }}
+                  style={{ gridTemplateColumns: '1fr 120px 180px' }}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <Circle className="h-3 w-3 shrink-0" style={{ color, fill: color }} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                      <p className="text-xs text-gray-400">{item.unit}</p>
+                      <p className="text-xs text-gray-400">Tracked in {item.unit}</p>
                     </div>
                   </div>
                   <p className="text-right text-sm font-medium text-gray-700">
-                    {item.currentStock.toFixed(2)}
+                    {formatInventoryQty(item.currentStock, item.unit)}
                   </p>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    value={addRaw}
-                    onChange={(e) => {
-                      setSubmitError(null);
-                      setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }));
-                    }}
-                    placeholder="0"
-                    className="w-full rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={addRaw}
+                      onChange={(e) => {
+                        setSubmitError(null);
+                        setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }));
+                      }}
+                      placeholder="0"
+                      className="min-w-0 flex-1 rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    {entryChoices.length > 1 ? (
+                      <select
+                        value={selectedUnit}
+                        onChange={(e) =>
+                          setRefillUnits((prev) => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                        className="w-[72px] shrink-0 rounded-lg border border-gray-200 bg-white px-1 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-primary"
+                      >
+                        {entryChoices.map((u) => (
+                          <option key={u} value={u}>
+                            {shortUnitLabel(u)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="w-[44px] shrink-0 text-center text-xs text-gray-500">
+                        {shortUnitLabel(selectedUnit || item.unit)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}

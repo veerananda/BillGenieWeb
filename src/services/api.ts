@@ -805,22 +805,34 @@ class APIClient {
     return r?.ingredient;
   }
 
-  async bulkUpdateIngredients(
-    items: Array<{ ingredient_id: string; alert_quantity?: number; full_stock?: number }>
-  ): Promise<Ingredient[]> {
-    const r = await this.makeRequest('/ingredients/bulk', 'PUT', { items });
-    return r?.ingredients ?? [];
-  }
-
-  async restockIngredient(id: string, quantity: number): Promise<Ingredient> {
-    const r = await this.makeRequest(`/ingredients/${id}/restock`, 'POST', { quantity });
+  async restockIngredient(
+    id: string,
+    quantity: number,
+    unit?: string
+  ): Promise<Ingredient> {
+    const r = await this.makeRequest(`/ingredients/${id}/restock`, 'POST', {
+      quantity,
+      ...(unit ? { unit } : {}),
+    });
     return r?.ingredient;
   }
 
   async restockIngredients(
-    items: Array<{ ingredient_id: string; quantity: number }>
+    items: Array<{ ingredient_id: string; quantity: number; unit?: string }>
   ): Promise<Ingredient[]> {
     const r = await this.makeRequest('/ingredients/restock', 'POST', { items });
+    return r?.ingredients ?? [];
+  }
+
+  async bulkUpdateIngredients(
+    items: Array<{
+      ingredient_id: string;
+      alert_quantity?: number;
+      full_stock?: number;
+      unit?: string;
+    }>
+  ): Promise<Ingredient[]> {
+    const r = await this.makeRequest('/ingredients/bulk', 'PUT', { items });
     return r?.ingredients ?? [];
   }
 
