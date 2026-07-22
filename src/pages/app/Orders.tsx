@@ -27,6 +27,7 @@ import {
   isAdjustableOrderItem,
   orderHasServedItems,
 } from '../../lib/orderHelpers';
+import { useAttendants } from '../../lib/useAttendants';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
@@ -389,6 +390,18 @@ function OrderDetailPanel({
   const kitchenEnabled = parseSubscriptionLimits(
     profile?.subscription_limits as Record<string, unknown> | undefined
   ).kitchen_dine_in;
+  const {
+    attendants,
+    defaultAttendantId,
+    resolveAttendantName,
+  } = useAttendants();
+  const [attendedByUserId, setAttendedByUserId] = useState('');
+
+  useEffect(() => {
+    if (defaultAttendantId) {
+      setAttendedByUserId(defaultAttendantId);
+    }
+  }, [defaultAttendantId]);
 
   // Hydrate full order (with items) when the panel opens or items are missing
   useEffect(() => {
@@ -703,6 +716,7 @@ function OrderDetailPanel({
         finalAmount: displayTotal,
         pricesIncludeGst,
         compositeScheme,
+        attendedByName: resolveAttendantName(attendedByUserId),
       },
       groupedItems.map((item) => ({
         name: item.name,
@@ -742,6 +756,7 @@ function OrderDetailPanel({
         change_returned: splitChange,
         ...(upiTransactionId.trim() ? { upi_transaction_id: upiTransactionId.trim() } : {}),
         ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+        ...(attendedByUserId ? { attended_by_user_id: attendedByUserId } : {}),
       };
     } else {
       payload = {
@@ -749,6 +764,7 @@ function OrderDetailPanel({
         amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : effectiveTotal,
         change_returned: paymentMethod === 'cash' ? changeAmount : 0,
         ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+        ...(attendedByUserId ? { attended_by_user_id: attendedByUserId } : {}),
         ...(paymentMethod === 'upi' && upiTransactionId.trim()
           ? { upi_transaction_id: upiTransactionId.trim() }
           : {}),
@@ -1131,6 +1147,26 @@ function OrderDetailPanel({
                 <span className="text-sm font-semibold text-gray-700">Total Amount</span>
                 <span className="text-lg font-bold text-primary">{fmt(displayTotal)}</span>
               </div>
+            </div>
+
+            {/* Attended by */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Attended by</p>
+              <select
+                value={attendedByUserId}
+                onChange={(e) => setAttendedByUserId(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {attendants.length === 0 ? (
+                  <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Staff'}</option>
+                ) : (
+                  attendants.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name} ({person.role})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
 
             {/* Print bill */}

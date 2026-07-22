@@ -97,6 +97,8 @@ export interface Order {
   completed_at?: string;
   tracking_token?: string;
   tracking_url?: string;
+  attended_by_user_id?: string;
+  attended_by_name?: string;
 }
 
 export interface OrderItem {
@@ -224,6 +226,7 @@ export interface CompletePaymentRequest {
   upi_amount?: number;
   upi_transaction_id?: string;
   discount_amount?: number;
+  attended_by_user_id?: string;
 }
 
 export interface CompletePaymentResponse {
@@ -271,6 +274,12 @@ export interface StaffMember {
   menu_management_access?: boolean;
   is_active?: boolean;
   created_at?: string;
+}
+
+export interface Attendant {
+  id: string;
+  name: string;
+  role: string;
 }
 
 export interface MenuItemIngredient {
@@ -738,6 +747,11 @@ class APIClient {
   async listStaff(): Promise<StaffMember[]> {
     const r = await this.makeRequest('/users');
     return r?.staff ?? r?.users ?? (Array.isArray(r) ? r : []);
+  }
+
+  async listAttendants(): Promise<Attendant[]> {
+    const r = await this.makeRequest('/users/attendants');
+    return r?.attendants ?? [];
   }
 
   async createStaff(data: { name: string; email?: string; phone?: string; role: string; staff_key?: string; password?: string; can_cancel_orders?: boolean; can_restock_inventory?: boolean; menu_management_access?: boolean }): Promise<StaffMember> {
