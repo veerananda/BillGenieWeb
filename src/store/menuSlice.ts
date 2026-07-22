@@ -12,6 +12,7 @@ export interface MenuItem {
   is_veg: boolean;
   is_available: boolean;
   readily_available?: boolean;
+  is_taxable?: boolean;
 }
 
 interface MenuState {
