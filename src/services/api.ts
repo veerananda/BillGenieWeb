@@ -140,6 +140,32 @@ export interface Ingredient {
   updated_at: string;
 }
 
+export interface ExpenseSettleReport {
+  year: number;
+  month: number;
+  period_label: string;
+  period_start: string;
+  period_end: string;
+  restaurant_name: string;
+  currency: string;
+  total_expenses: number;
+  manual_expenses: number;
+  stock_expenses: number;
+  total_orders: number;
+  total_revenue: number;
+  average_order_value: number;
+  net: number;
+  top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
+  expense_lines: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    source: string;
+    created_at: string;
+  }>;
+  generated_at: string;
+}
+
 export interface SubscriptionRenewalQuote {
   billing_cycle: 'monthly' | 'annual';
   subtotal_inr: number;
@@ -808,20 +834,105 @@ class APIClient {
   async restockIngredient(
     id: string,
     quantity: number,
-    unit?: string
+    unit?: string,
+    price?: number
   ): Promise<Ingredient> {
     const r = await this.makeRequest(`/ingredients/${id}/restock`, 'POST', {
       quantity,
       ...(unit ? { unit } : {}),
+      ...(price != null && price > 0 ? { price } : {}),
     });
     return r?.ingredient;
   }
 
   async restockIngredients(
-    items: Array<{ ingredient_id: string; quantity: number; unit?: string }>
-  ): Promise<Ingredient[]> {
+    items: Array<{ ingredient_id: string; quantity: number; unit?: string; price?: number }>
+  ): Promise<{ ingredients: Ingredient[]; expenditure_added: number }> {
     const r = await this.makeRequest('/ingredients/restock', 'POST', { items });
-    return r?.ingredients ?? [];
+    return {
+      ingredients: r?.ingredients ?? [],
+      expenditure_added: Number(r?.expenditure_added ?? 0),
+    };
+  }
+
+  async deductIngredient(data: {
+    ingredient_id: string;
+    quantity: number;
+    unit?: string;
+    reason?: string;
+  }): Promise<Ingredient> {
+    const r = await this.makeRequest('/ingredients/deduct', 'POST', data);
+    return r?.ingredient;
+  }
+
+  async getMonthlyStockExpenditure(year?: number, month?: number): Promise<{
+    year: number;
+    month: number;
+    total: number;
+    entries: number;
+    currency: string;
+  }> {
+    const params = new URLSearchParams();
+    if (year != null) params.set('year', String(year));
+    if (month != null) params.set('month', String(month));
+    const q = params.toString();
+    const r = await this.makeRequest(`/ingredients/expenditure${q ? `?${q}` : ''}`);
+    return {
+      year: Number(r?.year),
+      month: Number(r?.month),
+      total: Number(r?.total ?? 0),
+      entries: Number(r?.entries ?? 0),
+      currency: r?.currency ?? 'INR',
+    };
+  }
+
+  // ── Expenses ──────────────────────────────────────────────────────────────
+
+  async listExpenses(year?: number, month?: number): Promise<{
+    year: number;
+    month: number;
+    period_label: string;
+    expenses: Array<{ id: string; name: string; amount: number; created_at: string }>;
+    manual_total: number;
+    stock_total: number;
+    total: number;
+  }> {
+    const params = new URLSearchParams();
+    if (year != null) params.set('year', String(year));
+    if (month != null) params.set('month', String(month));
+    const q = params.toString();
+    const r = await this.makeRequest(`/expenses${q ? `?${q}` : ''}`);
+    return {
+      year: Number(r?.year),
+      month: Number(r?.month),
+      period_label: r?.period_label ?? '',
+      expenses: Array.isArray(r?.expenses) ? r.expenses : [],
+      manual_total: Number(r?.manual_total ?? 0),
+      stock_total: Number(r?.stock_total ?? 0),
+      total: Number(r?.total ?? 0),
+    };
+  }
+
+  async createExpense(data: { name: string; amount: number }): Promise<{
+    id: string;
+    name: string;
+    amount: number;
+    created_at: string;
+  }> {
+    const r = await this.makeRequest('/expenses', 'POST', data);
+    return r?.expense ?? r;
+  }
+
+  async deleteExpense(id: string): Promise<void> {
+    await this.makeRequest(`/expenses/${id}`, 'DELETE');
+  }
+
+  async getExpenseSettleReport(year?: number, month?: number): Promise<ExpenseSettleReport> {
+    const params = new URLSearchParams();
+    if (year != null) params.set('year', String(year));
+    if (month != null) params.set('month', String(month));
+    const q = params.toString();
+    return this.makeRequest(`/expenses/settle-report${q ? `?${q}` : ''}`);
   }
 
   async bulkUpdateIngredients(

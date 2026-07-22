@@ -16,6 +16,7 @@ import {
   Beef,
   UtensilsCrossed,
   ChefHat,
+  MinusCircle,
 } from 'lucide-react';
 import {
   apiClient,
@@ -24,6 +25,7 @@ import {
   type MenuItemIngredient,
   type RecipeIngredientInput,
 } from '../../services/api';
+import { formatInr } from '../../data/pricing';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanRestockInventory } from '../../store/authSlice';
 import {
@@ -509,15 +511,42 @@ export function StockRefill() {
   const canRestockPerm = useAppSelector(selectCanRestockInventory);
   const ingredients = useAppSelector(selectInventoryIngredients);
   const canRestock = role === 'admin' || role === 'manager' || canRestockPerm;
+  const canManageStock = role === 'admin' || role === 'manager';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [refillAmounts, setRefillAmounts] = useState<Record<string, string>>({});
   const [refillUnits, setRefillUnits] = useState<Record<string, string>>({});
+  const [refillPrices, setRefillPrices] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [monthSpend, setMonthSpend] = useState<number | null>(null);
+  const [spendMonthLabel, setSpendMonthLabel] = useState('');
+
+  const [deductIngredientId, setDeductIngredientId] = useState('');
+  const [deductQty, setDeductQty] = useState('');
+  const [deductUnit, setDeductUnit] = useState('');
+  const [deducting, setDeducting] = useState(false);
+  const [deductError, setDeductError] = useState<string | null>(null);
+  const [deductSuccess, setDeductSuccess] = useState<string | null>(null);
+
+  const fetchMonthlySpend = useCallback(async () => {
+    if (!canManageStock) return;
+    try {
+      const data = await apiClient.getMonthlyStockExpenditure();
+      setMonthSpend(data.total);
+      const label = new Date(data.year, data.month - 1, 1).toLocaleString('en-IN', {
+        month: 'long',
+        year: 'numeric',
+      });
+      setSpendMonthLabel(label);
+    } catch {
+      // Non-blocking — refill still works without the banner
+    }
+  }, [canManageStock]);
 
   const fetchIngredients = useCallback(async () => {
     setLoading(true);
@@ -525,12 +554,13 @@ export function StockRefill() {
     try {
       const data = await apiClient.listIngredients();
       dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
+      await fetchMonthlySpend();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, [dispatch, fetchMonthlySpend]);
 
   useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
 
@@ -547,16 +577,53 @@ export function StockRefill() {
   }, [ingredients, search]);
 
   const pendingItems = useMemo(() => {
-    const items: Array<{ ingredient_id: string; quantity: number; unit: string }> = [];
+    const items: Array<{ ingredient_id: string; quantity: number; unit: string; price?: number }> = [];
     for (const [id, raw] of Object.entries(refillAmounts)) {
       const qty = parseFloat((raw ?? '').trim());
       if (!raw?.trim() || Number.isNaN(qty) || qty <= 0) continue;
       const ingredient = ingredients.find((i) => i.id === id);
       const unit = refillUnits[id] || defaultEntryUnit(ingredient?.unit ?? '');
-      items.push({ ingredient_id: id, quantity: qty, unit });
+      const priceRaw = (refillPrices[id] ?? '').trim();
+      const price = parseFloat(priceRaw);
+      const item: { ingredient_id: string; quantity: number; unit: string; price?: number } = {
+        ingredient_id: id,
+        quantity: qty,
+        unit,
+      };
+      if (priceRaw && !Number.isNaN(price) && price > 0) {
+        item.price = price;
+      }
+      items.push(item);
     }
     return items;
-  }, [refillAmounts, refillUnits, ingredients]);
+  }, [refillAmounts, refillUnits, refillPrices, ingredients]);
+
+  const pendingSpend = useMemo(
+    () => pendingItems.reduce((sum, i) => sum + (i.price ?? 0), 0),
+    [pendingItems]
+  );
+
+  const selectedDeductIngredient = useMemo(
+    () => ingredients.find((i) => i.id === deductIngredientId) ?? null,
+    [ingredients, deductIngredientId]
+  );
+
+  const deductUnitChoices = useMemo(
+    () => (selectedDeductIngredient ? entryUnitsFor(selectedDeductIngredient.unit) : []),
+    [selectedDeductIngredient]
+  );
+
+  useEffect(() => {
+    if (!selectedDeductIngredient) {
+      setDeductUnit('');
+      return;
+    }
+    setDeductUnit((prev) => {
+      const choices = entryUnitsFor(selectedDeductIngredient.unit);
+      if (prev && choices.includes(prev)) return prev;
+      return defaultEntryUnit(selectedDeductIngredient.unit);
+    });
+  }, [selectedDeductIngredient]);
 
   async function handleBulkRefill() {
     if (pendingItems.length === 0) {
@@ -567,18 +634,58 @@ export function StockRefill() {
     setSubmitError(null);
     setSuccessMsg(null);
     try {
-      const updated = await apiClient.restockIngredients(pendingItems);
+      const { ingredients: updated, expenditure_added } =
+        await apiClient.restockIngredients(pendingItems);
       for (const ing of updated) {
         dispatch(upsertInventoryIngredient(toInventoryIngredient(ing)));
       }
       setRefillAmounts({});
       setRefillUnits({});
-      setSuccessMsg(`Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.`);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setRefillPrices({});
+      const spendNote =
+        expenditure_added > 0 ? ` · ${formatInr(expenditure_added)} added to this month’s spend` : '';
+      setSuccessMsg(
+        `Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.${spendNote}`
+      );
+      setTimeout(() => setSuccessMsg(null), 4000);
+      await fetchMonthlySpend();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to restock.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleDeduct() {
+    if (!canManageStock) return;
+    if (!deductIngredientId) {
+      setDeductError('Select an ingredient to deduct.');
+      return;
+    }
+    const qty = parseFloat(deductQty.trim());
+    if (!deductQty.trim() || Number.isNaN(qty) || qty <= 0) {
+      setDeductError('Enter a quantity greater than 0.');
+      return;
+    }
+    setDeducting(true);
+    setDeductError(null);
+    setDeductSuccess(null);
+    try {
+      const updated = await apiClient.deductIngredient({
+        ingredient_id: deductIngredientId,
+        quantity: qty,
+        unit: deductUnit || undefined,
+        reason: 'expired',
+      });
+      dispatch(upsertInventoryIngredient(toInventoryIngredient(updated)));
+      const name = updated.name;
+      setDeductQty('');
+      setDeductSuccess(`Deducted expired stock from ${name}.`);
+      setTimeout(() => setDeductSuccess(null), 3000);
+    } catch (err) {
+      setDeductError(err instanceof Error ? err.message : 'Failed to deduct stock.');
+    } finally {
+      setDeducting(false);
     }
   }
 
@@ -631,9 +738,92 @@ export function StockRefill() {
     );
   }
 
+  const gridCols = '1fr 100px 160px 110px';
+
   return (
     <div className="space-y-4 pb-24">
-      <PageHeader title="Stock Refill" subtitle="Enter quantities to add, then refill all at once" />
+      <PageHeader title="Stock Refill" subtitle="Enter quantities and price to add, then refill all at once" />
+
+      {canManageStock && monthSpend != null && (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Stock spend · {spendMonthLabel || 'This month'}
+          </p>
+          <p className="mt-0.5 text-xl font-bold text-gray-900">{formatInr(monthSpend)}</p>
+          <p className="text-xs text-gray-400">Total purchase cost recorded from stock refills this month.</p>
+        </div>
+      )}
+
+      {canManageStock && (
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <MinusCircle className="h-4 w-4 text-red-500" />
+            <h3 className="text-sm font-bold text-gray-900">Deduct expired stock</h3>
+          </div>
+          <p className="mb-3 text-xs text-gray-500">
+            Remove spoiled or expired quantity from inventory. Admin and managers only.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-[1fr_100px_90px_auto]">
+            <select
+              value={deductIngredientId}
+              onChange={(e) => {
+                setDeductError(null);
+                setDeductIngredientId(e.target.value);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Select ingredient…</option>
+              {[...ingredients]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((ing) => (
+                  <option key={ing.id} value={ing.id}>
+                    {ing.name} ({formatInventoryQty(ing.currentStock, ing.unit)})
+                  </option>
+                ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
+              value={deductQty}
+              onChange={(e) => {
+                setDeductError(null);
+                setDeductQty(e.target.value);
+              }}
+              placeholder="Qty"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+            {deductUnitChoices.length > 1 ? (
+              <select
+                value={deductUnit}
+                onChange={(e) => setDeductUnit(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold outline-none focus:border-primary"
+              >
+                {deductUnitChoices.map((u) => (
+                  <option key={u} value={u}>
+                    {shortUnitLabel(u)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                {shortUnitLabel(deductUnit || selectedDeductIngredient?.unit || '')}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleDeduct()}
+              disabled={deducting || !deductIngredientId}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+            >
+              {deducting ? 'Deducting…' : 'Deduct'}
+            </button>
+          </div>
+          {deductError && <p className="mt-2 text-xs text-red-600">{deductError}</p>}
+          {deductSuccess && <p className="mt-2 text-xs text-green-700">{deductSuccess}</p>}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
         <Search className="h-4 w-4 shrink-0 text-gray-400" />
@@ -646,7 +836,7 @@ export function StockRefill() {
         />
       </div>
       <p className="text-xs text-gray-500">
-        Enter add qty and choose g/kg or ml/L when available. Values convert into the inventory unit (kg / liters).
+        Enter add qty, optional purchase price (₹), and choose g/kg or ml/L when available. Prices are added to this month’s stock spend.
       </p>
 
       {successMsg && (
@@ -667,23 +857,25 @@ export function StockRefill() {
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
           <div
             className="grid gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500"
-            style={{ gridTemplateColumns: '1fr 120px 180px' }}
+            style={{ gridTemplateColumns: gridCols }}
           >
             <span>Ingredient</span>
             <span className="text-right">Current</span>
             <span className="text-right">Add qty</span>
+            <span className="text-right">Price (₹)</span>
           </div>
           <div className="divide-y divide-gray-50">
             {filtered.map((item) => {
               const color = stockColor(item.currentStock, item.alertQuantity);
               const addRaw = refillAmounts[item.id] ?? '';
+              const priceRaw = refillPrices[item.id] ?? '';
               const entryChoices = entryUnitsFor(item.unit);
               const selectedUnit = refillUnits[item.id] || defaultEntryUnit(item.unit);
               return (
                 <div
                   key={item.id}
                   className="grid items-center gap-3 px-4 py-3"
-                  style={{ gridTemplateColumns: '1fr 120px 180px' }}
+                  style={{ gridTemplateColumns: gridCols }}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <Circle className="h-3 w-3 shrink-0" style={{ color, fill: color }} />
@@ -729,6 +921,19 @@ export function StockRefill() {
                       </span>
                     )}
                   </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={priceRaw}
+                    onChange={(e) => {
+                      setSubmitError(null);
+                      setRefillPrices((prev) => ({ ...prev, [item.id]: e.target.value }));
+                    }}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
                 </div>
               );
             })}
@@ -737,6 +942,11 @@ export function StockRefill() {
       )}
 
       <div className="sticky bottom-0 z-10 -mx-1 border-t border-gray-100 bg-white/95 px-1 py-3 backdrop-blur">
+        {pendingSpend > 0 && (
+          <p className="mb-2 text-center text-xs text-gray-500">
+            This refill cost: <span className="font-semibold text-gray-800">{formatInr(pendingSpend)}</span>
+          </p>
+        )}
         <button
           type="button"
           onClick={() => void handleBulkRefill()}

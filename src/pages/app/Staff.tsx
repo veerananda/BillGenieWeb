@@ -12,6 +12,8 @@ import {
   Briefcase,
   ChefHat,
   Info,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { apiClient, type StaffMember } from '../../services/api';
 import { useAppSelector } from '../../store/hooks';
@@ -199,6 +201,7 @@ function StaffFormModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [regenerating, setRegenerating] = useState(false);
   const [regeneratedKey, setRegeneratedKey] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -226,6 +229,7 @@ function StaffFormModal({
       setError(null);
       setErrors({});
       setRegeneratedKey(null);
+      setShowPassword(false);
     }
   }, [open, editTarget]);
 
@@ -410,18 +414,28 @@ function StaffFormModal({
             <label className="mb-1 block text-sm font-medium text-gray-700">
               {isEdit ? 'New Password (Optional)' : <>Password <span className="text-red-500">*</span></>}
             </label>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, password: e.target.value }));
-                setErrors((er) => ({ ...er, password: '' }));
-              }}
-              placeholder={isEdit ? 'Leave blank to keep current password' : 'Min 6 characters'}
-              className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
-                errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
-              }`}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, password: e.target.value }));
+                  setErrors((er) => ({ ...er, password: '' }));
+                }}
+                placeholder={isEdit ? 'Leave blank to keep current password' : 'Min 6 characters'}
+                className={`w-full rounded-lg border px-3 py-2 pr-10 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
+                  errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-3 flex items-center text-gray-400 transition hover:text-gray-600"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
             {isEdit && !errors.password && (
               <p className="mt-1 text-xs text-gray-400">Leave blank to keep current password.</p>
@@ -640,8 +654,6 @@ function StaffCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const active = member.is_active !== false;
-
   return (
     <div className="flex items-start gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
       {/* Info */}
@@ -668,13 +680,6 @@ function StaffCard({
           <Badge variant={roleBadgeVariant(member.role)}>
             {member.role.toUpperCase()}
           </Badge>
-          <span
-            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-              active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-            }`}
-          >
-            {active ? 'ACTIVE' : 'INACTIVE'}
-          </span>
         </div>
 
         {/* Permission chips */}
