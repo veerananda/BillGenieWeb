@@ -1534,7 +1534,7 @@ function TakeOrderPanel({
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
 
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-5xl flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">
@@ -1667,7 +1667,7 @@ function TakeOrderPanel({
           </div>
 
           {/* Right — cart */}
-          <div className="flex w-60 shrink-0 flex-col border-l border-gray-100">
+          <div className="flex w-80 shrink-0 flex-col border-l border-gray-100">
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">

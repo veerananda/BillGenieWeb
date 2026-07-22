@@ -407,7 +407,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         className="fixed inset-0 z-40 bg-black/30"
         onClick={() => { if (!paymentFlowActive) onClose(); }}
       />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-5xl flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
@@ -560,7 +560,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
           </div>
 
           {/* Right — cart */}
-          <div className="flex w-60 shrink-0 flex-col border-l border-gray-100">
+          <div className="flex w-80 shrink-0 flex-col border-l border-gray-100">
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
