@@ -944,30 +944,20 @@ export function Profile() {
 
         {/* Section 4: Ordering Settings */}
         <SectionCard title="Ordering Settings">
-          <Toggle
-            checked={form.is_self_service}
-            onChange={(v) => set('is_self_service', v)}
-            label="Self-service QR ordering"
-            description="Customers can scan a QR code to place their own orders"
-          />
           {storedProfile?.subscription_limits?.counter_enabled ? (
-            <div className="border-t border-gray-100 pt-4">
-              <Field label="Counter service mode">
-                <ServiceModeRadio
-                  value={form.counter_service_modes}
-                  onChange={(v) => set('counter_service_modes', v)}
-                />
-                <p className="mt-1.5 text-xs text-gray-400">
-                  Choose which order types are available at the counter
-                </p>
-              </Field>
-            </div>
-          ) : storedProfile?.subscription_limits ? (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-sm text-gray-500">
-                Counter / takeaway is not on your current plan.
+            <Field label="Counter service mode">
+              <ServiceModeRadio
+                value={form.counter_service_modes}
+                onChange={(v) => set('counter_service_modes', v)}
+              />
+              <p className="mt-1.5 text-xs text-gray-400">
+                Choose which order types are available at the counter
               </p>
-            </div>
+            </Field>
+          ) : storedProfile?.subscription_limits ? (
+            <p className="text-sm text-gray-500">
+              Counter / takeaway is not on your current plan.
+            </p>
           ) : null}
         </SectionCard>
 

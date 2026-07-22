@@ -57,14 +57,9 @@ export function VerifyEmail() {
               <CheckCircle size={40} className="mx-auto text-green-600" />
               <h1 className="mt-4 text-2xl font-bold text-ink">Email verified</h1>
               <p className="mt-2 text-sm text-ink-soft">
-                Your account is confirmed. You can now sign in to BillGenie.
+                Your email has been verified. We will let you know once BillGenie verification is
+                successful.
               </p>
-              <Link
-                to="/login"
-                className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-dark"
-              >
-                Go to login
-              </Link>
             </div>
           )}
 

@@ -15,7 +15,7 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-2">
             <div>
               <h3 className="text-sm font-semibold text-ink">Product</h3>
               <ul className="mt-3 space-y-2 text-sm text-ink-soft">
@@ -58,16 +58,6 @@ export function Footer() {
                   <Link to="/contact" className="hover:text-primary">
                     Contact
                   </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-ink">Contact</h3>
-              <ul className="mt-3 space-y-2 text-sm text-ink-soft">
-                <li>
-                  <a href="mailto:hello@thebillgenie.com" className="hover:text-primary">
-                    hello@thebillgenie.com
-                  </a>
                 </li>
               </ul>
             </div>
