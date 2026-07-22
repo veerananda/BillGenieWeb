@@ -32,6 +32,7 @@ interface CartItem {
   price: number;
   quantity: number;
   isVeg: boolean;
+  isTaxable: boolean;
   notes?: string;
 }
 
@@ -125,6 +126,7 @@ interface NewOrderPanelProps {
 function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems }: NewOrderPanelProps) {
   const profile = useAppSelector(selectProfile);
   const counterModes = profile?.counter_service_modes ?? 'both';
+  const compositeScheme = profile?.composite_scheme ?? false;
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
 
   const [serviceMode, setServiceMode] = useState<ServiceMode>('eat_here');
@@ -214,10 +216,10 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   }, [menuItems, dietFilter, activeCategory, search]);
 
   const orderTotals = useMemo(
-    () => calculateOrderTotals(cart, discountValue, discountType, { pricesIncludeGst }),
-    [cart, discountValue, discountType, pricesIncludeGst]
+    () => calculateOrderTotals(cart, discountValue, discountType, { pricesIncludeGst, compositeScheme }),
+    [cart, discountValue, discountType, pricesIncludeGst, compositeScheme]
   );
-  const { subtotal, taxAmount, discountValue: discountAmt, finalAmount } = orderTotals;
+  const { subtotal, taxAmount, discountValue: discountAmt, finalAmount, showTax } = orderTotals;
 
   const cashGiven = parseFloat(cashReceived) || 0;
   const changeDue = Math.max(0, cashGiven - finalAmount);
@@ -235,7 +237,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     setCart((prev) => {
       const ex = prev.find((c) => c.menuItemId === item.id);
       if (ex) return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, category: item.category, price: item.price, quantity: 1, isVeg: item.is_veg }];
+      return [...prev, { menuItemId: item.id, name: item.name, category: item.category, price: item.price, quantity: 1, isVeg: item.is_veg, isTaxable: item.is_taxable !== false }];
     });
   }
 
@@ -366,7 +368,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${c.name} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
       <hr/>
       <div style="display:flex;justify-content:space-between"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
-      <div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>
+      ${showTax ? `<div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>` : ''}
       ${discountAmt > 0 ? `<div style="display:flex;justify-content:space-between;color:green"><span>Discount</span><span>-₹${discountAmt.toFixed(2)}</span></div>` : ''}
       <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:4px;border-top:1px solid #ccc;padding-top:4px"><span>Total</span><span>₹${finalAmount.toFixed(2)}</span></div>
     </body></html>`;
@@ -679,10 +681,12 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                   <span>Subtotal</span>
                   <span>{fmt(subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>GST (5%)</span>
-                  <span>{fmt(taxAmount)}</span>
-                </div>
+                {showTax && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>GST (5%)</span>
+                    <span>{fmt(taxAmount)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
