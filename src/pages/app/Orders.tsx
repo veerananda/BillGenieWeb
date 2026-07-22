@@ -1677,7 +1677,7 @@ function TakeOrderPanel({
           </div>
 
           {/* Right — cart */}
-          <div className="flex w-80 shrink-0 flex-col border-l border-gray-100">
+          <div className="flex w-96 shrink-0 flex-col border-l border-gray-100">
             <div className="flex flex-1 flex-col overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
