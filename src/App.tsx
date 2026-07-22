@@ -27,6 +27,7 @@ const Counter = lazy(() => import('./pages/app/Counter').then((m) => ({ default:
 const Kitchen = lazy(() => import('./pages/app/Kitchen').then((m) => ({ default: m.Kitchen })));
 const Sales = lazy(() => import('./pages/app/Sales').then((m) => ({ default: m.Sales })));
 const History = lazy(() => import('./pages/app/History').then((m) => ({ default: m.History })));
+const Expenses = lazy(() => import('./pages/app/Expenses').then((m) => ({ default: m.Expenses })));
 const Staff = lazy(() => import('./pages/app/Staff').then((m) => ({ default: m.Staff })));
 const Profile = lazy(() => import('./pages/app/Profile').then((m) => ({ default: m.Profile })));
 const IngredientManagement = lazy(() =>
@@ -100,6 +101,7 @@ function App() {
         <Route path="kitchen" element={<LazyAppPage><KitchenRoute><Kitchen /></KitchenRoute></LazyAppPage>} />
         <Route path="sales" element={<LazyAppPage><Sales /></LazyAppPage>} />
         <Route path="history" element={<LazyAppPage><History /></LazyAppPage>} />
+        <Route path="expenses" element={<LazyAppPage><Expenses /></LazyAppPage>} />
         <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
         <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
         <Route path="ingredient-management" element={<LazyAppPage><IngredientManagement /></LazyAppPage>} />
