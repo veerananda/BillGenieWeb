@@ -21,7 +21,12 @@ import {
 } from 'lucide-react';
 import { calculateOrderTax } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
-import { resolveOrderItemParts, getOrderItemGroupKey } from '../../lib/orderHelpers';
+import {
+  resolveOrderItemParts,
+  getOrderItemGroupKey,
+  isAdjustableOrderItem,
+  orderHasServedItems,
+} from '../../lib/orderHelpers';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
@@ -505,7 +510,9 @@ function OrderDetailPanel({
 
   const reduceGroupByOne = async (ids: string[], itemName: string) => {
     if (adjustingId || ids.length === 0) return;
-    const lines = (order.items ?? []).filter((i) => ids.includes(i.id) && i.status !== 'cancelled');
+    const lines = (order.items ?? []).filter(
+      (i) => ids.includes(i.id) && isAdjustableOrderItem(i, kitchenEnabled)
+    );
     if (lines.length === 0) return;
     const target =
       [...lines].sort((a, b) => b.quantity - a.quantity).find((i) => i.quantity > 1) || lines[0];
@@ -520,8 +527,13 @@ function OrderDetailPanel({
 
   const removeGroup = async (ids: string[], itemName: string) => {
     if (adjustingId || ids.length === 0) return;
+    const adjustableIds = ids.filter((id) => {
+      const line = (order.items ?? []).find((i) => i.id === id);
+      return isAdjustableOrderItem(line, kitchenEnabled);
+    });
+    if (adjustableIds.length === 0) return;
     if (!window.confirm(`Remove all ${itemName} from this order? Stock will be restored.`)) return;
-    for (const id of ids) {
+    for (const id of adjustableIds) {
       await applyItemQuantity(id, 0);
     }
   };
@@ -576,6 +588,8 @@ function OrderDetailPanel({
     }, {})
   );
   const canCheckout = groupedItems.length > 0;
+  const hasServedItems = orderHasServedItems(order, kitchenEnabled);
+  const showCancelOrder = canCancel && !hasServedItems;
 
   // ── GST-aware totals ──────────────────────────────────────────────────────
   const discountInput = parseFloat(discountAmount) || 0;
@@ -856,6 +870,10 @@ function OrderDetailPanel({
               const isReady = kitchenEnabled && item.status === 'ready';
               const isCooking = kitchenEnabled && item.status === 'cooking';
               const isServed = kitchenEnabled && item.status === 'served';
+              const hasAdjustableLines = item.ids.some((id) => {
+                const line = (order.items ?? []).find((i) => i.id === id);
+                return isAdjustableOrderItem(line, kitchenEnabled);
+              });
               const isServing = item.ids.some((id) => servingId === id);
               return (
                 <div key={item.groupKey} className="flex items-center gap-3">
@@ -905,7 +923,7 @@ function OrderDetailPanel({
                     ) : kitchenEnabled && isServed ? (
                       <Badge variant="served">Served</Badge>
                     ) : null}
-                    {canAdjustItems ? (
+                    {canAdjustItems && hasAdjustableLines ? (
                       <div className="mt-1 flex items-center gap-1.5">
                         <button
                           type="button"
@@ -986,7 +1004,7 @@ function OrderDetailPanel({
               </button>
 
               <div className="flex gap-3">
-                {canCancel && (
+                {showCancelOrder && (
                   <button
                     onClick={() => setCancelConfirmOpen(true)}
                     disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
@@ -998,7 +1016,7 @@ function OrderDetailPanel({
                 <button
                   onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
                   disabled={!canCheckout}
-                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${canCancel ? 'flex-1' : 'w-full'}`}
+                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${showCancelOrder ? 'flex-1' : 'w-full'}`}
                 >
                   <CreditCard className="h-4 w-4" />
                   Checkout
