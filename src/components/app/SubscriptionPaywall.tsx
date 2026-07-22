@@ -352,7 +352,7 @@ export function PlanPicker({ value, onChange, lockBillingCycle = false }: { valu
                 onClick={() => set({ billing_cycle: c })}
                 className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
               >
-                {c === 'monthly' ? 'Monthly' : 'Annual (2 months free)'}
+                {c === 'monthly' ? 'Monthly' : 'Annual (1 month free)'}
               </button>
             ))}
           </div>

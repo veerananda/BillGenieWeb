@@ -341,7 +341,7 @@ function PlanStep({
         <div className="mt-2 flex gap-2">
           {([
             ['monthly', 'Monthly'],
-            ['annual', 'Annual (2 months free)'],
+            ['annual', 'Annual (1 month free)'],
           ] as const).map(([cycle, label]) => (
             <button
               key={cycle}

@@ -18,7 +18,7 @@ export const MAX_TABLES = 50;
 export const TABLE_STAFF_BUNDLE_SIZE = 5;
 export const TABLES_PER_MANAGER = 15;
 export const BASIC_MONTHLY_PRICE = 799;
-export const ANNUAL_MULTIPLIER = 10; // 10 months = 12 months (2 free)
+export const ANNUAL_MULTIPLIER = 11; // 11 months = 12 months (1 free)
 
 /** Fixed trial length — keep in sync with restaurant-api TrialDurationDays & mobile TRIAL_DURATION_DAYS */
 export const TRIAL_DURATION_DAYS = 15;

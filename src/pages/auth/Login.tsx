@@ -197,7 +197,7 @@ export function Login() {
                 to="/register"
                 className="font-semibold text-primary hover:text-primary-dark transition"
               >
-                Start free trial →
+                Sign up
               </Link>
             </p>
           </div>
