@@ -738,7 +738,7 @@ export function StockRefill() {
     );
   }
 
-  const gridCols = '1fr 100px 160px 110px';
+  const gridCols = '1fr 100px 120px 80px 110px';
 
   return (
     <div className="space-y-4 pb-24">
@@ -862,6 +862,7 @@ export function StockRefill() {
             <span>Ingredient</span>
             <span className="text-right">Current</span>
             <span className="text-right">Add qty</span>
+            <span className="text-center">Unit</span>
             <span className="text-right">Price (₹)</span>
           </div>
           <div className="divide-y divide-gray-50">
@@ -887,40 +888,33 @@ export function StockRefill() {
                   <p className="text-right text-sm font-medium text-gray-700">
                     {formatInventoryQty(item.currentStock, item.unit)}
                   </p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      value={addRaw}
-                      onChange={(e) => {
-                        setSubmitError(null);
-                        setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }));
-                      }}
-                      placeholder="0"
-                      className="min-w-0 flex-1 rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    />
-                    {entryChoices.length > 1 ? (
-                      <select
-                        value={selectedUnit}
-                        onChange={(e) =>
-                          setRefillUnits((prev) => ({ ...prev, [item.id]: e.target.value }))
-                        }
-                        className="w-[72px] shrink-0 rounded-lg border border-gray-200 bg-white px-1 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-primary"
-                      >
-                        {entryChoices.map((u) => (
-                          <option key={u} value={u}>
-                            {shortUnitLabel(u)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="w-[44px] shrink-0 text-center text-xs text-gray-500">
-                        {shortUnitLabel(selectedUnit || item.unit)}
-                      </span>
-                    )}
-                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={addRaw}
+                    onChange={(e) => {
+                      setSubmitError(null);
+                      setRefillAmounts((prev) => ({ ...prev, [item.id]: e.target.value }));
+                    }}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                  <select
+                    value={selectedUnit}
+                    onChange={(e) =>
+                      setRefillUnits((prev) => ({ ...prev, [item.id]: e.target.value }))
+                    }
+                    disabled={entryChoices.length <= 1}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-1 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-primary disabled:cursor-default disabled:bg-gray-50 disabled:text-gray-500"
+                  >
+                    {entryChoices.map((u) => (
+                      <option key={u} value={u}>
+                        {shortUnitLabel(u)}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     type="number"
                     min="0"
