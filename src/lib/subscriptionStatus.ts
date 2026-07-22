@@ -37,3 +37,11 @@ export function getSubscriptionStatus(profile: {
     isAccessBlocked,
   };
 }
+
+export function isPendingPaymentPhase(phase?: string | null): boolean {
+  return phase === 'pending_payment';
+}
+
+export function canManageSubscription(role?: string | null): boolean {
+  return role === 'admin' || role === 'manager';
+}

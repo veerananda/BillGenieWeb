@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { SubscriptionBanner } from './SubscriptionBanner';
+import { SubscriptionPaywallProvider } from '../../context/SubscriptionPaywallContext';
 import { Sidebar } from './Sidebar';
 import { useAppDispatch } from '../../store/hooks';
 import { setProfile } from '../../store/profileSlice';
@@ -247,6 +248,7 @@ export function AppShell() {
   }, [dispatch]);
 
   return (
+    <SubscriptionPaywallProvider>
     <div className="flex min-h-screen bg-gray-50">
       <div className="hidden lg:flex lg:w-60 lg:flex-col lg:shrink-0 lg:sticky lg:top-0 lg:h-screen">
         <Sidebar />
@@ -281,5 +283,6 @@ export function AppShell() {
         </main>
       </div>
     </div>
+    </SubscriptionPaywallProvider>
   );
 }

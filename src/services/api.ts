@@ -4,6 +4,8 @@
  * Changes: AsyncStorage → localStorage, EXPO_PUBLIC_* → VITE_*, no RN dependencies
  */
 
+import { showSubscriptionPaywall } from '../lib/subscriptionPaywall';
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://billgenie-api.fly.dev';
 
 const TOKEN_KEY = 'auth_token';
@@ -371,7 +373,16 @@ class APIClient {
 
       if (response.status === 402) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.error ?? 'Subscription expired. Please renew to continue.');
+        showSubscriptionPaywall();
+        const message =
+          typeof err.message === 'string'
+            ? err.message
+            : err.error === 'subscription_expired'
+              ? 'Complete payment to activate your BillGenie subscription.'
+              : typeof err.error === 'string'
+                ? err.error
+                : 'Complete payment to activate your BillGenie subscription.';
+        throw new Error(message);
       }
 
       if (response.status === 403) {

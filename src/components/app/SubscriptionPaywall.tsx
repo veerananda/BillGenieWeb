@@ -31,9 +31,19 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  canPay?: boolean;
+  userRole?: string | null;
+  pendingPayment?: boolean;
 }
 
-export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
+export function SubscriptionPaywall({
+  open,
+  onClose,
+  onSuccess,
+  canPay = true,
+  userRole = 'admin',
+  pendingPayment = false,
+}: Props) {
   const dispatch = useAppDispatch();
   const [quote, setQuote] = useState<SubscriptionRenewalQuote | null>(null);
   const [planSelection, setPlanSelection] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
@@ -42,7 +52,7 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isPendingActivation = quote?.subscription_phase === 'pending_payment';
+  const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
   const allowsPlanReview = Boolean(quote?.requires_plan_selection) || isPendingActivation;
   const showPlanPicker = allowsPlanReview && (editingPlan || !isPendingActivation);
 
@@ -164,12 +174,15 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
   if (!open) return null;
 
   const title = isPendingActivation
-    ? (showPlanPicker ? 'Review your plan' : 'Payment required')
+    ? showPlanPicker
+      ? 'Review your plan'
+      : 'Payment required'
     : allowsPlanReview
       ? 'Choose your plan'
-      : 'Subscription expired';
+      : 'Renew subscription';
 
   const billingLabel = displayQuote?.billing_cycle === 'annual' ? 'year' : 'month';
+  const payCta = isPendingActivation ? 'Complete payment' : 'Pay now';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -188,11 +201,22 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <p className="text-sm text-gray-600">
-            {isPendingActivation
-              ? 'Review your plan before payment. You can add or remove add-ons.'
-              : allowsPlanReview
-                ? 'Your 15-day free trial has ended. Select a plan and pay to continue.'
-                : 'Renew your subscription to continue using BillGenie.'}
+            {canPay ? (
+              isPendingActivation ? (
+                showPlanPicker
+                  ? 'Adjust your plans and add-ons before payment.'
+                  : 'Complete payment to continue using this feature.'
+              ) : allowsPlanReview ? (
+                'Your 15-day free trial has ended. Select a plan and pay to continue.'
+              ) : (
+                'Renew your subscription to continue using BillGenie.'
+              )
+            ) : (
+              <>
+                Please ask your {userRole === 'chef' ? 'manager or admin' : 'admin'} to complete
+                payment.
+              </>
+            )}
           </p>
 
           {error && (
@@ -253,18 +277,26 @@ export function SubscriptionPaywall({ open, onClose, onSuccess }: Props) {
 
         {/* Footer */}
         <div className="border-t border-gray-100 px-5 py-4 space-y-2">
-          <button
-            onClick={handlePay}
-            disabled={paying || loadingQuote || !displayQuote}
-            className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
-          >
-            {paying ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing…</> : 'Pay now'}
-          </button>
+          {canPay ? (
+            <button
+              onClick={handlePay}
+              disabled={paying || loadingQuote || !displayQuote}
+              className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+            >
+              {paying ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Processing…
+                </>
+              ) : (
+                payCta
+              )}
+            </button>
+          ) : null}
           <button
             onClick={onClose}
             className="w-full rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
-            Maybe later
+            {canPay ? 'Maybe later' : 'Close'}
           </button>
         </div>
       </div>

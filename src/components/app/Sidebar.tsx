@@ -32,6 +32,7 @@ import { clearMenu } from '../../store/menuSlice';
 import { clearTables } from '../../store/tablesSlice';
 import { clearProfile } from '../../store/profileSlice';
 import { clearInventory } from '../../store/inventorySlice';
+import { useSubscriptionPaywall } from '../../context/SubscriptionPaywallContext';
 
 interface NavItem {
   label: string;
@@ -71,6 +72,7 @@ export function Sidebar({ onClose }: Props) {
   const name = useAppSelector(selectAuthName);
   const profile = useAppSelector(selectProfile);
   const canRestock = useAppSelector(selectCanRestockInventory);
+  const { guardAction } = useSubscriptionPaywall();
 
   const limits = parseSubscriptionLimits(
     (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
@@ -139,7 +141,13 @@ export function Sidebar({ onClose }: Props) {
           <NavLink
             key={item.to}
             to={item.to}
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              guardAction(() => {
+                navigate(item.to);
+                onClose?.();
+              });
+            }}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                 isActive
