@@ -177,3 +177,31 @@ export function resolveOrderItemName(
 
   return getOrderItemDisplayName(rawName, category);
 }
+
+type OrderItemLike = { status?: string };
+
+export function isBillableOrderItem(item: OrderItemLike | null | undefined): boolean {
+  return Boolean(item) && item!.status !== 'cancelled';
+}
+
+export function isServedOrderItem(
+  item: OrderItemLike | null | undefined,
+  kitchenEnabled: boolean
+): boolean {
+  return Boolean(kitchenEnabled && item && item.status === 'served');
+}
+
+export function isAdjustableOrderItem(
+  item: OrderItemLike | null | undefined,
+  kitchenEnabled: boolean
+): boolean {
+  return isBillableOrderItem(item) && !isServedOrderItem(item, kitchenEnabled);
+}
+
+export function orderHasServedItems(
+  order: { items?: OrderItemLike[] } | null | undefined,
+  kitchenEnabled: boolean
+): boolean {
+  if (!kitchenEnabled || !order?.items?.length) return false;
+  return order.items.some((item) => isServedOrderItem(item, kitchenEnabled));
+}
