@@ -14,6 +14,7 @@ export interface CustomerBillData {
   orderNumber?: number | string;
   tableNumber?: string;
   customerName?: string;
+  attendedByName?: string;
   createdAt?: string | number;
   items: CustomerBillLineItem[];
   subtotal: number;
@@ -66,6 +67,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     data.customerName !== 'Self Service'
       ? escapeHtml(data.customerName)
       : '';
+  const attendedBy = data.attendedByName ? escapeHtml(data.attendedByName) : '';
 
   const itemRows = data.items
     .map(
@@ -207,6 +209,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       ${meta ? `<p class="meta">${meta}</p>` : ''}
       ${dateLine ? `<p class="date">${escapeHtml(dateLine)}</p>` : ''}
       ${customer ? `<p class="customer">Customer: ${customer}</p>` : ''}
+      ${attendedBy ? `<p class="customer">Attended by: ${attendedBy}</p>` : ''}
     </div>
     <div class="body">
       <table>
@@ -243,6 +246,7 @@ export function buildCustomerBillFromOrder(
     finalAmount: number;
     pricesIncludeGst: boolean;
     compositeScheme?: boolean;
+    attendedByName?: string;
   },
   items: CustomerBillLineItem[],
 ): string {
@@ -253,6 +257,7 @@ export function buildCustomerBillFromOrder(
     orderNumber: order.order_number,
     tableNumber: String(order.table_number),
     customerName: order.customer_name,
+    attendedByName: totals.attendedByName,
     createdAt: order.created_at,
     items,
     subtotal: totals.subtotal,

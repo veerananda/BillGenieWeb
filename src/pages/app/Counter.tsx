@@ -128,6 +128,8 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const counterModes = profile?.counter_service_modes ?? 'both';
   const compositeScheme = profile?.composite_scheme ?? false;
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
+  const attendedByUserId = localStorage.getItem('user_id') ?? '';
+  const attendedByName = localStorage.getItem('user_name') ?? '';
 
   const [serviceMode, setServiceMode] = useState<ServiceMode>('eat_here');
   const [search, setSearch] = useState('');
@@ -312,6 +314,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         payment_method: 'cash',
         amount_received: cashGiven,
         change_returned: changeDue,
+        ...attendantPayload,
       } as CompletePaymentRequest,
       `Change: ${fmt(changeDue)}`
     ).catch(() => undefined);
@@ -341,11 +344,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
             amount_received: splitCashGivenAmount,
             change_returned: splitChange,
             upi_transaction_id: upiTxnId.trim() || undefined,
+            ...attendantPayload,
           }
         : {
             payment_method: 'upi',
             amount_received: finalAmount,
             upi_transaction_id: upiTxnId.trim(),
+            ...attendantPayload,
           },
       summary
     ).catch(() => undefined);
@@ -359,11 +364,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   }
 
   const paymentFlowActive = processing || showCheckout;
+  const attendantPayload = attendedByUserId ? { attended_by_user_id: attendedByUserId } : {};
 
   function handlePrintBill() {
     const html = `<html><body style="font-family:monospace;padding:20px;max-width:400px;margin:auto">
       <h2 style="text-align:center">Counter Order</h2>
       ${customerName.trim() ? `<p>Customer: ${customerName.trim()}</p>` : ''}
+      ${attendedByName ? `<p>Attended by: ${attendedByName}</p>` : ''}
       <hr/>
       ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${c.name} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
       <hr/>
