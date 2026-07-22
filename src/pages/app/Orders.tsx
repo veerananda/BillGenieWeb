@@ -456,6 +456,9 @@ function OrderDetailPanel({
   const [checkoutConflictMsg, setCheckoutConflictMsg] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
+  const [cashInputError, setCashInputError] = useState(false);
+  const [cashInputShake, setCashInputShake] = useState(false);
+  const cashInputRef = useRef<HTMLInputElement>(null);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountType, setDiscountType] = useState<'₹' | '%'>('₹');
   const [upiTransactionId, setUpiTransactionId] = useState('');
@@ -732,7 +735,11 @@ function OrderDetailPanel({
     if (paymentMethod === 'cash') {
       const received = parseFloat(amountReceived);
       if (isNaN(received) || received < effectiveTotal) {
-        setPaymentError('Amount received must be at least the order total.');
+        setCashInputError(true);
+        setCashInputShake(true);
+        setTimeout(() => setCashInputShake(false), 500);
+        cashInputRef.current?.focus();
+        cashInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
     }
@@ -1244,15 +1251,18 @@ function OrderDetailPanel({
               {paymentMethod === 'cash' && (
                 <div className="space-y-3 pt-1">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600">Amount received (₹)</label>
+                    <label className={`mb-1.5 block text-xs font-medium ${cashInputError ? 'text-red-500' : 'text-gray-600'}`}>
+                      Amount received (₹){cashInputError && <span className="ml-1">— please enter the amount</span>}
+                    </label>
                     <input
+                      ref={cashInputRef}
                       type="number"
                       min={effectiveTotal}
                       step="0.01"
                       value={amountReceived}
-                      onChange={(e) => setAmountReceived(e.target.value)}
+                      onChange={(e) => { setAmountReceived(e.target.value); setCashInputError(false); }}
                       placeholder={String(effectiveTotal)}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      className={`w-full rounded-xl border px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 ${cashInputShake ? 'shake' : ''} ${cashInputError ? 'border-red-400 bg-red-50 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-primary focus:ring-primary'}`}
                     />
                   </div>
                   {amountReceived && !isNaN(parseFloat(amountReceived)) && (
