@@ -88,6 +88,8 @@ export interface Order {
   payment_method?: string;
   amount_received?: number;
   change_returned?: number;
+  cash_amount?: number;
+  upi_amount?: number;
   notes?: string;
   items: OrderItem[];
   created_at: string;

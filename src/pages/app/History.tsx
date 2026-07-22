@@ -10,6 +10,7 @@ import { PageHeader } from '../../components/app/PageHeader';
 import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
+import { appendPaymentReceiptText, getPaymentReceiptRows } from '../../lib/receiptPaymentDetails';
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -175,7 +176,6 @@ function buildReceiptText(
   const counter = isCounter(order);
   const completedAt = order.completed_at || order.updated_at || order.created_at;
   const restaurantContact = restaurant?.contact_number || restaurant?.phone;
-  const payment = (order.payment_method || '').toUpperCase();
   const showCustomer = counter
     ? !!order.customer_name && !['Takeaway', 'Counter', 'Self Service'].includes(order.customer_name)
     : !!order.customer_name;
@@ -210,11 +210,7 @@ function buildReceiptText(
   if (Number(order.tax_amount) > 0) lines.push(`Tax: ${fmt(order.tax_amount)}`);
   if (Number(order.discount_amount) > 0) lines.push(`Discount: -${fmt(order.discount_amount)}`);
   lines.push(`Total: ${fmt(order.total)}`);
-  if (payment) lines.push(`Payment: ${payment}`);
-  if (payment === 'CASH' && Number(order.amount_received) > 0) {
-    lines.push(`Received: ${fmt(order.amount_received)}`);
-    if (Number(order.change_returned) > 0) lines.push(`Change: ${fmt(order.change_returned)}`);
-  }
+  appendPaymentReceiptText(lines, order, fmt);
   if (order.notes) {
     lines.push(divider);
     lines.push(`Notes: ${order.notes}`);
@@ -267,9 +263,9 @@ function ReceiptModal({
   const counter = isCounter(order);
   const title = getOrderTitle(order);
   const completedAt = order.completed_at || order.updated_at || order.created_at;
-  const payment = (order.payment_method || '').toUpperCase();
   const restaurantContact = restaurant?.contact_number || restaurant?.phone;
   const receiptItems = groupReceiptItems(order.items ?? []);
+  const paymentRows = getPaymentReceiptRows(order, fmt);
   const receiptText = buildReceiptText(order, restaurant, receiptItems);
 
   // On counter orders, skip generic placeholder names
@@ -381,26 +377,12 @@ function ReceiptModal({
             <span className="text-base font-bold text-gray-900">Total</span>
             <span className="text-lg font-bold text-primary">{fmt(order.total)}</span>
           </div>
-          {payment && (
-            <div className="flex justify-between">
-              <span className="text-gray-500">Payment</span>
-              <span className="font-semibold text-gray-700">{payment}</span>
+          {paymentRows.map((row) => (
+            <div key={row.label} className="flex justify-between">
+              <span className="text-gray-500">{row.label}</span>
+              <span className="font-semibold text-gray-700">{row.value}</span>
             </div>
-          )}
-          {payment === 'CASH' && Number(order.amount_received) > 0 && (
-            <>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Received</span>
-                <span className="text-gray-700">{fmt(order.amount_received)}</span>
-              </div>
-              {Number(order.change_returned) > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Change</span>
-                  <span className="text-gray-700">{fmt(order.change_returned)}</span>
-                </div>
-              )}
-            </>
-          )}
+          ))}
         </div>
 
         {order.notes && (
