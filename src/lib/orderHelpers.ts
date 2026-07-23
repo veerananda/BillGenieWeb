@@ -25,6 +25,26 @@ export function getCounterTicketNumber(order: Order | null | undefined): number 
   return undefined;
 }
 
+/** Prepared progress for counter/kitchen lists (matches scanner: ready|served). */
+export function getOrderItemPrepProgress(
+  items?: Array<{ status?: string }> | null
+): { prepared: number; total: number } {
+  const active = (items || []).filter((item) => item?.status !== 'cancelled');
+  const prepared = active.filter(
+    (item) => item.status === 'ready' || item.status === 'served'
+  ).length;
+  return { prepared, total: active.length };
+}
+
+/** Small status hint, e.g. "1 of 2 items prepared". Empty when none/all done or no items. */
+export function formatOrderItemPrepProgress(
+  items?: Array<{ status?: string }> | null
+): string {
+  const { prepared, total } = getOrderItemPrepProgress(items);
+  if (total <= 0 || prepared >= total) return '';
+  return `${prepared} of ${total} item${total === 1 ? '' : 's'} prepared`;
+}
+
 type MenuLookupItem = { id: string; name?: string; category?: string };
 
 /**
