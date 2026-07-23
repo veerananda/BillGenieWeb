@@ -698,7 +698,16 @@ class APIClient {
     }
   }
 
-  async getSalesSummary(period: 'today' | 'month'): Promise<{ total_revenue: number; total_orders: number; average_order_value: number; period: string }> {
+  async getSalesSummary(period: 'today' | 'month'): Promise<{
+    total_revenue: number;
+    total_orders: number;
+    average_order_value: number;
+    period: string;
+    dine_in_orders?: number;
+    dine_in_revenue?: number;
+    counter_orders?: number;
+    counter_revenue?: number;
+  }> {
     return this.makeRequest(`/orders/sales-summary?period=${period}`);
   }
 

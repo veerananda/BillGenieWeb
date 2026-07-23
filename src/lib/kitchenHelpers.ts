@@ -80,6 +80,38 @@ export function buildKitchenSourceOrders(
   return parts;
 }
 
+export type KitchenServiceFilter = 'all' | 'dine_in' | 'counter';
+
+/** Narrow kitchen queue to All / Dine-in / Counter after plan filtering. */
+export function applyKitchenServiceFilter(
+  orders: Order[],
+  mode: KitchenServiceFilter
+): Order[] {
+  if (mode === 'all') return orders;
+  if (mode === 'counter') return orders.filter((o) => isCounterOrder(o));
+  return orders.filter((o) => !isCounterOrder(o));
+}
+
+/** Visible kitchen filter chips from subscribed kitchen add-ons. */
+export function getKitchenServiceFilterOptions(
+  limits: Pick<SubscriptionLimits, 'kitchen_dine_in' | 'kitchen_counter'>
+): KitchenServiceFilter[] {
+  const options: KitchenServiceFilter[] = [];
+  if (limits.kitchen_dine_in && limits.kitchen_counter) {
+    options.push('all');
+  }
+  if (limits.kitchen_dine_in) options.push('dine_in');
+  if (limits.kitchen_counter) options.push('counter');
+  return options;
+}
+
+export function defaultKitchenServiceFilter(
+  limits: Pick<SubscriptionLimits, 'kitchen_dine_in' | 'kitchen_counter'>
+): KitchenServiceFilter {
+  const options = getKitchenServiceFilterOptions(limits);
+  return options[0] || 'all';
+}
+
 export function isReadilyAvailableMenuItem(
   menuId: string | undefined,
   menuItems: Array<{ id: string; readily_available?: boolean }> = []
