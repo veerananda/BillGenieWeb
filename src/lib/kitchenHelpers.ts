@@ -80,6 +80,38 @@ export function buildKitchenSourceOrders(
   return parts;
 }
 
+export type KitchenServiceFilter = 'all' | 'dine_in' | 'counter';
+
+/** Narrow kitchen queue to All / Dine-in / Counter after plan filtering. */
+export function applyKitchenServiceFilter(
+  orders: Order[],
+  mode: KitchenServiceFilter
+): Order[] {
+  if (mode === 'all') return orders;
+  if (mode === 'counter') return orders.filter((o) => isCounterOrder(o));
+  return orders.filter((o) => !isCounterOrder(o));
+}
+
+/** Visible kitchen filter chips from subscribed kitchen add-ons. */
+export function getKitchenServiceFilterOptions(
+  limits: Pick<SubscriptionLimits, 'kitchen_dine_in' | 'kitchen_counter'>
+): KitchenServiceFilter[] {
+  const options: KitchenServiceFilter[] = [];
+  if (limits.kitchen_dine_in && limits.kitchen_counter) {
+    options.push('all');
+  }
+  if (limits.kitchen_dine_in) options.push('dine_in');
+  if (limits.kitchen_counter) options.push('counter');
+  return options;
+}
+
+export function defaultKitchenServiceFilter(
+  limits: Pick<SubscriptionLimits, 'kitchen_dine_in' | 'kitchen_counter'>
+): KitchenServiceFilter {
+  const options = getKitchenServiceFilterOptions(limits);
+  return options[0] || 'all';
+}
+
 export function isReadilyAvailableMenuItem(
   menuId: string | undefined,
   menuItems: Array<{ id: string; readily_available?: boolean }> = []
@@ -214,22 +246,59 @@ export function buildKotTickets(
   }));
 }
 
+function extractParenLabel(name: string): string {
+  const match = String(name || '').trim().match(/\(([^)]+)\)\s*$/);
+  return match ? match[1].trim() : '';
+}
+
+/** Aggregate pending item quantities across all active KOT tickets (batch prep view).
+ * Clubs the same dish+portion across dine-in and counter when the All filter is on.
+ * Dine-in / Counter filters already narrow tickets, so those views stay channel-only.
+ */
+function prepVariantKey(item: Pick<KotTicketItem, 'variantId' | 'variantLabel' | 'name'>): string {
+  // Prefer label so dine-in (id+label) and counter (label only) still club under All.
+  const label = String(item.variantLabel || extractParenLabel(item.name) || '')
+    .trim()
+    .toLowerCase();
+  if (label) return `label:${label}`;
+  const id = String(item.variantId || '').trim();
+  return id ? `id:${id}` : '';
+}
+
+function prepDishKey(item: Pick<KotTicketItem, 'menuId' | 'name' | 'category'>): string {
+  if (item.menuId) return `menu:${item.menuId}`;
+  const baseName = String(item.name || '')
+    .replace(/\s*\([^)]+\)\s*$/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  const category = String(item.category || '')
+    .trim()
+    .toLowerCase();
+  return `name:${baseName}::${category}`;
+}
+
 export function buildPrepSummary(tickets: KotTicket[]): PrepSummaryLine[] {
   const totals = new Map<string, PrepSummaryLine>();
 
   for (const ticket of tickets) {
     for (const item of ticket.items) {
       if (!isActiveKitchenItem(item.status)) continue;
-      // Key by dish + portion so Half and Family never merge into one chip.
-      const key = [
-        item.menuId || '',
-        item.variantId || item.variantLabel || '',
-        item.name,
-        item.category || '',
-      ].join('::');
+      // Club by dish + portion only — not by table/channel — so All merges dine-in + counter.
+      const key = `${prepDishKey(item)}::${prepVariantKey(item)}`;
       const existing = totals.get(key);
       if (existing) {
         existing.totalQty += item.quantity;
+        if (
+          item.name &&
+          /\(.+\)\s*$/.test(item.name) &&
+          !/\(.+\)\s*$/.test(existing.name)
+        ) {
+          existing.name = item.name;
+        }
+        if (!existing.category && item.category) {
+          existing.category = item.category;
+        }
       } else {
         totals.set(key, {
           menuId: key,

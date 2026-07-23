@@ -12,6 +12,9 @@ import {
 import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
+import { useAppSelector } from '../../store/hooks';
+import { selectProfile } from '../../store/profileSlice';
+import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +26,10 @@ interface SalesSummary {
   total_orders: number;
   average_order_value: number;
   period: string;
+  dine_in_orders?: number;
+  dine_in_revenue?: number;
+  counter_orders?: number;
+  counter_revenue?: number;
 }
 
 interface SalesAnalytics {
@@ -210,6 +217,18 @@ function SalesLineChart({ series }: { series: SalesAnalytics['series'] }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function Sales() {
+  const profile = useAppSelector(selectProfile);
+  const limits = useMemo(
+    () =>
+      parseSubscriptionLimits(
+        (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
+      ),
+    [profile?.subscription_limits]
+  );
+  const showDineIn = limits.dine_in_enabled;
+  const showCounter = limits.counter_enabled;
+  const showChannelBreakdown = showDineIn && showCounter;
+
   const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>('today');
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('week');
   const [summary, setSummary] = useState<SalesSummary | null>(null);
@@ -257,7 +276,13 @@ export function Sales() {
     ? [
         {
           icon: <IndianRupee className="h-6 w-6" />,
-          label: 'Total Revenue',
+          label: showChannelBreakdown
+            ? 'Total Revenue'
+            : showCounter && !showDineIn
+              ? 'Counter Revenue'
+              : showDineIn && !showCounter
+                ? 'Dine-in Revenue'
+                : 'Total Revenue',
           value: formatCurrency(summary.total_revenue),
           iconBg: 'bg-primary/10',
           iconColor: 'text-primary',
@@ -265,7 +290,13 @@ export function Sales() {
         },
         {
           icon: <ShoppingBag className="h-6 w-6" />,
-          label: 'Total Orders',
+          label: showChannelBreakdown
+            ? 'Total Orders'
+            : showCounter && !showDineIn
+              ? 'Counter Orders'
+              : showDineIn && !showCounter
+                ? 'Dine-in Orders'
+                : 'Total Orders',
           value: summary.total_orders.toLocaleString('en-IN'),
           iconBg: 'bg-blue-50',
           iconColor: 'text-blue-600',
@@ -342,11 +373,37 @@ export function Sales() {
         {summaryLoading && !summary ? (
           <SkeletonCards />
         ) : summary ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {stats.map((stat) => (
-              <StatCard key={stat.label} {...stat} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+              {stats.map((stat) => (
+                <StatCard key={stat.label} {...stat} />
+              ))}
+            </div>
+            {showChannelBreakdown ? (
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Dine-in</p>
+                  <p className="mt-2 text-xl font-bold text-gray-900">
+                    {formatCurrency(Number(summary.dine_in_revenue) || 0)}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {(Number(summary.dine_in_orders) || 0).toLocaleString('en-IN')} order
+                    {(Number(summary.dine_in_orders) || 0) === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Counter</p>
+                  <p className="mt-2 text-xl font-bold text-gray-900">
+                    {formatCurrency(Number(summary.counter_revenue) || 0)}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {(Number(summary.counter_orders) || 0).toLocaleString('en-IN')} order
+                    {(Number(summary.counter_orders) || 0) === 1 ? '' : 's'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : null}
 
         {summary && !summaryLoading && (

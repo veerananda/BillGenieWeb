@@ -15,7 +15,7 @@ import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/m
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
-import { formatVariantLabelSuffix } from '../../lib/orderHelpers';
+import { formatVariantLabelSuffix, formatOrderItemPrepProgress } from '../../lib/orderHelpers';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -1129,7 +1129,14 @@ export function Counter() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {sorted.map((order) => (
+              {sorted.map((order) => {
+                const prepProgress =
+                  counterKitchenEnabled &&
+                  order.status !== 'completed' &&
+                  order.status !== 'cancelled'
+                    ? formatOrderItemPrepProgress(order.items)
+                    : '';
+                return (
                 <tr
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
@@ -1161,12 +1168,20 @@ export function Counter() {
                     {fmt(order.total)}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={getStatusVariant(order.status ?? '')}>
-                      {(order.status ?? '').charAt(0).toUpperCase() + (order.status ?? '').slice(1)}
-                    </Badge>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <Badge variant={getStatusVariant(order.status ?? '')}>
+                        {(order.status ?? '').charAt(0).toUpperCase() + (order.status ?? '').slice(1)}
+                      </Badge>
+                      {prepProgress ? (
+                        <span className="text-[11px] font-medium text-gray-500">
+                          {prepProgress}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

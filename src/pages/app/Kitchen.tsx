@@ -24,6 +24,10 @@ import {
   formatKitchenTime,
   getKotTableLabel,
   isActiveKitchenItem,
+  applyKitchenServiceFilter,
+  defaultKitchenServiceFilter,
+  getKitchenServiceFilterOptions,
+  type KitchenServiceFilter,
   type KotTicket,
   type KotTicketItem,
 } from '../../lib/kitchenHelpers';
@@ -279,10 +283,24 @@ export function Kitchen() {
     [profile?.subscription_limits]
   );
 
-  const sourceOrders = useMemo(
-    () => buildKitchenSourceOrders(activeOrders, counterOrders, limits),
-    [activeOrders, counterOrders, limits]
+  const filterOptions = useMemo(
+    () => getKitchenServiceFilterOptions(limits),
+    [limits]
   );
+  const [serviceFilter, setServiceFilter] = useState<KitchenServiceFilter>(() =>
+    defaultKitchenServiceFilter(limits)
+  );
+
+  useEffect(() => {
+    if (!filterOptions.includes(serviceFilter)) {
+      setServiceFilter(defaultKitchenServiceFilter(limits));
+    }
+  }, [filterOptions, limits, serviceFilter]);
+
+  const sourceOrders = useMemo(() => {
+    const planFiltered = buildKitchenSourceOrders(activeOrders, counterOrders, limits);
+    return applyKitchenServiceFilter(planFiltered, serviceFilter);
+  }, [activeOrders, counterOrders, limits, serviceFilter]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -392,6 +410,30 @@ export function Kitchen() {
           <button onClick={() => void fetchKitchenOrders()} className="font-semibold underline">
             Retry
           </button>
+        </div>
+      ) : null}
+
+      {filterOptions.length > 1 ? (
+        <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+          {filterOptions.map((option) => {
+            const label =
+              option === 'all' ? 'All' : option === 'counter' ? 'Counter' : 'Dine-in';
+            const active = serviceFilter === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setServiceFilter(option)}
+                className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all ${
+                  active
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
