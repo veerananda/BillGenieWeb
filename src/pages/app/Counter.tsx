@@ -4,7 +4,7 @@ import {
   ArrowLeftRight, Banknote, CreditCard, Printer, Leaf, Beef,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
-import type { Order, MenuItem, CompletePaymentRequest } from '../../services/api';
+import type { Order, MenuItem, MenuItemVariant, CompletePaymentRequest } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
   selectCounterOrders,
@@ -15,6 +15,7 @@ import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/m
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
+import { formatVariantLabelSuffix } from '../../lib/orderHelpers';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -34,6 +35,8 @@ interface CartItem {
   isVeg: boolean;
   isTaxable: boolean;
   notes?: string;
+  variantId?: string;
+  variantLabel?: string;
 }
 
 type ServiceMode = 'eat_here' | 'takeaway';
@@ -45,6 +48,18 @@ interface PostPaymentQr {
   ticket: number | null;
   trackingUrl: string | null;
   summary: string | null;
+}
+
+function cartLineKey(menuItemId: string, variantId?: string) {
+  return `${menuItemId}::${variantId ?? ''}`;
+}
+
+function availableVariants(item: MenuItem): MenuItemVariant[] {
+  return (item.variants ?? []).filter((v) => v.is_available !== false);
+}
+
+function cartDisplayName(name: string, variantLabel?: string) {
+  return `${name}${formatVariantLabelSuffix(variantLabel)}`;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -136,6 +151,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const [dietFilter, setDietFilter] = useState<DietFilter>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('');
+  const [variantPickerItem, setVariantPickerItem] = useState<MenuItem | null>(null);
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -177,6 +193,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setDietFilter('all');
       setActiveCategory(categories[0] ?? '');
       setShowCheckout(false);
+      setVariantPickerItem(null);
       setServiceMode(counterModes === 'takeaway' ? 'takeaway' : 'eat_here');
       setCustomerName('');
       setCustomerPhone('');
@@ -238,23 +255,64 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const totalItems = cart.reduce((s, c) => s + c.quantity, 0);
   const showModeToggle = counterModes === 'both';
 
-  function addItem(item: MenuItem) {
+  function addVariantToCart(item: MenuItem, variant?: MenuItemVariant) {
+    const variantId = variant?.id;
+    const variantLabel = variant?.label;
+    const price = variant?.price ?? item.price;
+    const key = cartLineKey(item.id, variantId);
     setCart((prev) => {
-      const ex = prev.find((c) => c.menuItemId === item.id);
-      if (ex) return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, category: item.category, price: item.price, quantity: 1, isVeg: item.is_veg, isTaxable: item.is_taxable !== false }];
+      const ex = prev.find((c) => cartLineKey(c.menuItemId, c.variantId) === key);
+      if (ex) {
+        return prev.map((c) =>
+          cartLineKey(c.menuItemId, c.variantId) === key
+            ? { ...c, quantity: c.quantity + 1 }
+            : c
+        );
+      }
+      return [
+        ...prev,
+        {
+          menuItemId: item.id,
+          name: item.name,
+          category: item.category,
+          price,
+          quantity: 1,
+          isVeg: item.is_veg,
+          isTaxable: item.is_taxable !== false,
+          variantId,
+          variantLabel,
+        },
+      ];
     });
   }
 
-  function changeQty(id: string, delta: number) {
+  function handleItemClick(item: MenuItem) {
+    const variants = availableVariants(item);
+    if (variants.length > 1) {
+      setVariantPickerItem(item);
+      return;
+    }
+    addVariantToCart(item, variants[0]);
+  }
+
+  function changeQty(key: string, delta: number) {
     setCart((prev) =>
-      prev.map((c) => c.menuItemId === id ? { ...c, quantity: c.quantity + delta } : c)
-          .filter((c) => c.quantity > 0)
+      prev
+        .map((c) =>
+          cartLineKey(c.menuItemId, c.variantId) === key
+            ? { ...c, quantity: c.quantity + delta }
+            : c
+        )
+        .filter((c) => c.quantity > 0)
     );
   }
 
-  function changeNotes(id: string, notes: string) {
-    setCart((prev) => prev.map((c) => c.menuItemId === id ? { ...c, notes } : c));
+  function changeNotes(key: string, notes: string) {
+    setCart((prev) =>
+      prev.map((c) =>
+        cartLineKey(c.menuItemId, c.variantId) === key ? { ...c, notes } : c
+      )
+    );
   }
 
   async function saveOrder(payment: CompletePaymentRequest, summary: string) {
@@ -270,6 +328,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
           menu_item_id: c.menuItemId,
           quantity: c.quantity,
           notes: c.notes?.trim() || undefined,
+          variant_id: c.variantId,
         })),
       });
 
@@ -379,7 +438,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       ${customerName.trim() ? `<p>Customer: ${customerName.trim()}</p>` : ''}
       ${attendedByName ? `<p>Attended by: ${attendedByName}</p>` : ''}
       <hr/>
-      ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${c.name} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
+      ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${cartDisplayName(c.name, c.variantLabel)} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
       <hr/>
       <div style="display:flex;justify-content:space-between"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
       ${showTax ? `<div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>` : ''}
@@ -535,22 +594,31 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               ) : (
                 <div className="space-y-1.5">
                   {visibleItems.map((item) => {
-                    const inCart = cart.find((c) => c.menuItemId === item.id);
+                    const inCartQty = cart
+                      .filter((c) => c.menuItemId === item.id)
+                      .reduce((sum, c) => sum + c.quantity, 0);
                     return (
                       <button
                         key={item.id}
-                        onClick={() => addItem(item)}
+                        onClick={() => handleItemClick(item)}
                         className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
-                          {item.is_veg ? <Leaf size={14} color="#22c55e" /> : <Beef size={14} color="#dc2626" />}
-                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <div className="flex items-center gap-2">
+                            {item.is_veg ? <Leaf size={14} color="#22c55e" /> : <Beef size={14} color="#dc2626" />}
+                            <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                          </div>
+                          {availableVariants(item).length > 1 && (
+                            <p className="mt-0.5 truncate pl-6 text-xs text-gray-400">
+                              {availableVariants(item).map((v) => v.label).join(' · ')}
+                            </p>
+                          )}
                         </div>
                         <div className="ml-3 flex shrink-0 items-center gap-3">
                           <span className="text-sm font-semibold text-gray-800">₹{item.price}</span>
-                          {inCart ? (
+                          {inCartQty > 0 ? (
                             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                              {inCart.quantity}
+                              {inCartQty}
                             </span>
                           ) : (
                             <span className="flex h-6 w-6 items-center justify-center rounded-full border border-primary text-primary">
@@ -581,12 +649,16 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                 {cart.length === 0 ? (
                   <p className="py-6 text-center text-xs text-gray-400">Add items from the menu</p>
                 ) : (
-                  cart.map((c) => (
-                    <div key={c.menuItemId} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                  cart.map((c) => {
+                    const key = cartLineKey(c.menuItemId, c.variantId);
+                    return (
+                    <div key={key} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
                       <div className="flex items-center gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <p className="truncate text-xs font-medium text-gray-900">{c.name}</p>
+                            <p className="truncate text-xs font-medium text-gray-900">
+                              {cartDisplayName(c.name, c.variantLabel)}
+                            </p>
                             {c.isVeg
                               ? <Leaf size={13} color="#22c55e" className="shrink-0" />
                               : <Beef size={13} color="#dc2626" className="shrink-0" />}
@@ -598,14 +670,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <button
-                            onClick={() => changeQty(c.menuItemId, -1)}
+                            onClick={() => changeQty(key, -1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
                           >
                             <Minus className="h-3 w-3" />
                           </button>
                           <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
                           <button
-                            onClick={() => changeQty(c.menuItemId, 1)}
+                            onClick={() => changeQty(key, 1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
                           >
                             <Plus className="h-3 w-3" />
@@ -615,12 +687,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                       <input
                         type="text"
                         value={c.notes ?? ''}
-                        onChange={(e) => changeNotes(c.menuItemId, e.target.value)}
+                        onChange={(e) => changeNotes(key, e.target.value)}
                         placeholder="Chef note (optional)"
                         className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -676,11 +749,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               <p className="text-sm font-semibold text-gray-800">Order items</p>
               <div className="space-y-2">
                 {cart.map((c) => (
-                  <div key={c.menuItemId} className="flex items-start justify-between gap-3">
+                  <div key={cartLineKey(c.menuItemId, c.variantId)} className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <VegDot isVeg={c.isVeg} />
-                        <span className="truncate text-sm text-gray-700">{c.name}</span>
+                        <span className="truncate text-sm text-gray-700">
+                          {cartDisplayName(c.name, c.variantLabel)}
+                        </span>
                       </div>
                       {c.category ? <p className="ml-4 text-xs text-gray-400">{c.category}</p> : null}
                     </div>
@@ -890,6 +965,34 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               </button>
             </div>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!variantPickerItem}
+        onClose={() => setVariantPickerItem(null)}
+        title={variantPickerItem ? `Choose portion — ${variantPickerItem.name}` : 'Choose portion'}
+        maxWidth="sm"
+        zIndexClass="z-[60]"
+      >
+        <div className="space-y-2">
+          {variantPickerItem &&
+            availableVariants(variantPickerItem).map((variant) => (
+              <button
+                key={variant.id}
+                type="button"
+                onClick={() => {
+                  addVariantToCart(variantPickerItem, variant);
+                  setVariantPickerItem(null);
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+              >
+                <span className="text-sm font-medium text-gray-900">{variant.label}</span>
+                <span className="text-sm font-semibold text-gray-800">
+                  ₹{variant.price.toLocaleString('en-IN')}
+                </span>
+              </button>
+            ))}
         </div>
       </Modal>
 

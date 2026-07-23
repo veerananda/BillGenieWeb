@@ -53,6 +53,17 @@ export function getOrderItemDisplayName(
   return name;
 }
 
+/** Append `(Half)` etc. when variant is present and not Regular. */
+export function formatVariantLabelSuffix(variantLabel?: string | null): string {
+  const label = String(variantLabel ?? '').trim();
+  if (!label || label.toLowerCase() === 'regular') return '';
+  return ` (${label})`;
+}
+
+function withVariantLabel(name: string, variantLabel?: string | null): string {
+  return `${name}${formatVariantLabelSuffix(variantLabel)}`;
+}
+
 /** Split order line into item name and category for stacked display. */
 export function resolveOrderItemParts(
   item: {
@@ -60,6 +71,7 @@ export function resolveOrderItemParts(
     name?: string;
     menu_item?: { name?: string; category?: string };
     category?: string;
+    variant_label?: string;
   },
   menuItems?: MenuLookupItem[]
 ): { name: string; category: string } {
@@ -67,6 +79,7 @@ export function resolveOrderItemParts(
   let rawName = String(item.menu_item?.name ?? item.name ?? '').trim();
 
   let category = String(item.menu_item?.category ?? item.category ?? '').trim();
+  const variantLabel = item.variant_label;
 
   if (menuItems?.length) {
     if (menuId) {
@@ -76,7 +89,7 @@ export function resolveOrderItemParts(
         const menuCategory = String(match.category ?? '').trim();
         if (menuName) {
           return {
-            name: menuName,
+            name: withVariantLabel(menuName, variantLabel),
             category: menuCategory || category,
           };
         }
@@ -91,7 +104,7 @@ export function resolveOrderItemParts(
       );
       if (byDisplayName) {
         return {
-          name: String(byDisplayName.name ?? '').trim(),
+          name: withVariantLabel(String(byDisplayName.name ?? '').trim(), variantLabel),
           category: String(byDisplayName.category ?? '').trim(),
         };
       }
@@ -114,7 +127,7 @@ export function resolveOrderItemParts(
         ) {
           const stripped = rawName.slice(0, -suffix.length).trim();
           if (stripped) {
-            return { name: stripped, category: cat };
+            return { name: withVariantLabel(stripped, variantLabel), category: cat };
           }
         }
       }
@@ -122,7 +135,7 @@ export function resolveOrderItemParts(
   }
 
   if (!rawName) {
-    return { name: category || 'Unknown Item', category: '' };
+    return { name: withVariantLabel(category || 'Unknown Item', variantLabel), category: '' };
   }
 
   if (category) {
@@ -133,22 +146,26 @@ export function resolveOrderItemParts(
     ) {
       const stripped = rawName.slice(0, -suffix.length).trim();
       if (stripped) {
-        return { name: stripped, category };
+        return { name: withVariantLabel(stripped, variantLabel), category };
       }
     } else if (rawName.toLowerCase() === category.toLowerCase()) {
-      return { name: rawName, category: '' };
+      return { name: withVariantLabel(rawName, variantLabel), category: '' };
     }
   }
 
-  return { name: rawName, category };
+  return { name: withVariantLabel(rawName, variantLabel), category };
 }
 
 export function getOrderItemGroupKey(item: {
   menuId?: string;
   name: string;
   category?: string;
+  variantId?: string | null;
+  variantLabel?: string | null;
 }): string {
-  return item.menuId || `${item.name}::${item.category || ''}`;
+  const base = item.menuId || `${item.name}::${item.category || ''}`;
+  const variantKey = item.variantId || item.variantLabel || '';
+  return variantKey ? `${base}::${variantKey}` : base;
 }
 
 /** Resolve display name from an order line, using menu_item/category or menu cache. */
@@ -158,6 +175,7 @@ export function resolveOrderItemName(
     name?: string;
     menu_item?: { name?: string; category?: string };
     category?: string;
+    variant_label?: string;
   },
   menuItems?: MenuLookupItem[]
 ): string {
@@ -173,9 +191,11 @@ export function resolveOrderItemName(
     }
   }
 
-  if (!rawName) return category?.trim() || 'Unknown Item';
+  if (!rawName) {
+    return withVariantLabel(category?.trim() || 'Unknown Item', item.variant_label);
+  }
 
-  return getOrderItemDisplayName(rawName, category);
+  return withVariantLabel(getOrderItemDisplayName(rawName, category), item.variant_label);
 }
 
 type OrderItemLike = { status?: string };

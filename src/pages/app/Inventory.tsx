@@ -45,11 +45,29 @@ import {
   entryUnitsFor,
   formatInventoryQty,
   shortUnitLabel,
+  convertQuantity,
+  unitFamily,
+  canonicalUnit,
+  normalizeUnit,
 } from '../../lib/inventoryUnits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
 import { EmptyState } from '../../components/app/EmptyState';
+
+function sameRecipeIngredient(
+  existingName: string,
+  existingUnit: string,
+  nextName: string,
+  nextUnit: string
+): boolean {
+  if (existingName.trim().toLowerCase() !== nextName.trim().toLowerCase()) return false;
+  if (canonicalUnit(existingUnit) === canonicalUnit(nextUnit)) return true;
+  const a = unitFamily(existingUnit);
+  const b = unitFamily(nextUnit);
+  if (a !== 'other' && a === b) return true;
+  return normalizeUnit(existingUnit) === normalizeUnit(nextUnit);
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -182,15 +200,38 @@ export function IngredientManagement() {
             : { ingredient_id: ing.ingredient_id, name: ing.name, unit: ing.unit, quantity_used: ing.quantity_used }
         );
       } else {
-        newList = [
-          ...(selectedItem.ingredients).map((ing) => ({
-            ingredient_id: ing.ingredient_id,
-            name: ing.name,
-            unit: ing.unit,
-            quantity_used: ing.quantity_used,
-          })),
-          { name: ingName.trim(), unit, quantity_used: qty },
-        ];
+        const name = ingName.trim();
+        const existing = selectedItem.ingredients.find((ing) =>
+          sameRecipeIngredient(ing.name, ing.unit, name, unit)
+        );
+        if (existing) {
+          const addInExistingUnit = convertQuantity(qty, unit, existing.unit);
+          newList = selectedItem.ingredients.map((ing) =>
+            ing.id === existing.id
+              ? {
+                  ingredient_id: ing.ingredient_id,
+                  name: ing.name,
+                  unit: ing.unit,
+                  quantity_used: (ing.quantity_used || 0) + addInExistingUnit,
+                }
+              : {
+                  ingredient_id: ing.ingredient_id,
+                  name: ing.name,
+                  unit: ing.unit,
+                  quantity_used: ing.quantity_used,
+                }
+          );
+        } else {
+          newList = [
+            ...(selectedItem.ingredients).map((ing) => ({
+              ingredient_id: ing.ingredient_id,
+              name: ing.name,
+              unit: ing.unit,
+              quantity_used: ing.quantity_used,
+            })),
+            { name, unit, quantity_used: qty },
+          ];
+        }
       }
       await apiClient.setMenuItemIngredients(selectedItem.id, newList);
       await loadData();

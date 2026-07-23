@@ -2,6 +2,18 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from './index';
 
+export interface MenuItemVariant {
+  id: string;
+  restaurant_id: string;
+  menu_item_id: string;
+  label: string;
+  price: number;
+  recipe_scale: number;
+  is_default: boolean;
+  is_available: boolean;
+  sort_order: number;
+}
+
 export interface MenuItem {
   id: string;
   restaurant_id: string;
@@ -13,6 +25,7 @@ export interface MenuItem {
   is_available: boolean;
   readily_available?: boolean;
   is_taxable?: boolean;
+  variants?: MenuItemVariant[];
 }
 
 interface MenuState {

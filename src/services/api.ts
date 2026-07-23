@@ -112,7 +112,31 @@ export interface OrderItem {
   notes?: string;
   sub_id?: string;
   created_at?: string;
+  variant_id?: string;
+  variant_label?: string;
   menu_item?: { id: string; name: string; category?: string; price?: number };
+}
+
+export interface MenuItemVariant {
+  id: string;
+  restaurant_id: string;
+  menu_item_id: string;
+  label: string;
+  price: number;
+  recipe_scale: number;
+  is_default: boolean;
+  is_available: boolean;
+  sort_order: number;
+}
+
+export interface MenuVariantWrite {
+  id?: string;
+  label: string;
+  price: number;
+  recipe_scale: number;
+  is_default: boolean;
+  is_available?: boolean;
+  sort_order?: number;
 }
 
 export interface MenuItem {
@@ -126,6 +150,7 @@ export interface MenuItem {
   is_available: boolean;
   readily_available?: boolean;
   is_taxable?: boolean;
+  variants?: MenuItemVariant[];
 }
 
 export interface Ingredient {
@@ -271,7 +296,7 @@ export interface CreateOrderRequest {
   customer_name?: string;
   customer_phone?: string;
   table_id?: string;
-  items?: { menu_item_id: string; quantity: number; notes?: string }[];
+  items?: { menu_item_id: string; quantity: number; notes?: string; variant_id?: string }[];
   notes?: string;
 }
 
@@ -561,12 +586,12 @@ class APIClient {
     return r?.menu_items ?? r ?? [];
   }
 
-  async createMenuItem(data: Partial<MenuItem>): Promise<MenuItem> {
+  async createMenuItem(data: Omit<Partial<MenuItem>, 'variants'> & { variants?: MenuVariantWrite[] }): Promise<MenuItem> {
     const r = await this.makeRequest('/menu', 'POST', data);
     return r?.menu_item ?? r ?? {};
   }
 
-  async updateMenuItem(id: string, data: Partial<MenuItem>): Promise<MenuItem> {
+  async updateMenuItem(id: string, data: Omit<Partial<MenuItem>, 'variants'> & { variants?: MenuVariantWrite[] }): Promise<MenuItem> {
     const r = await this.makeRequest(`/menu/${id}`, 'PUT', data);
     return r?.menu_item ?? r ?? {};
   }
@@ -663,7 +688,7 @@ class APIClient {
     return this.makeRequest(`/orders/${id}/complete-payment`, 'POST', payment);
   }
 
-  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number; notes?: string }[]): Promise<Order> {
+  async addItemsToOrder(orderId: string, items: { menu_item_id: string; quantity: number; notes?: string; variant_id?: string }[]): Promise<Order> {
     try {
       const r = await this.makeRequest(`/orders/${orderId}/add-items`, 'POST', { items });
       return r?.order ?? r;

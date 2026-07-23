@@ -21,6 +21,7 @@ import {
 } from '../../store/menuSlice';
 import type { MenuItem } from '../../store/menuSlice';
 import { apiClient } from '../../services/api';
+import type { MenuVariantWrite } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -33,6 +34,52 @@ type DietFilter = 'all' | 'veg' | 'nonveg';
 interface MenuCategory {
   name: string;
   items: MenuItem[];
+}
+
+interface PortionDraft {
+  id?: string;
+  label: string;
+  price: string;
+  recipe_scale: string;
+}
+
+function isRegularLabel(label: string) {
+  return label.trim().toLowerCase() === 'regular';
+}
+
+function buildVariantsPayload(
+  price: number,
+  portions: PortionDraft[],
+  regularId?: string
+): MenuVariantWrite[] {
+  const extras = portions
+    .map((p, i) => ({
+      id: p.id,
+      label: p.label.trim(),
+      price: parseFloat(p.price),
+      recipe_scale: parseFloat(p.recipe_scale) || 1,
+      sort_order: i + 1,
+    }))
+    .filter((p) => p.label && !isNaN(p.price) && p.price >= 0);
+
+  return [
+    {
+      ...(regularId ? { id: regularId } : {}),
+      label: 'Regular',
+      price,
+      recipe_scale: 1,
+      is_default: true,
+      sort_order: 0,
+    },
+    ...extras.map((p) => ({
+      ...(p.id ? { id: p.id } : {}),
+      label: p.label,
+      price: p.price,
+      recipe_scale: p.recipe_scale,
+      is_default: false,
+      sort_order: p.sort_order,
+    })),
+  ];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -129,6 +176,8 @@ export function Menu() {
   const [itemAvailable, setItemAvailable] = useState(true);
   const [itemReadilyAvailable, setItemReadilyAvailable] = useState(false);
   const [itemTaxable, setItemTaxable] = useState(true);
+  const [itemPortions, setItemPortions] = useState<PortionDraft[]>([]);
+  const [itemRegularVariantId, setItemRegularVariantId] = useState<string | undefined>();
   const [itemModalError, setItemModalError] = useState('');
   const [itemModalLoading, setItemModalLoading] = useState(false);
 
@@ -279,6 +328,8 @@ export function Menu() {
     setItemAvailable(true);
     setItemReadilyAvailable(false);
     setItemTaxable(true);
+    setItemPortions([]);
+    setItemRegularVariantId(undefined);
     setItemModalError('');
     setItemModalOpen(true);
   }
@@ -287,7 +338,27 @@ export function Menu() {
     setItemEditTarget(item);
     setItemModalCategory(item.category);
     setItemName(item.name);
-    setItemPrice(String(item.price));
+    const variants = [...(item.variants ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+    const defaultVariant =
+      variants.find((v) => v.is_default) ??
+      variants.find((v) => isRegularLabel(v.label)) ??
+      variants[0];
+    setItemPrice(String(defaultVariant?.price ?? item.price));
+    setItemRegularVariantId(
+      defaultVariant && (defaultVariant.is_default || isRegularLabel(defaultVariant.label))
+        ? defaultVariant.id
+        : undefined
+    );
+    setItemPortions(
+      variants
+        .filter((v) => v.id !== defaultVariant?.id && !isRegularLabel(v.label))
+        .map((v) => ({
+          id: v.id,
+          label: v.label,
+          price: String(v.price),
+          recipe_scale: String(v.recipe_scale ?? 1),
+        }))
+    );
     setItemVeg(item.is_veg);
     setItemAvailable(item.is_available);
     setItemReadilyAvailable(item.readily_available ?? false);
@@ -300,6 +371,8 @@ export function Menu() {
     if (itemModalLoading) return;
     setItemModalOpen(false);
     setItemEditTarget(null);
+    setItemPortions([]);
+    setItemRegularVariantId(undefined);
     setItemModalError('');
   }
 
@@ -308,6 +381,18 @@ export function Menu() {
     const price = parseFloat(itemPrice);
     if (!name) { setItemModalError('Item name is required.'); return; }
     if (isNaN(price) || price < 0) { setItemModalError('Enter a valid price.'); return; }
+
+    for (const portion of itemPortions) {
+      const label = portion.label.trim();
+      const portionPrice = parseFloat(portion.price);
+      const scale = parseFloat(portion.recipe_scale);
+      if (!label) { setItemModalError('Each portion needs a label.'); return; }
+      if (isRegularLabel(label)) { setItemModalError('Use the Price field for Regular; add other portions below.'); return; }
+      if (isNaN(portionPrice) || portionPrice < 0) { setItemModalError(`Enter a valid price for "${label}".`); return; }
+      if (isNaN(scale) || scale <= 0) { setItemModalError(`Enter a valid recipe scale for "${label}".`); return; }
+    }
+
+    const variants = buildVariantsPayload(price, itemPortions, itemRegularVariantId);
 
     setItemModalLoading(true);
     try {
@@ -319,6 +404,7 @@ export function Menu() {
           is_available: itemAvailable,
           readily_available: itemReadilyAvailable,
           is_taxable: itemTaxable,
+          variants,
         });
         dispatch(updateMenuItemAction(updated));
       } else {
@@ -330,6 +416,7 @@ export function Menu() {
           readily_available: itemReadilyAvailable,
           is_taxable: itemTaxable,
           category: itemModalCategory,
+          variants,
         });
         // Remove from local-only if it was empty
         setLocalOnlyCategories((prev) => prev.filter((n) => n !== itemModalCategory));
@@ -668,6 +755,92 @@ export function Menu() {
               placeholder="0.00"
               className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
+            <p className="mt-1 text-xs text-gray-400">Default / Regular portion price</p>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Portions</p>
+                <p className="text-xs text-gray-400">Optional — e.g. Half, Full, Family</p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setItemPortions((prev) => [
+                    ...prev,
+                    { label: '', price: '', recipe_scale: '1' },
+                  ])
+                }
+                className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20"
+              >
+                <Plus size={12} /> Add
+              </button>
+            </div>
+            {itemPortions.length > 0 && (
+              <div className="space-y-2">
+                {itemPortions.map((portion, index) => (
+                  <div key={portion.id ?? `new-${index}`} className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[5.5rem] flex-1">
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Label</label>
+                      <input
+                        type="text"
+                        value={portion.label}
+                        onChange={(e) =>
+                          setItemPortions((prev) =>
+                            prev.map((p, i) => (i === index ? { ...p, label: e.target.value } : p))
+                          )
+                        }
+                        placeholder="Half"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={portion.price}
+                        onChange={(e) =>
+                          setItemPortions((prev) =>
+                            prev.map((p, i) => (i === index ? { ...p, price: e.target.value } : p))
+                          )
+                        }
+                        placeholder="0"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div className="w-20">
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Scale</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={portion.recipe_scale}
+                        onChange={(e) =>
+                          setItemPortions((prev) =>
+                            prev.map((p, i) =>
+                              i === index ? { ...p, recipe_scale: e.target.value } : p
+                            )
+                          )
+                        }
+                        placeholder="1"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setItemPortions((prev) => prev.filter((_, i) => i !== index))}
+                      className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      title="Remove portion"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
@@ -828,6 +1001,14 @@ function ItemRow({
         >
           {item.name}
         </p>
+        {item.variants && item.variants.length > 1 && (
+          <p className="mt-0.5 truncate text-xs text-gray-400">
+            {[...item.variants]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((v) => v.label)
+              .join(' · ')}
+          </p>
+        )}
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-xs font-semibold text-primary">
             ₹{item.price.toLocaleString('en-IN')}
