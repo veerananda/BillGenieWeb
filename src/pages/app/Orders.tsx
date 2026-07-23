@@ -26,6 +26,7 @@ import {
   getOrderItemGroupKey,
   isAdjustableOrderItem,
   orderHasServedItems,
+  formatVariantLabelSuffix,
 } from '../../lib/orderHelpers';
 import { useAttendants } from '../../lib/useAttendants';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -42,7 +43,7 @@ import {
   selectAcknowledgedCancelledByOrderId,
 } from '../../store/ordersSlice';
 import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
-import type { MenuItem } from '../../store/menuSlice';
+import type { MenuItem, MenuItemVariant } from '../../store/menuSlice';
 import type {
   RestaurantTable,
   Order,
@@ -65,9 +66,24 @@ interface CartItem {
   menuItem: MenuItem;
   quantity: number;
   notes?: string;
+  variantId?: string;
+  variantLabel?: string;
+  unitPrice: number;
 }
 
 type PaymentMethod = 'cash' | 'upi' | 'split';
+
+function cartLineKey(menuItemId: string, variantId?: string) {
+  return `${menuItemId}::${variantId ?? ''}`;
+}
+
+function availableVariants(item: MenuItem): MenuItemVariant[] {
+  return (item.variants ?? []).filter((v) => v.is_available !== false);
+}
+
+function cartDisplayName(item: MenuItem, variantLabel?: string) {
+  return `${item.name}${formatVariantLabelSuffix(variantLabel)}`;
+}
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
@@ -580,6 +596,8 @@ function OrderDetailPanel({
         menuId: item.menu_id,
         name: parts.name,
         category: parts.category,
+        variantId: item.variant_id,
+        variantLabel: item.variant_label,
       });
       const menuEntry = menuMap.get(item.menu_id);
       const isVeg = menuEntry?.is_veg ?? true;
@@ -1437,6 +1455,7 @@ function TakeOrderPanel({
   const [customerName, setCustomerName] = useState('');
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [variantPickerItem, setVariantPickerItem] = useState<MenuItem | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -1469,33 +1488,63 @@ function TakeOrderPanel({
     return m.category === activeCategory;
   });
 
-  const addToCart = (item: MenuItem) => {
+  const addVariantToCart = (item: MenuItem, variant?: MenuItemVariant) => {
+    const variantId = variant?.id;
+    const variantLabel = variant?.label;
+    const unitPrice = variant?.price ?? item.price;
+    const key = cartLineKey(item.id, variantId);
     setCart((prev) => {
-      const existing = prev.find((c) => c.menuItem.id === item.id);
+      const existing = prev.find((c) => cartLineKey(c.menuItem.id, c.variantId) === key);
       if (existing) {
         return prev.map((c) =>
-          c.menuItem.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
+          cartLineKey(c.menuItem.id, c.variantId) === key
+            ? { ...c, quantity: c.quantity + 1 }
+            : c
         );
       }
-      return [...prev, { menuItem: item, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          menuItem: item,
+          quantity: 1,
+          variantId,
+          variantLabel,
+          unitPrice,
+        },
+      ];
     });
   };
 
-  const updateQty = (itemId: string, delta: number) => {
+  const handleItemClick = (item: MenuItem) => {
+    const variants = availableVariants(item);
+    if (variants.length > 1) {
+      setVariantPickerItem(item);
+      return;
+    }
+    addVariantToCart(item, variants[0]);
+  };
+
+  const updateQty = (key: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((c) => (c.menuItem.id === itemId ? { ...c, quantity: c.quantity + delta } : c))
+        .map((c) =>
+          cartLineKey(c.menuItem.id, c.variantId) === key
+            ? { ...c, quantity: c.quantity + delta }
+            : c
+        )
         .filter((c) => c.quantity > 0)
     );
   };
 
-  const updateNotes = (itemId: string, notes: string) => {
+  const updateNotes = (key: string, notes: string) => {
     setCart((prev) =>
-      prev.map((c) => (c.menuItem.id === itemId ? { ...c, notes } : c))
+      prev.map((c) =>
+        cartLineKey(c.menuItem.id, c.variantId) === key ? { ...c, notes } : c
+      )
     );
   };
 
-  const cartTotal = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
+  const cartTotal = cart.reduce((sum, c) => sum + c.unitPrice * c.quantity, 0);
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
@@ -1509,6 +1558,7 @@ function TakeOrderPanel({
             menu_item_id: c.menuItem.id,
             quantity: c.quantity,
             notes: c.notes?.trim() || undefined,
+            variant_id: c.variantId,
           }))
         );
         dispatch(upsertActiveOrder(updatedOrder));
@@ -1523,6 +1573,7 @@ function TakeOrderPanel({
             menu_item_id: c.menuItem.id,
             quantity: c.quantity,
             notes: c.notes?.trim() || undefined,
+            variant_id: c.variantId,
           })),
         };
         const newOrder = await apiClient.createOrder(orderData);
@@ -1639,11 +1690,13 @@ function TakeOrderPanel({
               ) : (
                 <div className="space-y-1.5">
                   {visibleItems.map((item) => {
-                    const inCart = cart.find((c) => c.menuItem.id === item.id);
+                    const inCartQty = cart
+                      .filter((c) => c.menuItem.id === item.id)
+                      .reduce((sum, c) => sum + c.quantity, 0);
                     return (
                       <button
                         key={item.id}
-                        onClick={() => addToCart(item)}
+                        onClick={() => handleItemClick(item)}
                         className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
                         <div className="min-w-0 flex-1">
@@ -1655,12 +1708,17 @@ function TakeOrderPanel({
                             </span>
                             <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
                           </div>
+                          {availableVariants(item).length > 1 && (
+                            <p className="mt-0.5 truncate pl-5 text-xs text-gray-400">
+                              {availableVariants(item).map((v) => v.label).join(' · ')}
+                            </p>
+                          )}
                         </div>
                         <div className="ml-3 flex shrink-0 items-center gap-3">
                           <span className="text-sm font-semibold text-gray-800">₹{item.price}</span>
-                          {inCart ? (
+                          {inCartQty > 0 ? (
                             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                              {inCart.quantity}
+                              {inCartQty}
                             </span>
                           ) : (
                             <span className="flex h-6 w-6 items-center justify-center rounded-full border border-primary text-primary">
@@ -1690,29 +1748,33 @@ function TakeOrderPanel({
                 {cart.length === 0 ? (
                   <p className="py-6 text-center text-xs text-gray-400">Add items from the menu</p>
                 ) : (
-                  cart.map((c) => (
-                    <div key={c.menuItem.id} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                  cart.map((c) => {
+                    const key = cartLineKey(c.menuItem.id, c.variantId);
+                    return (
+                    <div key={key} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
                       <div className="flex items-center gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <p className="truncate text-xs font-medium text-gray-900">{c.menuItem.name}</p>
+                            <p className="truncate text-xs font-medium text-gray-900">
+                              {cartDisplayName(c.menuItem, c.variantLabel)}
+                            </p>
                             <VegBadge isVeg={c.menuItem.is_veg} />
                           </div>
                           {c.menuItem.category ? (
                             <p className="truncate text-xs text-gray-400">{c.menuItem.category}</p>
                           ) : null}
-                          <p className="text-xs text-gray-400">₹{c.menuItem.price}</p>
+                          <p className="text-xs text-gray-400">₹{c.unitPrice}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <button
-                            onClick={() => updateQty(c.menuItem.id, -1)}
+                            onClick={() => updateQty(key, -1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-red-50 hover:text-red-600"
                           >
                             <Minus className="h-3 w-3" />
                           </button>
                           <span className="w-6 text-center text-xs font-semibold text-gray-800">{c.quantity}</span>
                           <button
-                            onClick={() => updateQty(c.menuItem.id, 1)}
+                            onClick={() => updateQty(key, 1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-primary/10 hover:text-primary"
                           >
                             <Plus className="h-3 w-3" />
@@ -1722,12 +1784,13 @@ function TakeOrderPanel({
                       <input
                         type="text"
                         value={c.notes ?? ''}
-                        onChange={(e) => updateNotes(c.menuItem.id, e.target.value)}
+                        onChange={(e) => updateNotes(key, e.target.value)}
                         placeholder="Chef note (optional)"
                         className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -1767,6 +1830,34 @@ function TakeOrderPanel({
           </div>
         </div>
       </div>
+
+      <Modal
+        open={!!variantPickerItem}
+        onClose={() => setVariantPickerItem(null)}
+        title={variantPickerItem ? `Choose portion — ${variantPickerItem.name}` : 'Choose portion'}
+        maxWidth="sm"
+        zIndexClass="z-[60]"
+      >
+        <div className="space-y-2">
+          {variantPickerItem &&
+            availableVariants(variantPickerItem).map((variant) => (
+              <button
+                key={variant.id}
+                type="button"
+                onClick={() => {
+                  addVariantToCart(variantPickerItem, variant);
+                  setVariantPickerItem(null);
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+              >
+                <span className="text-sm font-medium text-gray-900">{variant.label}</span>
+                <span className="text-sm font-semibold text-gray-800">
+                  ₹{variant.price.toLocaleString('en-IN')}
+                </span>
+              </button>
+            ))}
+        </div>
+      </Modal>
     </>
   );
 }
