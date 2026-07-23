@@ -762,7 +762,9 @@ export function Menu() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-700">Portions</p>
-                <p className="text-xs text-gray-400">Optional — e.g. Half, Full, Family</p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  Optional (Half, Full, Family). Recipe × multiplies ingredient stock use (0.5 / 1 / 2).
+                </p>
               </div>
               <button
                 type="button"
@@ -811,8 +813,8 @@ export function Menu() {
                         className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                    <div className="w-20">
-                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Scale</label>
+                    <div className="w-24">
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Recipe ×</label>
                       <input
                         type="number"
                         min="0.01"
@@ -826,6 +828,7 @@ export function Menu() {
                           )
                         }
                         placeholder="1"
+                        title="How much of the dish recipe to use (Half = 0.5, Full = 1, Family = 2)"
                         className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
