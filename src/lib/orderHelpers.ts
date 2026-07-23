@@ -88,6 +88,18 @@ export function resolveOrderItemParts(
         const menuName = String(match.name ?? '').trim();
         const menuCategory = String(match.category ?? '').trim();
         if (menuName) {
+          // Keep server display names like "Biryani (Half)" when variant_label is missing.
+          if (
+            !variantLabel &&
+            rawName &&
+            rawName !== menuName &&
+            /\(.+\)\s*$/.test(rawName)
+          ) {
+            return {
+              name: rawName,
+              category: menuCategory || category,
+            };
+          }
           return {
             name: withVariantLabel(menuName, variantLabel),
             category: menuCategory || category,
@@ -186,8 +198,19 @@ export function resolveOrderItemName(
   if (menuItems?.length && menuId) {
     const match = menuItems.find((m) => m.id === menuId);
     if (match) {
-      if (!rawName) rawName = String(match.name ?? '').trim();
+      const menuName = String(match.name ?? '').trim();
+      if (!rawName) rawName = menuName;
       if (!category) category = match.category;
+      // Prefer server name that already encodes a portion when label is missing.
+      if (
+        !item.variant_label &&
+        rawName &&
+        menuName &&
+        rawName !== menuName &&
+        /\(.+\)\s*$/.test(rawName)
+      ) {
+        return rawName;
+      }
     }
   }
 
