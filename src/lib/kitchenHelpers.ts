@@ -18,6 +18,8 @@ export interface KotTicketItem {
   notes?: string;
   status: KitchenItemStatus;
   menuId?: string;
+  variantId?: string;
+  variantLabel?: string;
   createdAt: number;
 }
 
@@ -147,16 +149,29 @@ export function buildKotTickets(
       const key = `${order.id}:${subId}`;
       const created = parseItemCreatedAt(item, order);
       const parts = resolveOrderItemParts(item, menuItems);
+      // Prefer an existing portion suffix on the line name when variant_label is missing.
+      const storedName = String(
+        (item as { name?: string }).name || item.menu_item?.name || ''
+      ).trim();
+      const name =
+        !item.variant_label &&
+        storedName &&
+        /\(.+\)\s*$/.test(storedName) &&
+        !/\(.+\)\s*$/.test(parts.name)
+          ? storedName
+          : parts.name;
 
       const kotItem: KotTicketItem = {
         id: item.id,
         orderId: order.id,
-        name: parts.name,
+        name,
         category: parts.category || undefined,
         quantity: item.quantity,
         notes: item.notes?.trim() || undefined,
         status: (item.status || 'pending') as KitchenItemStatus,
         menuId: item.menu_id,
+        variantId: item.variant_id,
+        variantLabel: item.variant_label,
         createdAt: created,
       };
 
@@ -205,13 +220,19 @@ export function buildPrepSummary(tickets: KotTicket[]): PrepSummaryLine[] {
   for (const ticket of tickets) {
     for (const item of ticket.items) {
       if (!isActiveKitchenItem(item.status)) continue;
-      const menuId = item.menuId || `${item.name}::${item.category || ''}`;
-      const existing = totals.get(menuId);
+      // Key by dish + portion so Half and Family never merge into one chip.
+      const key = [
+        item.menuId || '',
+        item.variantId || item.variantLabel || '',
+        item.name,
+        item.category || '',
+      ].join('::');
+      const existing = totals.get(key);
       if (existing) {
         existing.totalQty += item.quantity;
       } else {
-        totals.set(menuId, {
-          menuId,
+        totals.set(key, {
+          menuId: key,
           name: item.name,
           category: item.category,
           totalQty: item.quantity,
