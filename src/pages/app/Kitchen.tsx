@@ -189,9 +189,11 @@ function KOTCard({
               className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-gray-800">{item.name}</p>
+                <p className="whitespace-normal break-words text-sm font-semibold leading-snug text-gray-800">
+                  {item.name}
+                </p>
                 {item.category ? (
-                  <p className="mt-0.5 truncate text-xs text-gray-400">{item.category}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">{item.category}</p>
                 ) : null}
                 {item.notes ? (
                   <p className="mt-0.5 text-xs italic text-amber-600">{item.notes}</p>
@@ -419,11 +421,11 @@ export function Kitchen() {
                 key={entry.menuId}
                 className="flex min-w-24 shrink-0 flex-col rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm"
               >
-                <p className="line-clamp-2 text-xs font-semibold leading-tight text-gray-800">
+                <p className="whitespace-normal break-words text-xs font-semibold leading-snug text-gray-800">
                   {entry.name}
                 </p>
                 {entry.category ? (
-                  <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400">{entry.category}</p>
+                  <p className="mt-0.5 text-[11px] text-gray-400">{entry.category}</p>
                 ) : null}
                 <span className="mt-1 text-lg font-extrabold text-primary">×{entry.totalQty}</span>
               </div>
