@@ -189,7 +189,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       setDietFilter('all');
       setActiveCategory(categories[0] ?? '');
       setShowCheckout(false);
-      setVariantPickerItem(null);
       setServiceMode(counterModes === 'takeaway' ? 'takeaway' : 'eat_here');
       setCustomerName('');
       setCustomerPhone('');
