@@ -21,6 +21,7 @@ import { upsertInventoryIngredient, type InventoryIngredient } from '../../store
 import { addMenuItem, updateMenuItem, removeMenuItem } from '../../store/menuSlice';
 import type { Order, RestaurantTable, MenuItem } from '../../services/api';
 import type { AppDispatch } from '../../store';
+import { playAssistanceBell } from '../../lib/notificationSound';
 
 function isCounterOrder(data: Record<string, unknown>): boolean {
   return data.order_type === 'counter' || data.orderType === 'counter';
@@ -212,6 +213,13 @@ export function AppShell() {
           const assistanceRequested = Boolean(
             data.assistance_requested ?? data.assistanceRequested
           );
+          // Play bell when this is a NEW assistance request (not already pending)
+          if (assistanceRequested) {
+            const existing = store.getState().tables.tables.find((t) => t.id === tableId);
+            if (!existing?.assistance_requested_at) {
+              playAssistanceBell();
+            }
+          }
           dispatch(setTableOccupied({
             tableId,
             isOccupied,
