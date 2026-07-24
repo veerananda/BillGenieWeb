@@ -59,6 +59,7 @@ import { AssistanceQrModal } from '../../components/app/AssistanceQrModal';
 import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { Badge } from '../../components/app/Badge';
 import { EmptyState } from '../../components/app/EmptyState';
+import { MenuItemOrderCard } from '../../components/app/MenuItemOrderCard';
 
 // ── Helper types ──────────────────────────────────────────────────────────────
 
@@ -75,10 +76,6 @@ type PaymentMethod = 'cash' | 'upi' | 'split';
 
 function cartLineKey(menuItemId: string, variantId?: string) {
   return `${menuItemId}::${variantId ?? ''}`;
-}
-
-function availableVariants(item: MenuItem): MenuItemVariant[] {
-  return (item.variants ?? []).filter((v) => v.is_available !== false);
 }
 
 function cartDisplayName(item: MenuItem, variantLabel?: string) {
@@ -1464,7 +1461,6 @@ function TakeOrderPanel({
   const [customerName, setCustomerName] = useState('');
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
-  const [variantPickerItem, setVariantPickerItem] = useState<MenuItem | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -1524,15 +1520,6 @@ function TakeOrderPanel({
     });
   };
 
-  const handleItemClick = (item: MenuItem) => {
-    const variants = availableVariants(item);
-    if (variants.length > 1) {
-      setVariantPickerItem(item);
-      return;
-    }
-    addVariantToCart(item, variants[0]);
-  };
-
   const updateQty = (key: string, delta: number) => {
     setCart((prev) =>
       prev
@@ -1543,6 +1530,21 @@ function TakeOrderPanel({
         )
         .filter((c) => c.quantity > 0)
     );
+  };
+
+  const getPortionQty = (itemId: string, variantId?: string) => {
+    const key = cartLineKey(itemId, variantId);
+    return cart
+      .filter((c) => cartLineKey(c.menuItem.id, c.variantId) === key)
+      .reduce((sum, c) => sum + c.quantity, 0);
+  };
+
+  const changePortionQty = (item: MenuItem, variant: MenuItemVariant | undefined, delta: number) => {
+    if (delta > 0) {
+      addVariantToCart(item, variant);
+      return;
+    }
+    updateQty(cartLineKey(item.id, variant?.id), delta);
   };
 
   const updateNotes = (key: string, notes: string) => {
@@ -1698,46 +1700,15 @@ function TakeOrderPanel({
                 <p className="py-8 text-center text-sm text-gray-400">No items found</p>
               ) : (
                 <div className="space-y-1.5">
-                  {visibleItems.map((item) => {
-                    const inCartQty = cart
-                      .filter((c) => c.menuItem.id === item.id)
-                      .reduce((sum, c) => sum + c.quantity, 0);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleItemClick(item)}
-                        className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="shrink-0">
-                              {item.is_veg
-                                ? <Leaf size={14} color="#22c55e" />
-                                : <Beef size={14} color="#dc2626" />}
-                            </span>
-                            <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
-                          </div>
-                          {availableVariants(item).length > 1 && (
-                            <p className="mt-0.5 truncate pl-5 text-xs text-gray-400">
-                              {availableVariants(item).map((v) => v.label).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                        <div className="ml-3 flex shrink-0 items-center gap-3">
-                          <span className="text-sm font-semibold text-gray-800">₹{item.price}</span>
-                          {inCartQty > 0 ? (
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                              {inCartQty}
-                            </span>
-                          ) : (
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-primary text-primary">
-                              <Plus className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {visibleItems.map((item) => (
+                    <MenuItemOrderCard
+                      key={item.id}
+                      item={item}
+                      getPortionQty={getPortionQty}
+                      onAdd={addVariantToCart}
+                      onChangeQty={changePortionQty}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -1839,34 +1810,6 @@ function TakeOrderPanel({
           </div>
         </div>
       </div>
-
-      <Modal
-        open={!!variantPickerItem}
-        onClose={() => setVariantPickerItem(null)}
-        title={variantPickerItem ? `Choose portion — ${variantPickerItem.name}` : 'Choose portion'}
-        maxWidth="sm"
-        zIndexClass="z-[60]"
-      >
-        <div className="space-y-2">
-          {variantPickerItem &&
-            availableVariants(variantPickerItem).map((variant) => (
-              <button
-                key={variant.id}
-                type="button"
-                onClick={() => {
-                  addVariantToCart(variantPickerItem, variant);
-                  setVariantPickerItem(null);
-                }}
-                className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
-              >
-                <span className="text-sm font-medium text-gray-900">{variant.label}</span>
-                <span className="text-sm font-semibold text-gray-800">
-                  ₹{variant.price.toLocaleString('en-IN')}
-                </span>
-              </button>
-            ))}
-        </div>
-      </Modal>
     </>
   );
 }

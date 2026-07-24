@@ -1,4 +1,4 @@
-import type { Order } from '../services/api';
+import type { Order, MenuItem, MenuItemVariant } from '../services/api';
 
 /** Counter/takeaway order — not tied to a restaurant table. */
 export function isCounterOrder(order: Order | null | undefined): boolean {
@@ -78,6 +78,11 @@ export function formatVariantLabelSuffix(variantLabel?: string | null): string {
   const label = String(variantLabel ?? '').trim();
   if (!label || label.toLowerCase() === 'regular') return '';
   return ` (${label})`;
+}
+
+/** Available portion options for ordering (excludes unavailable variants). */
+export function availableMenuVariants(item: MenuItem | null | undefined): MenuItemVariant[] {
+  return (item?.variants ?? []).filter((v) => v.is_available !== false);
 }
 
 function withVariantLabel(name: string, variantLabel?: string | null): string {
