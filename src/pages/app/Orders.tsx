@@ -206,9 +206,13 @@ function TableCard({
 
   return (
     <div className="relative">
-      {needsAssistance && (
-        <span className="ring-pulse pointer-events-none absolute inset-0 rounded-2xl border-[3px] border-blue-500" />
-      )}
+      {needsAssistance && [0, 0.55, 1.1].map((delay) => (
+        <span
+          key={delay}
+          className="ring-pulse pointer-events-none absolute inset-0 rounded-2xl border-2 border-blue-300"
+          style={{ animationDelay: `${delay}s` }}
+        />
+      ))}
     <button
       onClick={onClick}
       className={`group flex w-full flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
