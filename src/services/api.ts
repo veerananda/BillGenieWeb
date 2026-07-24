@@ -5,11 +5,16 @@
  */
 
 import { showSubscriptionPaywall } from '../lib/subscriptionPaywall';
+import {
+  clearAccessToken,
+  clearLegacyRefreshToken,
+  getAccessToken,
+  getLegacyRefreshToken,
+  setAccessToken,
+} from '../lib/tokenStorage';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://billgenie-api.fly.dev';
 
-const TOKEN_KEY = 'auth_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
 const RESTAURANT_ID_KEY = 'restaurant_id';
 const USER_ID_KEY = 'user_id';
 const USER_NAME_KEY = 'user_name';
@@ -405,12 +410,12 @@ class APIClient {
     options: { skipRetry?: boolean; silent?: boolean } = {}
   ): Promise<any> {
     const { skipRetry = false, silent = false } = options;
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = getAccessToken();
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const config: RequestInit = { method, headers };
+    const config: RequestInit = { method, headers, credentials: 'include' };
     if (body !== undefined) config.body = JSON.stringify(body);
 
     const fullUrl = `${API_BASE_URL}${endpoint}`;
@@ -421,10 +426,10 @@ class APIClient {
       if (response.status === 401 && !skipRetry && !endpoint.startsWith('/auth/')) {
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
-          const newToken = localStorage.getItem(TOKEN_KEY);
+          const newToken = getAccessToken();
           const retryHeaders = { ...headers };
           if (newToken) retryHeaders.Authorization = `Bearer ${newToken}`;
-          const retry = await fetch(fullUrl, { ...config, headers: retryHeaders });
+          const retry = await fetch(fullUrl, { ...config, headers: retryHeaders, credentials: 'include' });
           if (retry.ok) {
             const parsed = await retry.json().catch(() => null);
             return parsed?.data ?? parsed;
@@ -536,7 +541,9 @@ class APIClient {
   }
 
   logout(): void {
-    [TOKEN_KEY, REFRESH_TOKEN_KEY, RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
+    clearAccessToken();
+    clearLegacyRefreshToken();
+    [RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
       localStorage.removeItem(k)
     );
   }
@@ -548,10 +555,12 @@ class APIClient {
 
   async refreshAccessToken(): Promise<boolean> {
     try {
-      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-      if (!refreshToken) return false;
-      const r = await this.makeRequest('/auth/refresh', 'POST', { refresh_token: refreshToken }, { skipRetry: true });
+      // Prefer httpOnly cookie; send legacy body token only during migration.
+      const legacy = getLegacyRefreshToken();
+      const body = legacy ? { refresh_token: legacy } : {};
+      const r = await this.makeRequest('/auth/refresh', 'POST', body, { skipRetry: true });
       this.storeAuthData(r?.data ?? r);
+      clearLegacyRefreshToken();
       return true;
     } catch {
       return false;
@@ -559,17 +568,17 @@ class APIClient {
   }
 
   isAuthenticated(): boolean {
-    return !!localStorage.getItem(TOKEN_KEY);
+    return !!getAccessToken();
   }
 
   getAuthToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+    return getAccessToken();
   }
 
   private storeAuthData(authData: AuthResponse): void {
     if (!authData?.access_token) return;
-    localStorage.setItem(TOKEN_KEY, authData.access_token);
-    if (authData.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, authData.refresh_token);
+    setAccessToken(authData.access_token);
+    clearLegacyRefreshToken();
     if (authData.restaurant_id) localStorage.setItem(RESTAURANT_ID_KEY, authData.restaurant_id);
     if (authData.user_id) localStorage.setItem(USER_ID_KEY, authData.user_id);
     if (authData.role) localStorage.setItem(USER_ROLE_KEY, authData.role);
