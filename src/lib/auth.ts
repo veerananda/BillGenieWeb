@@ -1,8 +1,12 @@
 import type { AuthResponse } from '../services/api';
+import {
+  clearAccessToken,
+  clearLegacyRefreshToken,
+  getAccessToken,
+  setAccessToken,
+} from './tokenStorage';
 
 const KEYS = {
-  token: 'auth_token',
-  refresh: 'refresh_token',
   role: 'user_role',
   name: 'user_name',
   restaurantId: 'restaurant_id',
@@ -13,7 +17,7 @@ const KEYS = {
 } as const;
 
 export function getToken(): string | null {
-  return localStorage.getItem(KEYS.token);
+  return getAccessToken();
 }
 
 export function getRole(): string | null {
@@ -26,8 +30,9 @@ export function getRestaurantId(): string | null {
 
 export function setAuth(response: AuthResponse): void {
   if (!response?.access_token) return;
-  localStorage.setItem(KEYS.token, response.access_token);
-  if (response.refresh_token) localStorage.setItem(KEYS.refresh, response.refresh_token);
+  setAccessToken(response.access_token);
+  // Refresh lives in httpOnly cookie from the API; drop any legacy JS-readable copy.
+  clearLegacyRefreshToken();
   if (response.role) localStorage.setItem(KEYS.role, response.role);
   if (response.name) localStorage.setItem(KEYS.name, response.name);
   if (response.restaurant_id) localStorage.setItem(KEYS.restaurantId, response.restaurant_id);
@@ -38,5 +43,7 @@ export function setAuth(response: AuthResponse): void {
 }
 
 export function clearAuth(): void {
+  clearAccessToken();
+  clearLegacyRefreshToken();
   Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
 }

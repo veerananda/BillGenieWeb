@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { AuthResponse } from '../services/api';
 import type { RootState } from './index';
+import { getAccessToken } from '../lib/tokenStorage';
 
 interface AuthState {
   token: string | null;
@@ -15,7 +16,7 @@ interface AuthState {
 }
 
 const initialState: AuthState = {
-  token: localStorage.getItem('auth_token'),
+  token: getAccessToken(),
   role: localStorage.getItem('user_role') as AuthState['role'],
   name: localStorage.getItem('user_name'),
   canCancelOrders: localStorage.getItem('can_cancel_orders') === 'true',

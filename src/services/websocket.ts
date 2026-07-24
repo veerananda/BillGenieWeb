@@ -1,8 +1,4 @@
-/**
- * WebSocket Service for Web
- * Ported from BillGenieFrontEnd/src/services/websocket.ts
- * Changes: AsyncStorage → localStorage, EXPO_PUBLIC_* → VITE_*
- */
+import { getAccessToken } from '../lib/tokenStorage';
 
 type WSEvent =
   | 'connected'
@@ -24,7 +20,6 @@ type EventCallback = (payload: WSPayload) => void;
 
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? 'wss://billgenie-api.fly.dev';
 const WS_DEBUG = import.meta.env.DEV;
-const TOKEN_KEY = 'auth_token';
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -58,7 +53,7 @@ class WebSocketService {
   }
 
   connect(): void {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = getAccessToken();
     if (!token) return;
     if (this.connecting || this.ws?.readyState === WebSocket.OPEN) return;
 
