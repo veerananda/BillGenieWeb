@@ -65,10 +65,11 @@ class WebSocketService {
     this.shouldReconnect = true;
     this.connecting = true;
 
-    const url = `${WS_BASE_URL}/ws?token=${token}`;
+    const url = `${WS_BASE_URL}/ws`;
 
     try {
-      this.ws = new WebSocket(url);
+      // Prefer Sec-WebSocket-Protocol over ?token= so JWTs are not logged in URLs.
+      this.ws = new WebSocket(url, ['billgenie', token]);
     } catch (e) {
       console.error('[WS] failed to create WebSocket:', e);
       this.connecting = false;

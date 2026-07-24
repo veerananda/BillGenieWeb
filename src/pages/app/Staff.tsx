@@ -250,9 +250,15 @@ function StaffFormModal({
 
     if (!isEdit) {
       if (!form.password.trim()) errs.password = 'Password is required';
-      else if (form.password.trim().length < 6) errs.password = 'Password must be at least 6 characters';
+      else if (form.password.trim().length < 8) errs.password = 'Password must be at least 8 characters';
+      else if (form.password.trim() === form.staff_key.trim()) {
+        errs.password = 'Password must not be the same as the login key';
+      }
     } else {
-      if (form.password && form.password.length < 6) errs.password = 'Password must be at least 6 characters';
+      if (form.password && form.password.length < 8) errs.password = 'Password must be at least 8 characters';
+      else if (form.password && form.password.trim() === (form.staff_key || '').trim()) {
+        errs.password = 'Password must not be the same as the login key';
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -422,7 +428,7 @@ function StaffFormModal({
                   setForm((f) => ({ ...f, password: e.target.value }));
                   setErrors((er) => ({ ...er, password: '' }));
                 }}
-                placeholder={isEdit ? 'Leave blank to keep current password' : 'Min 6 characters'}
+                placeholder={isEdit ? 'Leave blank to keep current password' : 'Min 8 characters'}
                 className={`w-full rounded-lg border px-3 py-2 pr-10 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
                   errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
                 }`}
