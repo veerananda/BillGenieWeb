@@ -40,23 +40,23 @@ type BluetoothRemoteGATTCharacteristicLike = {
   writeValueWithResponse?: (value: BufferSource) => Promise<void>;
 };
 
+type BluetoothRemoteGATTServiceLike = {
+  uuid?: string;
+  getCharacteristic: (c: string) => Promise<BluetoothRemoteGATTCharacteristicLike>;
+  getCharacteristics: () => Promise<BluetoothRemoteGATTCharacteristicLike[]>;
+};
+
+type BluetoothRemoteGATTServerLike = {
+  getPrimaryService: (service: string) => Promise<BluetoothRemoteGATTServiceLike>;
+  getPrimaryServices: () => Promise<BluetoothRemoteGATTServiceLike[]>;
+};
+
 type BluetoothDeviceLike = {
   id: string;
   name?: string;
   gatt?: {
     connected: boolean;
-    connect: () => Promise<{
-      getPrimaryService: (service: string) => Promise<{
-        getCharacteristic: (c: string) => Promise<BluetoothRemoteGATTCharacteristicLike>;
-        getCharacteristics: () => Promise<BluetoothRemoteGATTCharacteristicLike[]>;
-      }>;
-      getPrimaryServices: () => Promise<
-        Array<{
-          uuid: string;
-          getCharacteristics: () => Promise<BluetoothRemoteGATTCharacteristicLike[]>;
-        }>
-      >;
-    }>;
+    connect: () => Promise<BluetoothRemoteGATTServerLike>;
     disconnect: () => void;
   };
 };
@@ -180,7 +180,7 @@ async function writeCharacteristic(
 }
 
 async function findWriteCharacteristic(
-  server: Awaited<NonNullable<BluetoothDeviceLike['gatt']>['connect']>
+  server: BluetoothRemoteGATTServerLike
 ): Promise<BluetoothRemoteGATTCharacteristicLike> {
   for (const serviceUuid of BLE_PRINT_SERVICES) {
     try {
