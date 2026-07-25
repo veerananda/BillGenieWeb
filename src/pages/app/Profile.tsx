@@ -23,7 +23,7 @@ import {
   type SubscriptionSelection,
 } from '../../data/pricing';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ??? Types ????????????????????????????????????????????????????????????????????
 
 interface ProfileForm {
   name: string;
@@ -57,7 +57,7 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
   };
 }
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
+// ??? Date helpers ?????????????????????????????????????????????????????????????
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -112,7 +112,7 @@ function getPlanDisplayName(profile: RestaurantProfile | null): string {
   return `BillGenie ${capitalize(profile?.subscription_plan ?? 'Basic')}`;
 }
 
-// ─── Section Card ─────────────────────────────────────────────────────────────
+// ??? Section Card ?????????????????????????????????????????????????????????????
 
 function SectionCard({
   title,
@@ -134,7 +134,7 @@ function SectionCard({
   );
 }
 
-// ─── Field ────────────────────────────────────────────────────────────────────
+// ??? Field ????????????????????????????????????????????????????????????????????
 
 interface FieldProps {
   label: string;
@@ -159,7 +159,7 @@ function Field({ label, optional, children }: FieldProps) {
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
 
-// ─── Toggle ───────────────────────────────────────────────────────────────────
+// ??? Toggle ???????????????????????????????????????????????????????????????????
 
 interface ToggleProps {
   checked: boolean;
@@ -196,7 +196,7 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
   );
 }
 
-// ─── Counter Service Mode Radio ───────────────────────────────────────────────
+// ??? Counter Service Mode Radio ???????????????????????????????????????????????
 
 type ServiceMode = 'both' | 'eat_here' | 'takeaway';
 
@@ -238,7 +238,7 @@ function ServiceModeRadio({ value, onChange }: ServiceModeRadioProps) {
   );
 }
 
-// ─── Subscription Info Card ───────────────────────────────────────────────────
+// ??? Subscription Info Card ???????????????????????????????????????????????????
 
 function SubscriptionInfoCard({
   profile,
@@ -274,7 +274,7 @@ function SubscriptionInfoCard({
       : limits.counter_enabled
       ? 'Counter'
       : 'None'
-    : '—';
+    : '?';
 
   const planRows = limits
     ? [
@@ -351,7 +351,7 @@ function SubscriptionInfoCard({
               <p className="mt-0.5 text-lg font-bold text-gray-900">
                 {planName}
                 <span className="ml-1.5 text-sm font-normal text-gray-500">
-                  (₹{monthlyPrice}/month)
+                  (?{monthlyPrice}/month)
                 </span>
               </p>
             </div>
@@ -383,7 +383,7 @@ function SubscriptionInfoCard({
                   onClick={() => void handleCancelScheduled()}
                   className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-2 disabled:opacity-50"
                 >
-                  {cancelBusy ? 'Cancelling…' : 'Cancel scheduled downgrade'}
+                  {cancelBusy ? 'Cancelling?' : 'Cancel scheduled downgrade'}
                 </button>
               )}
             </div>
@@ -461,7 +461,7 @@ function SubscriptionInfoCard({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ??? Main Page ????????????????????????????????????????????????????????????????
 
 export function Profile() {
   const dispatch = useAppDispatch();
@@ -469,11 +469,11 @@ export function Profile() {
   const role = useAppSelector(selectAuthRole);
   const canManagePlan = role === 'admin' || role === 'manager';
 
-  // ── Refs ──────────────────────────────────────────────────────────────────
+  // ?? Refs ??????????????????????????????????????????????????????????????????
 
   const qrInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Profile form state ────────────────────────────────────────────────────
+  // ?? Profile form state ????????????????????????????????????????????????????
 
   const [form, setForm] = useState<ProfileForm>({
     name: '',
@@ -502,7 +502,7 @@ export function Profile() {
   const [agentKeyOnce, setAgentKeyOnce] = useState<string | null>(null);
   const [printMsg, setPrintMsg] = useState<string | null>(null);
 
-  // ── Tables state ──────────────────────────────────────────────────────────
+  // ?? Tables state ??????????????????????????????????????????????????????????
 
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [tablesLoading, setTablesLoading] = useState(false);
@@ -516,7 +516,7 @@ export function Profile() {
   const [tableModalSaving, setTableModalSaving] = useState(false);
   const [tableModalError, setTableModalError] = useState<string | null>(null);
 
-  // ── Derived values ────────────────────────────────────────────────────────
+  // ?? Derived values ????????????????????????????????????????????????????????
 
   const upiTouched = form.upi_id.length > 0;
   const upiValid = upiTouched && isValidUpiId(form.upi_id);
@@ -526,7 +526,7 @@ export function Profile() {
   const tableCount = tables.length;
   const atTableLimit = tableCount >= maxTables;
 
-  // ── Data loaders ──────────────────────────────────────────────────────────
+  // ?? Data loaders ??????????????????????????????????????????????????????????
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -567,17 +567,15 @@ export function Profile() {
     }
     loadProfile();
     loadTables();
-    if (canManagePlan) {
-      void (async () => {
-        try {
-          const r = await apiClient.getPrintSettings();
-          setPrintSettings(r.settings);
-          setHasAgentKey(r.has_agent_key);
-        } catch {
-          // optional feature — ignore if API not deployed yet
-        }
-      })();
-    }
+    void (async () => {
+      try {
+        const r = await apiClient.getPrintSettings();
+        setPrintSettings(r.settings);
+        setHasAgentKey(r.has_agent_key);
+      } catch {
+        // optional feature ? ignore if API not deployed yet
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function savePrintSettings(patch: Partial<PrintSettings>) {
@@ -611,7 +609,7 @@ export function Profile() {
     }
   }
 
-  // ── Form field helper ─────────────────────────────────────────────────────
+  // ?? Form field helper ?????????????????????????????????????????????????????
 
   function set<K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -619,7 +617,7 @@ export function Profile() {
     setSaveError(null);
   }
 
-  // ── Profile save ──────────────────────────────────────────────────────────
+  // ?? Profile save ??????????????????????????????????????????????????????????
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -653,7 +651,7 @@ export function Profile() {
     }
   }
 
-  // ── Table modal handlers ──────────────────────────────────────────────────
+  // ?? Table modal handlers ??????????????????????????????????????????????????
 
   function openAddTableModal() {
     setTableModalMode('add');
@@ -742,7 +740,7 @@ export function Profile() {
     }
   }
 
-  // ── Early returns ─────────────────────────────────────────────────────────
+  // ?? Early returns ?????????????????????????????????????????????????????????
 
   if (loading && !storedProfile) {
     return (
@@ -769,7 +767,7 @@ export function Profile() {
     );
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ?? Render ????????????????????????????????????????????????????????????????
 
   return (
     <div className="space-y-6">
@@ -785,7 +783,7 @@ export function Profile() {
         onRefresh={() => void loadProfile()}
       />
 
-      {/* Profile form — id lets the external save button bind to it */}
+      {/* Profile form ? id lets the external save button bind to it */}
       <form id="profile-form" onSubmit={handleSubmit} className="space-y-5">
         {/* Section 1: Restaurant Info */}
         <SectionCard title="Restaurant Info">
@@ -882,7 +880,7 @@ export function Profile() {
           {tables.length > 0 && (
             <div>
               <p className="mb-2 text-xs font-medium text-gray-500">
-                Existing Tables ({tables.length}) — tap to edit
+                Existing Tables ({tables.length}) ? tap to edit
               </p>
               <div className="flex flex-wrap gap-2">
                 {tables.map((table) => (
@@ -933,8 +931,8 @@ export function Profile() {
               label="Menu prices include GST"
               description={
                 form.prices_include_gst
-                  ? 'Example: ₹105 on menu → taxable ₹100 + GST ₹5'
-                  : 'Example: ₹100 on menu + GST ₹5 = ₹105 total'
+                  ? 'Example: ?105 on menu ? taxable ?100 + GST ?5'
+                  : 'Example: ?100 on menu + GST ?5 = ?105 total'
               }
             />
           )}
@@ -968,8 +966,8 @@ export function Profile() {
               label="Restaurant closed"
               description={
                 form.is_closed
-                  ? 'Closed — staff, managers, and kitchen cannot sign in. You can keep working and reopen anytime.'
-                  : 'Open — all team members can sign in'
+                  ? 'Closed ? staff, managers, and kitchen cannot sign in. You can keep working and reopen anytime.'
+                  : 'Open ? all team members can sign in'
               }
             />
             <div className="border-t border-gray-100 pt-4">
@@ -1025,84 +1023,31 @@ export function Profile() {
           ) : null}
         </SectionCard>
 
-        {canManagePlan && printSettings ? (
+        {printSettings ? (
           <SectionCard
-            title="Printers (cloud agent)"
-            subtitle="LAN/Wi‑Fi ESC/POS printers for the on-site print agent. Browsers cannot print directly to kitchen/bill thermals."
+            title="Printers"
+            subtitle="KOT and bill printers for the on-site print agent (LAN/Wi-Fi ESC/POS). Browsers cannot print directly to thermals ? keep the print agent running on a PC."
           >
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="KOT printer IP / host">
-                  <input
-                    className={inputClass}
-                    value={printSettings.kot_printer_host || ''}
-                    placeholder="192.168.1.50"
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s ? { ...s, kot_printer_host: e.target.value } : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="KOT port">
-                  <input
-                    className={inputClass}
-                    type="number"
-                    value={printSettings.kot_printer_port || 9100}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s
-                          ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
-                          : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Bill printer IP / host">
-                  <input
-                    className={inputClass}
-                    value={printSettings.bill_printer_host || ''}
-                    placeholder="192.168.1.51"
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s ? { ...s, bill_printer_host: e.target.value } : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Bill port">
-                  <input
-                    className={inputClass}
-                    type="number"
-                    value={printSettings.bill_printer_port || 9100}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s
-                          ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
-                          : s
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-800">KOT printing</p>
                   <p className="text-xs text-gray-400">
-                    Queue kitchen slips when dine-in orders are saved or items are added.
+                    One kitchen printer for dine-in saves and counter orders. Admin/manager enable this; anyone can set the printer IP when it is on.
                   </p>
                 </div>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={printSettings.kot_printing_enabled}
-                  onClick={() =>
+                  disabled={!canManagePlan || printSaving}
+                  onClick={() => {
+                    if (!canManagePlan) return;
                     void savePrintSettings({
                       kot_printing_enabled: !printSettings.kot_printing_enabled,
-                    })
-                  }
-                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    });
+                  }}
+                  className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
                     printSettings.kot_printing_enabled ? 'bg-primary' : 'bg-gray-200'
                   }`}
                 >
@@ -1118,19 +1063,21 @@ export function Profile() {
                 <div>
                   <p className="text-sm font-medium text-gray-800">Bill printing</p>
                   <p className="text-xs text-gray-400">
-                    Queue customer bills on payment and when Print bill is used.
+                    When on, Print bill queues a slip (dine-in or counter). Checkout does not auto-print.
                   </p>
                 </div>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={printSettings.bill_printing_enabled}
-                  onClick={() =>
+                  disabled={!canManagePlan || printSaving}
+                  onClick={() => {
+                    if (!canManagePlan) return;
                     void savePrintSettings({
                       bill_printing_enabled: !printSettings.bill_printing_enabled,
-                    })
-                  }
-                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    });
+                  }}
+                  className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
                     printSettings.bill_printing_enabled ? 'bg-primary' : 'bg-gray-200'
                   }`}
                 >
@@ -1140,6 +1087,73 @@ export function Profile() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {!canManagePlan &&
+              !printSettings.kot_printing_enabled &&
+              !printSettings.bill_printing_enabled ? (
+                <p className="text-sm text-gray-500">
+                  Printing is off. Ask an admin or manager to enable KOT and/or Bill printing, then you can set printer IPs here.
+                </p>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="KOT printer IP / host">
+                  <input
+                    className={inputClass}
+                    value={printSettings.kot_printer_host || ''}
+                    placeholder="192.168.1.50"
+                    disabled={!printSettings.kot_printing_enabled && !canManagePlan}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s ? { ...s, kot_printer_host: e.target.value } : s
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="KOT port">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    value={printSettings.kot_printer_port || 9100}
+                    disabled={!printSettings.kot_printing_enabled && !canManagePlan}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s
+                          ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
+                          : s
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="Bill printer IP / host">
+                  <input
+                    className={inputClass}
+                    value={printSettings.bill_printer_host || ''}
+                    placeholder="192.168.1.51"
+                    disabled={!printSettings.bill_printing_enabled && !canManagePlan}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s ? { ...s, bill_printer_host: e.target.value } : s
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="Bill port">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    value={printSettings.bill_printer_port || 9100}
+                    disabled={!printSettings.bill_printing_enabled && !canManagePlan}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s
+                          ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
+                          : s
+                      )
+                    }
+                  />
+                </Field>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1156,7 +1170,7 @@ export function Profile() {
                   }
                   className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {printSaving ? 'Saving…' : 'Save printer hosts'}
+                  {printSaving ? 'Saving?' : 'Save printer hosts'}
                 </button>
                 {role === 'admin' ? (
                   <button
@@ -1172,13 +1186,13 @@ export function Profile() {
 
               {hasAgentKey && printSettings.agent_api_key_hint ? (
                 <p className="text-xs text-gray-400">
-                  Agent key ends with …{printSettings.agent_api_key_hint}
+                  Agent key ends with ?{printSettings.agent_api_key_hint}
                 </p>
-              ) : (
+              ) : canManagePlan ? (
                 <p className="text-xs text-gray-400">
                   Generate an agent key, then run the print agent on a PC that can reach your printers.
                 </p>
-              )}
+              ) : null}
 
               {agentKeyOnce ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 break-all">
@@ -1191,7 +1205,6 @@ export function Profile() {
             </div>
           </SectionCard>
         ) : null}
-
         {/* Section 5: UPI ID */}
         <SectionCard
           title="UPI ID (VPA)"
@@ -1306,7 +1319,8 @@ export function Profile() {
         </div>
       )}
 
-      {/* Save button — form="profile-form" links it to the form above */}
+      {/* Save button ? form="profile-form" links it to the form above */}
+      {canManagePlan ? (
       <div className="flex justify-end">
         <button
           type="submit"
@@ -1318,8 +1332,9 @@ export function Profile() {
           Save Profile
         </button>
       </div>
+      ) : null}
 
-      {/* ── Table Modal (unified add / edit) ─────────────────────────────── */}
+      {/* ?? Table Modal (unified add / edit) ??????????????????????????????? */}
       <Modal
         open={tableModalMode !== null}
         onClose={closeTableModal}
