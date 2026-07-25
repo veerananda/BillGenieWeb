@@ -59,7 +59,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Inventory',          to: '/app/inventory-management',   icon: Package,     inventoryKind: 'inventory' },
   { label: 'Stock Refill',       to: '/app/stock-refill',           icon: PackagePlus, inventoryKind: 'stock' },
   { label: 'Team Management',   to: '/app/staff',     icon: Users,           roles: ['admin'] },
-  { label: 'Restaurant Profile', to: '/app/profile',   icon: Store,           roles: ['admin', 'manager'] },
+  { label: 'Restaurant Profile', to: '/app/profile',   icon: Store },
   { label: 'Customer Support',   to: '/app/support',   icon: HelpCircle },
 ];
 
