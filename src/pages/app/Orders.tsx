@@ -752,6 +752,9 @@ function OrderDetailPanel({
       })),
     );
     printBillHtml(html);
+    void apiClient.enqueueBillPrint(order.id).catch(() => {
+      // Agent queue is optional; browser print already ran.
+    });
   };
 
   const handlePayment = async () => {

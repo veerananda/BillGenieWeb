@@ -274,6 +274,17 @@ export interface UpdateProfileRequest {
   is_closed?: boolean;
 }
 
+export interface PrintSettings {
+  restaurant_id: string;
+  bill_printer_host: string;
+  bill_printer_port: number;
+  kot_printer_host: string;
+  kot_printer_port: number;
+  bill_printing_enabled: boolean;
+  kot_printing_enabled: boolean;
+  agent_api_key_hint?: string;
+}
+
 export interface CompletePaymentRequest {
   payment_method: 'cash' | 'upi' | 'split';
   amount_received?: number;
@@ -804,6 +815,33 @@ class APIClient {
 
   async updateRestaurantProfile(data: UpdateProfileRequest): Promise<{ message: string; restaurant: RestaurantProfile }> {
     return this.makeRequest('/restaurants/profile', 'PUT', data);
+  }
+
+  async getPrintSettings(): Promise<{
+    settings: PrintSettings;
+    has_agent_key: boolean;
+  }> {
+    return this.makeRequest('/restaurants/print-settings');
+  }
+
+  async updatePrintSettings(data: Partial<PrintSettings>): Promise<{
+    settings: PrintSettings;
+    has_agent_key: boolean;
+  }> {
+    return this.makeRequest('/restaurants/print-settings', 'PUT', data);
+  }
+
+  async rotatePrintAgentKey(): Promise<{
+    agent_api_key: string;
+    settings: PrintSettings;
+    has_agent_key: boolean;
+    message: string;
+  }> {
+    return this.makeRequest('/restaurants/print-settings/rotate-agent-key', 'POST', {});
+  }
+
+  async enqueueBillPrint(orderId: string): Promise<{ message: string }> {
+    return this.makeRequest(`/orders/${orderId}/print-bill`, 'POST', {});
   }
 
   /** Admin only — force every other device in the restaurant to sign out. */
