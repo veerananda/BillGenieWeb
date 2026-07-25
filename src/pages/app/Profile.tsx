@@ -8,7 +8,8 @@ import {
   Camera,
   CreditCard,
 } from 'lucide-react';
-import { apiClient, type RestaurantTable, type RestaurantProfile, type PrintSettings } from '../../services/api';
+import { Navigate } from 'react-router-dom';
+import { apiClient, type RestaurantTable, type RestaurantProfile } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectProfile, setProfile, updateProfile } from '../../store/profileSlice';
 import { selectAuthRole } from '../../store/authSlice';
@@ -496,12 +497,6 @@ export function Profile() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const [printSettings, setPrintSettings] = useState<PrintSettings | null>(null);
-  const [hasAgentKey, setHasAgentKey] = useState(false);
-  const [printSaving, setPrintSaving] = useState(false);
-  const [agentKeyOnce, setAgentKeyOnce] = useState<string | null>(null);
-  const [printMsg, setPrintMsg] = useState<string | null>(null);
-
   // ?? Tables state ??????????????????????????????????????????????????????????
 
   const [tables, setTables] = useState<RestaurantTable[]>([]);
@@ -567,47 +562,7 @@ export function Profile() {
     }
     loadProfile();
     loadTables();
-    void (async () => {
-      try {
-        const r = await apiClient.getPrintSettings();
-        setPrintSettings(r.settings);
-        setHasAgentKey(r.has_agent_key);
-      } catch {
-        // optional feature ? ignore if API not deployed yet
-      }
-    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function savePrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSaving(true);
-    setPrintMsg(null);
-    try {
-      const r = await apiClient.updatePrintSettings(patch);
-      setPrintSettings(r.settings);
-      setHasAgentKey(r.has_agent_key);
-      setPrintMsg('Printer settings saved.');
-    } catch (err: unknown) {
-      setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');
-    } finally {
-      setPrintSaving(false);
-    }
-  }
-
-  async function rotateAgentKey() {
-    setPrintSaving(true);
-    setPrintMsg(null);
-    try {
-      const r = await apiClient.rotatePrintAgentKey();
-      setPrintSettings(r.settings);
-      setHasAgentKey(true);
-      setAgentKeyOnce(r.agent_api_key);
-      setPrintMsg(r.message);
-    } catch (err: unknown) {
-      setPrintMsg(err instanceof Error ? err.message : 'Failed to generate agent key');
-    } finally {
-      setPrintSaving(false);
-    }
-  }
 
   // ?? Form field helper ?????????????????????????????????????????????????????
 
@@ -741,6 +696,10 @@ export function Profile() {
   }
 
   // ?? Early returns ?????????????????????????????????????????????????????????
+
+  if (role && role !== 'admin' && role !== 'manager') {
+    return <Navigate to="/app/printers" replace />;
+  }
 
   if (loading && !storedProfile) {
     return (
@@ -1023,188 +982,6 @@ export function Profile() {
           ) : null}
         </SectionCard>
 
-        {printSettings ? (
-          <SectionCard
-            title="Printers"
-            subtitle="KOT and bill printers for the on-site print agent (LAN/Wi-Fi ESC/POS). Browsers cannot print directly to thermals ? keep the print agent running on a PC."
-          >
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-800">KOT printing</p>
-                  <p className="text-xs text-gray-400">
-                    One kitchen printer for dine-in saves and counter orders. Admin/manager enable this; anyone can set the printer IP when it is on.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={printSettings.kot_printing_enabled}
-                  disabled={!canManagePlan || printSaving}
-                  onClick={() => {
-                    if (!canManagePlan) return;
-                    void savePrintSettings({
-                      kot_printing_enabled: !printSettings.kot_printing_enabled,
-                    });
-                  }}
-                  className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
-                    printSettings.kot_printing_enabled ? 'bg-primary' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                      printSettings.kot_printing_enabled ? 'translate-x-5' : ''
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-800">Bill printing</p>
-                  <p className="text-xs text-gray-400">
-                    When on, Print bill queues a slip (dine-in or counter). Checkout does not auto-print.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={printSettings.bill_printing_enabled}
-                  disabled={!canManagePlan || printSaving}
-                  onClick={() => {
-                    if (!canManagePlan) return;
-                    void savePrintSettings({
-                      bill_printing_enabled: !printSettings.bill_printing_enabled,
-                    });
-                  }}
-                  className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
-                    printSettings.bill_printing_enabled ? 'bg-primary' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                      printSettings.bill_printing_enabled ? 'translate-x-5' : ''
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {!canManagePlan &&
-              !printSettings.kot_printing_enabled &&
-              !printSettings.bill_printing_enabled ? (
-                <p className="text-sm text-gray-500">
-                  Printing is off. Ask an admin or manager to enable KOT and/or Bill printing, then you can set printer IPs here.
-                </p>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="KOT printer IP / host">
-                  <input
-                    className={inputClass}
-                    value={printSettings.kot_printer_host || ''}
-                    placeholder="192.168.1.50"
-                    disabled={!printSettings.kot_printing_enabled && !canManagePlan}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s ? { ...s, kot_printer_host: e.target.value } : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="KOT port">
-                  <input
-                    className={inputClass}
-                    type="number"
-                    value={printSettings.kot_printer_port || 9100}
-                    disabled={!printSettings.kot_printing_enabled && !canManagePlan}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s
-                          ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
-                          : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Bill printer IP / host">
-                  <input
-                    className={inputClass}
-                    value={printSettings.bill_printer_host || ''}
-                    placeholder="192.168.1.51"
-                    disabled={!printSettings.bill_printing_enabled && !canManagePlan}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s ? { ...s, bill_printer_host: e.target.value } : s
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Bill port">
-                  <input
-                    className={inputClass}
-                    type="number"
-                    value={printSettings.bill_printer_port || 9100}
-                    disabled={!printSettings.bill_printing_enabled && !canManagePlan}
-                    onChange={(e) =>
-                      setPrintSettings((s) =>
-                        s
-                          ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
-                          : s
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={printSaving}
-                  onClick={() =>
-                    void savePrintSettings({
-                      kot_printer_host: printSettings.kot_printer_host,
-                      kot_printer_port: printSettings.kot_printer_port,
-                      bill_printer_host: printSettings.bill_printer_host,
-                      bill_printer_port: printSettings.bill_printer_port,
-                    })
-                  }
-                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {printSaving ? 'Saving?' : 'Save printer hosts'}
-                </button>
-                {role === 'admin' ? (
-                  <button
-                    type="button"
-                    disabled={printSaving}
-                    onClick={() => void rotateAgentKey()}
-                    className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {hasAgentKey ? 'Rotate agent key' : 'Generate agent key'}
-                  </button>
-                ) : null}
-              </div>
-
-              {hasAgentKey && printSettings.agent_api_key_hint ? (
-                <p className="text-xs text-gray-400">
-                  Agent key ends with ?{printSettings.agent_api_key_hint}
-                </p>
-              ) : canManagePlan ? (
-                <p className="text-xs text-gray-400">
-                  Generate an agent key, then run the print agent on a PC that can reach your printers.
-                </p>
-              ) : null}
-
-              {agentKeyOnce ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 break-all">
-                  <p className="font-semibold">Copy now (shown once):</p>
-                  <code className="text-xs">{agentKeyOnce}</code>
-                </div>
-              ) : null}
-
-              {printMsg ? <p className="text-xs text-gray-500">{printMsg}</p> : null}
-            </div>
-          </SectionCard>
-        ) : null}
         {/* Section 5: UPI ID */}
         <SectionCard
           title="UPI ID (VPA)"

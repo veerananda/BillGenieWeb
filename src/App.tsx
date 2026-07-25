@@ -30,6 +30,7 @@ const History = lazy(() => import('./pages/app/History').then((m) => ({ default:
 const Expenses = lazy(() => import('./pages/app/Expenses').then((m) => ({ default: m.Expenses })));
 const Staff = lazy(() => import('./pages/app/Staff').then((m) => ({ default: m.Staff })));
 const Profile = lazy(() => import('./pages/app/Profile').then((m) => ({ default: m.Profile })));
+const Printers = lazy(() => import('./pages/app/Printers').then((m) => ({ default: m.Printers })));
 const IngredientManagement = lazy(() =>
   import('./pages/app/Inventory').then((m) => ({ default: m.IngredientManagement }))
 );
@@ -104,6 +105,7 @@ function App() {
         <Route path="expenses" element={<LazyAppPage><Expenses /></LazyAppPage>} />
         <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
         <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
+        <Route path="printers" element={<LazyAppPage><Printers /></LazyAppPage>} />
         <Route path="ingredient-management" element={<LazyAppPage><IngredientManagement /></LazyAppPage>} />
         <Route path="inventory-management" element={<LazyAppPage><InventoryManagement /></LazyAppPage>} />
         <Route path="stock-refill" element={<LazyAppPage><StockRefill /></LazyAppPage>} />
