@@ -250,7 +250,41 @@ export function buildCustomerBillFromOrder(
   },
   items: CustomerBillLineItem[],
 ): string {
-  return buildCustomerBillHtml({
+  return buildCustomerBillHtml(orderBillData(order, profile, totals, items));
+}
+
+export function buildCustomerBillTextFromOrder(
+  order: Order,
+  profile: RestaurantProfile | null | undefined,
+  totals: {
+    subtotal: number;
+    taxAmount: number;
+    discountValue: number;
+    finalAmount: number;
+    pricesIncludeGst: boolean;
+    compositeScheme?: boolean;
+    attendedByName?: string;
+  },
+  items: CustomerBillLineItem[],
+): string {
+  return buildCustomerBillText(orderBillData(order, profile, totals, items));
+}
+
+function orderBillData(
+  order: Order,
+  profile: RestaurantProfile | null | undefined,
+  totals: {
+    subtotal: number;
+    taxAmount: number;
+    discountValue: number;
+    finalAmount: number;
+    pricesIncludeGst: boolean;
+    compositeScheme?: boolean;
+    attendedByName?: string;
+  },
+  items: CustomerBillLineItem[],
+): CustomerBillData {
+  return {
     restaurantName: profile?.name,
     address: profile?.address,
     contactNumber: profile?.contact_number || profile?.phone,
@@ -267,7 +301,67 @@ export function buildCustomerBillFromOrder(
     pricesIncludeGst: totals.pricesIncludeGst,
     compositeScheme: totals.compositeScheme,
     isPaid: false,
+  };
+}
+
+/** Plain-text bill for ESC/POS thermal printers (browser BT/serial or print agent). */
+export function buildCustomerBillText(data: CustomerBillData): string {
+  const lines: string[] = [];
+  const divider = '--------------------------------';
+
+  if (data.restaurantName) {
+    lines.push(data.restaurantName);
+    if (data.address) lines.push(data.address);
+    if (data.contactNumber) lines.push(data.contactNumber);
+    lines.push('');
+  }
+
+  lines.push('BILL');
+  lines.push(divider);
+  if (data.orderNumber) lines.push(`Order: #${data.orderNumber}`);
+  if (data.tableNumber) lines.push(`Table: ${data.tableNumber}`);
+
+  const customer =
+    data.customerName &&
+    data.customerName !== 'Guest' &&
+    data.customerName !== 'Takeaway' &&
+    data.customerName !== 'Counter' &&
+    data.customerName !== 'Self Service'
+      ? data.customerName
+      : '';
+  if (customer) lines.push(`Customer: ${customer}`);
+  if (data.attendedByName) lines.push(`Attended by: ${data.attendedByName}`);
+
+  const dateLine = formatDateTime(data.createdAt);
+  if (dateLine) lines.push(`Date: ${dateLine}`);
+
+  lines.push(divider);
+  data.items.forEach((item) => {
+    lines.push(`${item.quantity} x ${item.name}`);
+    lines.push(`   ${formatCurrency(item.total)}`);
   });
+  lines.push(divider);
+
+  if (data.subtotal > 0 && !data.compositeScheme) {
+    lines.push(
+      `${subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme))}: ${formatCurrency(data.subtotal)}`
+    );
+  }
+  if (data.taxAmount > 0 && !data.compositeScheme) {
+    lines.push(`${taxLabel()}: ${formatCurrency(data.taxAmount)}`);
+  }
+  if (data.discountAmount > 0) {
+    lines.push(`Discount: -${formatCurrency(data.discountAmount)}`);
+  }
+  lines.push(`Total: ${formatCurrency(data.total)}`);
+
+  if (data.isPaid && data.paymentMethod) {
+    lines.push(`Payment: ${data.paymentMethod.toUpperCase()}`);
+  }
+
+  lines.push(divider);
+  lines.push('Thank you!');
+  return lines.join('\n');
 }
 
 export function printBillHtml(html: string): void {

@@ -20,7 +20,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { calculateRestaurantOrderTax, splitItemGross, subtotalLabel, taxLabel } from '../../lib/orderTax';
-import { buildCustomerBillFromOrder, printBillHtml } from '../../lib/customerBillFormat';
+import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder, printBillHtml } from '../../lib/customerBillFormat';
+import { printTextToBrowserPrinter } from '../../lib/browserThermalPrinter';
 import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
@@ -733,28 +734,36 @@ function OrderDetailPanel({
   };
 
   const handlePrintBill = () => {
-    const html = buildCustomerBillFromOrder(
-      order,
-      profile,
-      {
-        subtotal: displaySubtotal,
-        taxAmount: displayTax,
-        discountValue: discountValue || order.discount_amount || 0,
-        finalAmount: displayTotal,
-        pricesIncludeGst,
-        compositeScheme,
-        attendedByName: resolveAttendantName(attendedByUserId),
-      },
-      groupedItems.map((item) => ({
-        name: item.name,
-        quantity: item.quantity,
-        total: item.total,
-      })),
-    );
+    const billTotals = {
+      subtotal: displaySubtotal,
+      taxAmount: displayTax,
+      discountValue: discountValue || order.discount_amount || 0,
+      finalAmount: displayTotal,
+      pricesIncludeGst,
+      compositeScheme,
+      attendedByName: resolveAttendantName(attendedByUserId),
+    };
+    const billItems = groupedItems.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      total: item.total,
+    }));
+    const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems);
+    const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems);
     printBillHtml(html);
-    void apiClient.enqueueBillPrint(order.id).catch(() => {
-      // Agent queue is optional; browser print already ran.
-    });
+    void (async () => {
+      try {
+        const sentToBrowser = await printTextToBrowserPrinter('bill', text);
+        if (sentToBrowser) return;
+      } catch {
+        // Fall through to agent queue.
+      }
+      try {
+        await apiClient.enqueueBillPrint(order.id);
+      } catch {
+        // Agent queue is optional when browser/system print already ran.
+      }
+    })();
   };
 
   const handlePayment = async () => {

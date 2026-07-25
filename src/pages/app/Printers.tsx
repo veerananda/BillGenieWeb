@@ -4,6 +4,17 @@ import { useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
+import {
+  clearBrowserPrinter,
+  getBrowserPrinter,
+  isWebBluetoothSupported,
+  isWebSerialSupported,
+  pairBluetoothPrinter,
+  pairSerialPrinter,
+  printTestToBrowserPrinter,
+  type BrowserPrinterConfig,
+  type BrowserPrinterRole,
+} from '../../lib/browserThermalPrinter';
 
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-gray-50 disabled:text-gray-400';
@@ -23,10 +34,122 @@ function Field({
   );
 }
 
+function isSerialHost(host: string | undefined | null): boolean {
+  const h = (host || '').trim();
+  if (!h) return false;
+  return /^(serial:|bt:|bluetooth:|COM\d+$|\/dev\/|\\\\\.\\)/i.test(h);
+}
+
+function BrowserPrinterCard({
+  role,
+  label,
+  canEdit,
+}: {
+  role: BrowserPrinterRole;
+  label: string;
+  canEdit: boolean;
+}) {
+  const [config, setConfig] = useState<BrowserPrinterConfig | null>(() =>
+    getBrowserPrinter(role)
+  );
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const serialOk = isWebSerialSupported();
+  const bleOk = isWebBluetoothSupported();
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await action();
+      setConfig(getBrowserPrinter(role));
+    } catch (err: unknown) {
+      setMsg(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+      <div>
+        <p className="text-sm font-medium text-gray-800">{label}</p>
+        <p className="text-xs text-gray-500">
+          {config
+            ? `${config.name} · ${config.kind === 'serial' ? 'Serial / Classic Bluetooth' : 'BLE'}`
+            : 'Not paired in this browser'}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!canEdit || busy || !serialOk}
+          onClick={() =>
+            void run(async () => {
+              await pairSerialPrinter(role);
+              setMsg('Serial / Classic Bluetooth printer paired for this browser.');
+            })
+          }
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Pair serial / Classic BT
+        </button>
+        <button
+          type="button"
+          disabled={!canEdit || busy || !bleOk}
+          onClick={() =>
+            void run(async () => {
+              await pairBluetoothPrinter(role);
+              setMsg('BLE printer paired for this browser.');
+            })
+          }
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Pair BLE
+        </button>
+        <button
+          type="button"
+          disabled={!canEdit || busy || !config}
+          onClick={() =>
+            void run(async () => {
+              await printTestToBrowserPrinter(role);
+              setMsg('Test print sent.');
+            })
+          }
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Test
+        </button>
+        {config ? (
+          <button
+            type="button"
+            disabled={!canEdit || busy}
+            onClick={() => {
+              clearBrowserPrinter(role);
+              setConfig(null);
+              setMsg('Cleared browser printer.');
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+      {!serialOk && !bleOk ? (
+        <p className="text-xs text-amber-700">
+          This browser does not support Web Serial or Web Bluetooth. Use Chrome/Edge on
+          desktop, or configure a COM port for the print agent below.
+        </p>
+      ) : null}
+      {msg ? <p className="text-xs text-gray-500">{msg}</p> : null}
+    </div>
+  );
+}
+
 /**
- * Cloud print-agent hosts — all roles can view.
- * Admin/manager can toggle enables and always edit hosts.
- * Staff/chef can edit hosts only when the matching enable is on.
+ * Cloud print-agent hosts + this-browser Bluetooth/serial pairing.
+ * Admin/manager can toggle enables and always edit.
+ * Staff/chef can edit when the matching enable is on.
  */
 export function Printers() {
   const role = useAppSelector(selectAuthRole);
@@ -67,6 +190,9 @@ export function Printers() {
   const canEditBill =
     canManageEnables || Boolean(printSettings?.bill_printing_enabled);
   const canSaveHosts = canEditKot || canEditBill;
+
+  const kotIsSerial = isSerialHost(printSettings?.kot_printer_host);
+  const billIsSerial = isSerialHost(printSettings?.bill_printer_host);
 
   async function savePrintSettings(patch: Partial<PrintSettings>) {
     setPrintSaving(true);
@@ -112,7 +238,7 @@ export function Printers() {
       <div className="space-y-6">
         <PageHeader
           title="Printers"
-          subtitle="KOT and bill printers for the on-site print agent"
+          subtitle="KOT and bill printers for LAN, Wi-Fi, and Bluetooth"
         />
         <p className="text-sm text-red-600">{loadError || 'Printer settings unavailable.'}</p>
       </div>
@@ -123,17 +249,51 @@ export function Printers() {
     <div className="space-y-6">
       <PageHeader
         title="Printers"
-        subtitle="KOT and bill printers for the on-site print agent (LAN/Wi-Fi ESC/POS). Browsers cannot print directly to thermals — keep the print agent running on a PC."
+        subtitle="LAN/Wi-Fi via the print agent, Bluetooth via this browser (Chrome/Edge) or a COM port on the agent PC."
       />
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <h2 className="text-lg font-bold text-gray-900">This browser (Bluetooth)</h2>
+          <p className="mt-0.5 text-xs text-gray-400">
+            Pair a printer to print bills directly from Chrome/Edge. Classic Bluetooth: pair in
+            Windows first, then use “Pair serial / Classic BT”. BLE printers can use “Pair BLE”.
+            Stored only in this browser — not shared with other PCs.
+          </p>
+        </div>
+        <div className="space-y-3 px-6 py-5">
+          <BrowserPrinterCard
+            role="bill"
+            label="Bill printer (this browser)"
+            canEdit={canEditBill}
+          />
+          <BrowserPrinterCard
+            role="kot"
+            label="KOT printer (this browser)"
+            canEdit={canEditKot}
+          />
+          <p className="text-xs text-gray-400">
+            Note: automatic KOT from order save still uses the print agent below. Browser KOT
+            pairing is for test prints and future browser-triggered kitchen slips.
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <h2 className="text-lg font-bold text-gray-900">Print agent (LAN / Wi-Fi / COM)</h2>
+          <p className="mt-0.5 text-xs text-gray-400">
+            For restaurant-wide printing: run the print agent on a PC. Use a printer IP for
+            network printers, or a Windows COM port (e.g. COM5) after pairing a Classic Bluetooth
+            printer to that PC.
+          </p>
+        </div>
         <div className="space-y-4 px-6 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-medium text-gray-800">KOT printing</p>
               <p className="text-xs text-gray-400">
-                One kitchen printer for dine-in saves and counter orders. Admin/manager enable
-                this; staff can set the printer IP when it is on.
+                Kitchen slips for dine-in saves and counter orders.
               </p>
             </div>
             <button
@@ -163,8 +323,7 @@ export function Printers() {
             <div>
               <p className="text-sm font-medium text-gray-800">Bill printing</p>
               <p className="text-xs text-gray-400">
-                When on, Print bill queues a slip (dine-in or counter). Checkout does not
-                auto-print.
+                When on, Print bill queues a slip. Checkout does not auto-print.
               </p>
             </div>
             <button
@@ -194,17 +353,16 @@ export function Printers() {
           !printSettings.kot_printing_enabled &&
           !printSettings.bill_printing_enabled ? (
             <p className="text-sm text-gray-500">
-              Printing is off. Ask an admin or manager to enable KOT and/or Bill printing, then
-              you can set printer IPs here.
+              Printing is off. Ask an admin or manager to enable KOT and/or Bill printing.
             </p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="KOT printer IP / host">
+            <Field label="KOT printer (IP or COM)">
               <input
                 className={inputClass}
                 value={printSettings.kot_printer_host || ''}
-                placeholder="192.168.1.50"
+                placeholder="192.168.1.50 or COM5"
                 disabled={!canEditKot}
                 onChange={(e) =>
                   setPrintSettings((s) =>
@@ -213,12 +371,12 @@ export function Printers() {
                 }
               />
             </Field>
-            <Field label="KOT port">
+            <Field label={kotIsSerial ? 'KOT port (ignored for COM)' : 'KOT TCP port'}>
               <input
                 className={inputClass}
                 type="number"
                 value={printSettings.kot_printer_port || 9100}
-                disabled={!canEditKot}
+                disabled={!canEditKot || kotIsSerial}
                 onChange={(e) =>
                   setPrintSettings((s) =>
                     s
@@ -228,11 +386,11 @@ export function Printers() {
                 }
               />
             </Field>
-            <Field label="Bill printer IP / host">
+            <Field label="Bill printer (IP or COM)">
               <input
                 className={inputClass}
                 value={printSettings.bill_printer_host || ''}
-                placeholder="192.168.1.51"
+                placeholder="192.168.1.51 or COM6"
                 disabled={!canEditBill}
                 onChange={(e) =>
                   setPrintSettings((s) =>
@@ -241,12 +399,12 @@ export function Printers() {
                 }
               />
             </Field>
-            <Field label="Bill port">
+            <Field label={billIsSerial ? 'Bill port (ignored for COM)' : 'Bill TCP port'}>
               <input
                 className={inputClass}
                 type="number"
                 value={printSettings.bill_printer_port || 9100}
-                disabled={!canEditBill}
+                disabled={!canEditBill || billIsSerial}
                 onChange={(e) =>
                   setPrintSettings((s) =>
                     s
@@ -301,7 +459,7 @@ export function Printers() {
           ) : canManageEnables ? (
             <p className="text-xs text-gray-400">
               Generate an agent key, then run the print agent on a PC that can reach your
-              printers.
+              printers (or has the Bluetooth printer paired as a COM port).
             </p>
           ) : null}
 
