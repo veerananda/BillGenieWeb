@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 import { calculateRestaurantOrderTax, splitItemGross, subtotalLabel, taxLabel } from '../../lib/orderTax';
 import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder, printBillHtml } from '../../lib/customerBillFormat';
-import { printTextToBrowserPrinter } from '../../lib/browserThermalPrinter';
+import {
+  getBrowserPrinter,
+  printTextToBrowserPrinter,
+} from '../../lib/browserThermalPrinter';
 import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
@@ -750,7 +753,11 @@ function OrderDetailPanel({
     }));
     const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems);
     const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems);
-    printBillHtml(html);
+    const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
+    // Avoid system print dialog when a browser thermal printer is already paired.
+    if (!hasBrowserThermal) {
+      printBillHtml(html);
+    }
     void (async () => {
       try {
         const sentToBrowser = await printTextToBrowserPrinter('bill', text);
