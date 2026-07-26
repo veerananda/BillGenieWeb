@@ -23,6 +23,23 @@ const CAN_CANCEL_ORDERS_KEY = 'can_cancel_orders';
 const CAN_RESTOCK_INVENTORY_KEY = 'can_restock_inventory';
 const MENU_MANAGEMENT_ACCESS_KEY = 'menu_management_access';
 
+/** Why the client redirected to /login after clearing auth. */
+export type LogoutReason =
+  | 'device_conflict'
+  | 'session_revoked'
+  | 'refresh_failed'
+  | 'restaurant_closed';
+
+function isSessionInvalidatedMessage(message?: string): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('session invalidated') ||
+    lower.includes('logged in elsewhere') ||
+    lower.includes('another device')
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AuthCredentials {
@@ -416,6 +433,22 @@ export interface CreateSupportIssueRequest {
 // ─── API Client ───────────────────────────────────────────────────────────────
 
 class APIClient {
+  /** Serialize concurrent refresh calls (avoids token-rotation races). */
+  private refreshInFlight: Promise<boolean> | null = null;
+  private lastRefreshError: string | null = null;
+  private lastRefreshFailureKind: 'auth' | 'network' | null = null;
+
+  /** Clear auth and redirect to login with an honest reason code. */
+  forceClientLogout(reason: LogoutReason): void {
+    this.logout();
+    try {
+      sessionStorage.setItem('logout_reason', reason);
+    } catch {
+      // ignore storage failures
+    }
+    window.location.replace('/login');
+  }
+
   private async makeRequest(
     endpoint: string,
     method = 'GET',
@@ -437,6 +470,14 @@ class APIClient {
       const response = await fetch(fullUrl, config);
 
       if (response.status === 401 && !skipRetry && !endpoint.startsWith('/auth/')) {
+        const errBody = await response.clone().json().catch(() => ({}));
+        const originalMessage =
+          typeof errBody?.error === 'string'
+            ? errBody.error
+            : typeof errBody?.message === 'string'
+              ? errBody.message
+              : '';
+
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
           const newToken = getAccessToken();
@@ -447,10 +488,42 @@ class APIClient {
             const parsed = await retry.json().catch(() => null);
             return parsed?.data ?? parsed;
           }
+          if (retry.status === 401) {
+            const retryBody = await retry.json().catch(() => ({}));
+            const retryMessage =
+              typeof retryBody?.error === 'string'
+                ? retryBody.error
+                : typeof retryBody?.message === 'string'
+                  ? retryBody.message
+                  : '';
+            // Fresh token still rejected as invalidated ⇒ real other-device login.
+            if (isSessionInvalidatedMessage(retryMessage)) {
+              this.forceClientLogout('device_conflict');
+              throw new Error('Logged out.');
+            }
+          }
+          // Refresh worked but retry still failed — keep session; surface the error.
+          throw new Error(originalMessage || 'Request failed after token refresh. Please try again.');
         }
-        this.logout();
-        sessionStorage.setItem('logout_reason', 'device_conflict');
-        window.location.replace('/login');
+
+        // Refresh failed — only claim "another device" when the server said so.
+        if (
+          isSessionInvalidatedMessage(originalMessage) ||
+          isSessionInvalidatedMessage(this.lastRefreshError ?? undefined) ||
+          this.lastRefreshFailureKind === 'auth'
+        ) {
+          this.forceClientLogout('device_conflict');
+          throw new Error('Logged out.');
+        }
+
+        // Transient refresh failure (cookie/network) — do not clear a still-valid session.
+        if (this.lastRefreshFailureKind === 'network' && getAccessToken()) {
+          throw new Error(
+            this.lastRefreshError || 'Connection issue while renewing your session. Please try again.'
+          );
+        }
+
+        this.forceClientLogout('refresh_failed');
         throw new Error('Logged out.');
       }
 
@@ -480,9 +553,7 @@ class APIClient {
         if (code === 'restaurant_closed') {
           const role = localStorage.getItem('user_role');
           if (role && role !== 'admin') {
-            this.logout();
-            sessionStorage.setItem('logout_reason', 'restaurant_closed');
-            window.location.replace('/login');
+            this.forceClientLogout('restaurant_closed');
           }
         }
         throw new Error(message);
@@ -567,17 +638,56 @@ class APIClient {
   }
 
   async refreshAccessToken(): Promise<boolean> {
-    try {
-      // Prefer httpOnly cookie; send legacy body token only during migration.
-      const legacy = getLegacyRefreshToken();
-      const body = legacy ? { refresh_token: legacy } : {};
-      const r = await this.makeRequest('/auth/refresh', 'POST', body, { skipRetry: true });
-      this.storeAuthData(r?.data ?? r);
-      clearLegacyRefreshToken();
-      return true;
-    } catch {
-      return false;
+    if (this.refreshInFlight) {
+      return this.refreshInFlight;
     }
+    this.refreshInFlight = this.doRefreshAccessToken().finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async doRefreshAccessToken(): Promise<boolean> {
+    this.lastRefreshError = null;
+    this.lastRefreshFailureKind = null;
+
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // Prefer httpOnly cookie; send legacy body token only during migration.
+        const legacy = getLegacyRefreshToken();
+        const body = legacy ? { refresh_token: legacy } : {};
+        const r = await this.makeRequest('/auth/refresh', 'POST', body, { skipRetry: true });
+        this.storeAuthData(r?.data ?? r);
+        clearLegacyRefreshToken();
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Token refresh failed';
+        this.lastRefreshError = message;
+
+        if (isSessionInvalidatedMessage(message)) {
+          this.lastRefreshFailureKind = 'auth';
+          return false;
+        }
+
+        // Server rejected refresh (expired/invalid) — do not keep retrying forever.
+        const looksAuth =
+          /unauthorized|invalid|expired|forbidden|logged out/i.test(message) &&
+          !/failed to fetch|network|timeout|aborted|connection/i.test(message);
+        if (looksAuth) {
+          this.lastRefreshFailureKind = 'auth';
+          return false;
+        }
+
+        this.lastRefreshFailureKind = 'network';
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+          continue;
+        }
+        return false;
+      }
+    }
+    return false;
   }
 
   isAuthenticated(): boolean {

@@ -71,8 +71,8 @@ export function Login() {
             </div>
           )}
 
-          {/* Device-conflict banner */}
-          {logoutReason === 'device_conflict' && (
+          {/* Device-conflict / session-revoked banner */}
+          {(logoutReason === 'device_conflict' || logoutReason === 'session_revoked') && (
             <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
               <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />
               <div>
@@ -91,6 +91,18 @@ export function Login() {
                 <p className="text-sm font-semibold text-amber-800">Restaurant is closed</p>
                 <p className="mt-0.5 text-xs text-amber-700">
                   The owner closed the restaurant. Contact them to reopen before signing in.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {logoutReason === 'refresh_failed' && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Session expired</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  We could not renew your session. Please sign in again.
                 </p>
               </div>
             </div>

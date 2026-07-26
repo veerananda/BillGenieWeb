@@ -143,6 +143,17 @@ export function AppShell() {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     const unsubscribe = [
+      wsService.on('session_revoked', (data) => {
+        const revokedUserId = data.user_id ?? data.userId;
+        const myUserId = localStorage.getItem('user_id');
+        if (!revokedUserId || !myUserId || String(revokedUserId) !== myUserId) {
+          return;
+        }
+        // Real single-session kick (another login / logout-all / restaurant close path).
+        wsService.disconnect();
+        apiClient.forceClientLogout('session_revoked');
+      }),
+
       wsService.on('order_created', (data) => {
         const orderId = (data.order_id ?? data.id) as string | undefined;
         if (!orderId) return;
