@@ -282,6 +282,8 @@ export interface PrintSettings {
   kot_printer_port: number;
   bill_printing_enabled: boolean;
   kot_printing_enabled: boolean;
+  top_feed_lines?: number;
+  bottom_feed_lines?: number;
   agent_api_key_hint?: string;
 }
 

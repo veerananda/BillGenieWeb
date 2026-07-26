@@ -8,6 +8,7 @@
  */
 
 const STORAGE_KEY = 'billgenie_browser_thermal_printers_v1';
+const FEED_STORAGE_KEY = 'billgenie_print_feed_lines_v1';
 
 export type BrowserPrinterRole = 'bill' | 'kot';
 export type BrowserPrinterKind = 'serial' | 'bluetooth';
@@ -20,6 +21,39 @@ export type BrowserPrinterConfig = {
   /** Last connected label for UI. */
   connectedAt?: string;
 };
+
+export type PrintFeedLines = { top: number; bottom: number };
+
+function clampFeedLines(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const v = Math.floor(n);
+  if (v < 0) return 0;
+  if (v > 20) return 20;
+  return v;
+}
+
+/** Cache restaurant paper-feed settings for browser ESC/POS encoding. */
+export function cachePrintFeedLines(top: number, bottom: number): void {
+  const next: PrintFeedLines = {
+    top: clampFeedLines(top),
+    bottom: clampFeedLines(bottom),
+  };
+  localStorage.setItem(FEED_STORAGE_KEY, JSON.stringify(next));
+}
+
+export function getCachedPrintFeedLines(): PrintFeedLines {
+  try {
+    const raw = localStorage.getItem(FEED_STORAGE_KEY);
+    if (!raw) return { top: 0, bottom: 3 };
+    const parsed = JSON.parse(raw) as Partial<PrintFeedLines>;
+    return {
+      top: clampFeedLines(Number(parsed.top ?? 0)),
+      bottom: clampFeedLines(Number(parsed.bottom ?? 3)),
+    };
+  } catch {
+    return { top: 0, bottom: 3 };
+  }
+}
 
 type StoredPrinters = {
   bill?: BrowserPrinterConfig | null;
@@ -126,18 +160,27 @@ export function isWebBluetoothSupported(): boolean {
   return typeof navigator !== 'undefined' && Boolean(navigator.bluetooth);
 }
 
-export function encodeEscPosText(text: string): Uint8Array {
+export function encodeEscPosText(
+  text: string,
+  feeds?: { top?: number; bottom?: number }
+): Uint8Array {
+  const cached = getCachedPrintFeedLines();
+  const top = clampFeedLines(feeds?.top ?? cached.top);
+  const bottom = clampFeedLines(feeds?.bottom ?? cached.bottom);
+  const topFeed = top > 0 ? '\n'.repeat(top) : '';
+  const bottomFeed = bottom > 0 ? '\n'.repeat(bottom) : '';
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const withNewline = normalized.endsWith('\n') ? normalized : `${normalized}\n`;
   const encoder = new TextEncoder();
-  const body = encoder.encode(withNewline);
+  const body = encoder.encode(topFeed + withNewline + bottomFeed);
   const out = new Uint8Array(2 + body.length + 3);
   out[0] = 0x1b;
   out[1] = 0x40; // ESC @
   out.set(body, 2);
+  // GS V 1 = partial cut (safer on many 58mm models than full cut).
   out[out.length - 3] = 0x1d;
   out[out.length - 2] = 0x56;
-  out[out.length - 1] = 0x00; // cut
+  out[out.length - 1] = 0x01;
   return out;
 }
 

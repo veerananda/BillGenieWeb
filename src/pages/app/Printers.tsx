@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import {
   clearBrowserPrinter,
+  cachePrintFeedLines,
   getBrowserPrinter,
   isWebBluetoothSupported,
   isWebSerialSupported,
@@ -173,6 +174,10 @@ export function Printers() {
         if (cancelled) return;
         setPrintSettings(r.settings);
         setHasAgentKey(r.has_agent_key);
+        cachePrintFeedLines(
+          r.settings.top_feed_lines ?? 0,
+          r.settings.bottom_feed_lines ?? 3
+        );
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load printer settings.');
@@ -201,6 +206,10 @@ export function Printers() {
       const r = await apiClient.updatePrintSettings(patch);
       setPrintSettings(r.settings);
       setHasAgentKey(r.has_agent_key);
+      cachePrintFeedLines(
+        r.settings.top_feed_lines ?? 0,
+        r.settings.bottom_feed_lines ?? 3
+      );
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
       setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');
@@ -415,6 +424,76 @@ export function Printers() {
               />
             </Field>
           </div>
+
+          {canManageEnables ? (
+            <div className="grid gap-3 sm:grid-cols-2 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+              <Field label="Top feed lines (before content)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={printSettings.top_feed_lines ?? 0}
+                  disabled={printSaving}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s
+                        ? {
+                            ...s,
+                            top_feed_lines: Math.min(
+                              20,
+                              Math.max(0, Number(e.target.value) || 0)
+                            ),
+                          }
+                        : s
+                    )
+                  }
+                />
+              </Field>
+              <Field label="Bottom feed lines (before cut)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={printSettings.bottom_feed_lines ?? 3}
+                  disabled={printSaving}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s
+                        ? {
+                            ...s,
+                            bottom_feed_lines: Math.min(
+                              20,
+                              Math.max(0, Number(e.target.value) || 0)
+                            ),
+                          }
+                        : s
+                    )
+                  }
+                />
+              </Field>
+              <p className="sm:col-span-2 text-xs text-gray-400">
+                Increase bottom feed if the cutter slices through the last lines (typical
+                3–6). Applies to the print agent and this browser’s thermal prints.
+              </p>
+              <div className="sm:col-span-2">
+                <button
+                  type="button"
+                  disabled={printSaving}
+                  onClick={() =>
+                    void savePrintSettings({
+                      top_feed_lines: printSettings.top_feed_lines ?? 0,
+                      bottom_feed_lines: printSettings.bottom_feed_lines ?? 3,
+                    })
+                  }
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {printSaving ? 'Saving…' : 'Save feed settings'}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <button
