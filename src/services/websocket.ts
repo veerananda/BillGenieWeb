@@ -3,6 +3,7 @@ import { getAccessToken } from '../lib/tokenStorage';
 type WSEvent =
   | 'connected'
   | 'disconnected'
+  | 'session_revoked'
   | 'order_created'
   | 'order_updated'
   | 'order_completed'
