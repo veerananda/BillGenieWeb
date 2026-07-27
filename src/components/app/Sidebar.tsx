@@ -1,6 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
   UtensilsCrossed,
   ClipboardList,
   ShoppingBag,
@@ -48,7 +47,6 @@ interface NavItem {
 
 // Mirrors HomeScreen.tsx in the mobile app exactly.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',          to: '/app/dashboard', icon: LayoutDashboard, roles: ['admin'] },
   { label: 'Menu Management',    to: '/app/menu',      icon: UtensilsCrossed, roles: ['admin', 'manager'] },
   { label: 'Orders & Billing',   to: '/app/orders',    icon: ClipboardList,   roles: ['admin', 'manager', 'staff'], subscriptionKey: 'dine_in_enabled' },
   { label: 'Counter / Takeaway', to: '/app/counter',   icon: ShoppingBag,     roles: ['admin', 'manager', 'staff'], subscriptionKey: 'counter_enabled' },

@@ -50,14 +50,8 @@ export function isActiveKitchenItem(status?: string): boolean {
   return status !== 'ready' && status !== 'served' && status !== 'cancelled';
 }
 
-function isTodayKitchenOrder(order: { created_at?: string }): boolean {
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const ts = order.created_at ? new Date(order.created_at).getTime() : 0;
-  return ts >= midnight.getTime();
-}
-
-/** Merge dine-in and counter orders for the kitchen queue, respecting plan add-ons. */
+/** Merge dine-in and counter orders for the kitchen queue, respecting plan add-ons.
+ * Active kitchen items are retained across days until staff mark them done. */
 export function buildKitchenSourceOrders(
   activeOrders: Order[],
   counterOrders: Order[],
@@ -66,12 +60,12 @@ export function buildKitchenSourceOrders(
   const parts: Order[] = [];
 
   if (limits.kitchen_dine_in) {
-    parts.push(...activeOrders.filter((o) => isTodayKitchenOrder(o) && !isCounterOrder(o)));
+    parts.push(...activeOrders.filter((o) => !isCounterOrder(o)));
   }
 
   if (limits.kitchen_counter) {
     const liveCounter = counterOrders.filter(
-      (o) => o.status !== 'completed' && o.status !== 'cancelled' && isTodayKitchenOrder(o)
+      (o) => o.status !== 'completed' && o.status !== 'cancelled'
     );
     const existingIds = new Set(parts.map((o) => o.id));
     parts.push(...liveCounter.filter((o) => !existingIds.has(o.id)));

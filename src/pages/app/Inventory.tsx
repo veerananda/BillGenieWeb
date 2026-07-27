@@ -1028,5 +1028,5 @@ export function Inventory() {
   if (canRestockInventory(role, canRestockPerm)) {
     return <Navigate to="/app/stock-refill" replace />;
   }
-  return <Navigate to="/app/dashboard" replace />;
+  return <Navigate to="/app/orders" replace />;
 }

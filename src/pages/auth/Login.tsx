@@ -6,13 +6,18 @@ import { apiClient } from '../../services/api';
 import { wsService } from '../../services/websocket';
 import { setAuth } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectIsAuthenticated } from '../../store/authSlice';
+import { selectIsAuthenticated, selectAuthRole } from '../../store/authSlice';
+import { selectProfile } from '../../store/profileSlice';
+import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { getDefaultAppPath } from '../../lib/defaultAppPath';
 
 export function Login() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const authRole = useAppSelector(selectAuthRole);
+  const profile = useAppSelector(selectProfile);
 
   const registrationNotice =
     (location.state as { registrationMessage?: string } | null)?.registrationMessage ?? null;
@@ -33,7 +38,15 @@ export function Login() {
   }, []);
 
   if (isAuthenticated) {
-    return <Navigate to="/app/dashboard" replace />;
+    const limits = parseSubscriptionLimits(
+      (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
+    );
+    return (
+      <Navigate
+        to={getDefaultAppPath(authRole, { hasKitchenAccess: hasKitchenAccess(limits) })}
+        replace
+      />
+    );
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -45,7 +58,7 @@ export function Login() {
       const response = await apiClient.login({ identifier: identifier.trim(), password });
       dispatch(setAuth(response));
       wsService.connect();
-      navigate('/app/dashboard', { replace: true });
+      navigate(getDefaultAppPath(response.role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
