@@ -243,6 +243,38 @@ function buildReceiptHtml(text: string, order: Order): string {
 </html>`;
 }
 
+function buildCombinedReceiptHtml(
+  orders: Order[],
+  restaurant: RestaurantProfile | null | undefined,
+): string {
+  const blocks = orders
+    .map((order) => {
+      const receiptItems = groupReceiptItems(order.items ?? []);
+      const text = buildReceiptText(order, restaurant, receiptItems);
+      const escaped = escapeHtml(text).replace(/\n/g, '<br/>');
+      return `<div class="receipt">${escaped}</div>`;
+    })
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order history receipts</title>
+  <style>
+    body { margin: 0; padding: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; }
+    .receipt { max-width: 320px; margin: 0 auto 24px; font-size: 14px; line-height: 1.45; page-break-after: always; }
+    .receipt:last-child { page-break-after: auto; margin-bottom: 0; }
+    @media print { body { padding: 0; } .receipt { max-width: none; } }
+  </style>
+</head>
+<body>
+${blocks}
+</body>
+</html>`;
+}
+
 // ─── Receipt modal ────────────────────────────────────────────────────────────
 
 function ReceiptModal({
@@ -426,12 +458,9 @@ function ReceiptModal({
 // ─── Order row ────────────────────────────────────────────────────────────────
 
 function OrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
-  const itemCount = order.items?.length ?? 0;
   const payment = (order.payment_method || '').toUpperCase();
   const orderRef = isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`;
-  const meta = [orderRef, formatOrderTime(order), `${itemCount} item${itemCount !== 1 ? 's' : ''}`]
-    .filter(Boolean)
-    .join(' · ');
+  const meta = [orderRef, formatOrderTime(order)].filter(Boolean).join(' · ');
 
   return (
     <button
@@ -476,6 +505,7 @@ export function History() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [printingAll, setPrintingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -538,6 +568,54 @@ export function History() {
   const periodLabel = period === 'range'
     ? `${customFrom} to ${customTo}`
     : periods.find((p) => p.key === period)?.label ?? '';
+
+  const handlePrintAll = async () => {
+    if (!orders.length || printingAll) return;
+
+    const count = Math.max(total, orders.length);
+    const confirmed = window.confirm(
+      `Print ${count} receipt${count === 1 ? '' : 's'} for ${periodLabel} (${
+        orderType === 'counter' ? 'Counter' : 'Dine-in'
+      })?`
+    );
+    if (!confirmed) return;
+
+    setPrintingAll(true);
+    try {
+      const range =
+        period === 'range'
+          ? { from: customFrom, to: customTo }
+          : getDateRange(period);
+
+      let all = [...orders];
+      let knownTotal = total;
+      while (all.length < knownTotal) {
+        const result = await apiClient.listOrderHistory({
+          from: range.from,
+          to: range.to,
+          order_type: orderType,
+          limit: PAGE_SIZE,
+          offset: all.length,
+        });
+        const next = result.orders ?? [];
+        knownTotal = result.total ?? knownTotal;
+        if (!next.length) break;
+        all = [...all, ...next];
+      }
+
+      setTotal(knownTotal);
+      setOrders(all);
+
+      if (!all.length) return;
+
+      printBillHtml(buildCombinedReceiptHtml(all, profile));
+    } catch (err) {
+      console.error('Print all failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to print receipts');
+    } finally {
+      setPrintingAll(false);
+    }
+  };
 
   return (
     <div>
@@ -647,7 +725,7 @@ export function History() {
             <div className="mt-6 flex flex-col items-center gap-2">
               <button
                 onClick={() => fetchOrders(orders.length)}
-                disabled={loadingMore}
+                disabled={loadingMore || printingAll}
                 className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-6 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
               >
                 {loadingMore && <Spinner size="sm" className="text-gray-400" />}
@@ -658,6 +736,18 @@ export function History() {
               </p>
             </div>
           )}
+
+          <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
+            <button
+              type="button"
+              onClick={() => void handlePrintAll()}
+              disabled={printingAll}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
+            >
+              {printingAll ? <Spinner size="sm" className="text-white" /> : <Printer className="h-4 w-4" />}
+              {printingAll ? 'Preparing print…' : `Print all (${Math.max(total, orders.length)})`}
+            </button>
+          </div>
         </>
       )}
 
