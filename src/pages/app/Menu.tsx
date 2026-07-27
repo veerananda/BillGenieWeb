@@ -875,7 +875,7 @@ export function Menu() {
               <Toggle checked={itemReadilyAvailable} onChange={() => setItemReadilyAvailable((v) => !v)} />
             </div>
             <p className="text-xs text-gray-400">
-              No kitchen prep needed (e.g. water bottle, packaged snacks). These items skip the kitchen queue.
+              No kitchen prep needed (e.g. water bottle, packaged snacks). These items skip the kitchen queue and show as ready to serve for staff to confirm.
             </p>
           </div>
 
