@@ -1305,7 +1305,7 @@ function OrderDetailPanel({
                 ) : (
                   attendants.map((person) => (
                     <option key={person.id} value={person.id}>
-                      {person.name} ({person.role})
+                      {person.name}
                     </option>
                   ))
                 )}
