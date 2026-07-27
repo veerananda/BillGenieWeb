@@ -206,7 +206,7 @@ function TableCard({
         : 'bg-white/60 text-amber-900';
 
   return (
-    <div className="relative">
+    <div className="relative h-[168px]">
       {needsAssistance && [0, 0.55, 1.1].map((delay) => (
         <span
           key={delay}
@@ -216,7 +216,7 @@ function TableCard({
       ))}
     <button
       onClick={onClick}
-      className={`group flex w-full flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`group flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         fill === 'blue'
           ? 'border-[#3419e2] bg-[#3419e2]'
           : fill === 'yellow'
@@ -229,7 +229,7 @@ function TableCard({
       }`}
     >
       {/* Badge row */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex shrink-0 items-start justify-between gap-2">
         {fill ? (
           <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${chipClass}`}>
             <span className="flex items-center gap-1">
@@ -253,11 +253,12 @@ function TableCard({
       </div>
 
       {/* Table name */}
-      <span className={`text-base font-bold ${nameClass}`}>
+      <span className={`shrink-0 truncate text-base font-bold ${nameClass}`}>
         {table.name}{table.capacity ? ` (${table.capacity})` : ''}
       </span>
 
       {/* Content */}
+      <div className="min-h-0 flex-1 overflow-hidden">
       {needsAssistance ? (
         <div className="space-y-1">
           <p className="text-xs font-bold text-white">Customer requested assistance</p>
@@ -267,13 +268,13 @@ function TableCard({
         <div className="space-y-1">
           {kitchenCancelled ? (
             <>
-              <p className="text-xs font-bold text-rose-950">
+              <p className="line-clamp-2 text-xs font-bold text-rose-950">
                 {cancelledCount === 1 ? '1 item cancelled' : `${cancelledCount} items cancelled`}
               </p>
             </>
           ) : derived === 'ready' ? (
             <>
-              <p className="text-xs font-bold text-amber-950">
+              <p className="line-clamp-2 text-xs font-bold text-amber-950">
                 {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
               </p>
             </>
@@ -300,6 +301,7 @@ function TableCard({
       ) : (
         <p className="text-xs text-gray-400">Tap to take an order</p>
       )}
+      </div>
     </button>
     </div>
   );
