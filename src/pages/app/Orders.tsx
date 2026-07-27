@@ -502,6 +502,7 @@ function OrderDetailPanel({
   const [splitCashGiven, setSplitCashGiven] = useState('');
 
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [vacantConfirmOpen, setVacantConfirmOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -638,8 +639,15 @@ function OrderDetailPanel({
     }, {})
   );
   const canCheckout = groupedItems.length > 0;
+  const hasBillableItems = billableItems(order).length > 0;
   const hasServedItems = orderHasServedItems(order, kitchenEnabled);
-  const showCancelOrder = canCancel && !hasServedItems;
+  const showCancelOrder = canCancel && !hasServedItems && hasBillableItems;
+  const canMakeVacant =
+    table.is_occupied &&
+    !hasBillableItems &&
+    order.status !== 'completed' &&
+    order.status !== 'cancelled';
+
 
   // ── GST-aware totals ──────────────────────────────────────────────────────
   const discountInput = parseFloat(discountAmount) || 0;
@@ -849,6 +857,26 @@ function OrderDetailPanel({
       onOrderCancelled(order.id);
     } catch (err: unknown) {
       setCancelError(err instanceof Error ? err.message : 'Cancel failed');
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  const handleMakeVacant = async () => {
+    if (billableItems(order).length > 0) {
+      setCancelError('Remove or cancel order items before making this table vacant.');
+      return;
+    }
+    setCancelError(null);
+    setCancelLoading(true);
+    try {
+      await apiClient.cancelOrder(order.id);
+      const updatedTable = await apiClient.setTableVacant(table.id);
+      dispatch(upsertTable(updatedTable));
+      dispatch(removeActiveOrder(order.id));
+      onOrderCancelled(order.id);
+    } catch (err: unknown) {
+      setCancelError(err instanceof Error ? err.message : 'Could not make table vacant');
     } finally {
       setCancelLoading(false);
     }
@@ -1081,6 +1109,19 @@ function OrderDetailPanel({
               </button>
 
               <div className="flex gap-3">
+                {canMakeVacant && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelError(null);
+                      setVacantConfirmOpen(true);
+                    }}
+                    disabled={cancelLoading}
+                    className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Make vacant
+                  </button>
+                )}
                 {showCancelOrder && (
                   <button
                     onClick={() => setCancelConfirmOpen(true)}
@@ -1093,12 +1134,22 @@ function OrderDetailPanel({
                 <button
                   onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
                   disabled={!canCheckout}
-                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${showCancelOrder ? 'flex-1' : 'w-full'}`}
+                  className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    showCancelOrder || canMakeVacant ? 'flex-1' : 'w-full'
+                  }`}
                 >
                   <CreditCard className="h-4 w-4" />
                   Checkout
                 </button>
               </div>
+              {canMakeVacant && (
+                <p className="text-center text-xs text-gray-400">
+                  No items on this table — you can remove in-use and make it vacant.
+                </p>
+              )}
+              {cancelError && vacantConfirmOpen === false && cancelConfirmOpen === false && (
+                <p className="text-center text-xs text-red-600">{cancelError}</p>
+              )}
             </>
           )}
         </div>
@@ -1451,6 +1502,44 @@ function OrderDetailPanel({
           >
             {cancelLoading && <Spinner size="sm" className="text-white" />}
             Cancel order
+          </button>
+        </div>
+      </Modal>
+
+      {/* Make vacant confirm (empty in-use table only) */}
+      <Modal
+        open={vacantConfirmOpen}
+        onClose={() => !cancelLoading && setVacantConfirmOpen(false)}
+        title="Make table vacant?"
+        maxWidth="sm"
+      >
+        <p className="mb-2 text-sm text-gray-600">
+          Remove in-use from{' '}
+          <span className="font-semibold text-gray-900">{table.name}</span>? This only works when
+          there are no items on the order.
+        </p>
+        {cancelError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {cancelError}
+          </div>
+        )}
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={() => setVacantConfirmOpen(false)}
+            disabled={cancelLoading}
+            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Go back
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMakeVacant()}
+            disabled={cancelLoading}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {cancelLoading && <Spinner size="sm" className="text-white" />}
+            Make vacant
           </button>
         </div>
       </Modal>
