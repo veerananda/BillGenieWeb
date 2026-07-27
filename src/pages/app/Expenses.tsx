@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Plus, Trash2, Wallet } from 'lucide-react';
+import { Plus, Trash2, Wallet, FileText, Share2, Download } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
+import { Modal } from '../../components/app/Modal';
 import { formatInr } from '../../data/pricing';
 import {
   buildExpenseMonthOptions,
   currentExpenseMonthKey,
 } from '../../lib/expenseMonths';
+import {
+  buildExpenseMonthReportHtml,
+  buildExpenseMonthReportText,
+  type ExpenseMonthReport,
+} from '../../lib/expenseMonthReport';
+import { printBillHtml } from '../../lib/customerBillFormat';
 
 function formatMoney(amount: number): string {
   return formatInr(amount);
@@ -45,6 +52,11 @@ export function Expenses() {
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [reporting, setReporting] = useState(false);
+  const [report, setReport] = useState<ExpenseMonthReport | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   const load = useCallback(async (year: number, month: number) => {
     setLoading(true);
@@ -109,6 +121,58 @@ export function Expenses() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete expense.');
     }
+  }
+
+  async function handleReport() {
+    if (!selected) return;
+    setReporting(true);
+    setActionMsg(null);
+    try {
+      const data = await apiClient.getExpenseMonthReport(selected.year, selected.month);
+      setReport(data);
+      setReportOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate report.');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  async function handleShareReport() {
+    if (!report) return;
+    setActionMsg(null);
+    const text = buildExpenseMonthReportText(report);
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Monthly report — ${report.period_label}`,
+          text,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setActionMsg('Report copied to clipboard.');
+    } catch {
+      setActionMsg('Share cancelled.');
+    }
+  }
+
+  function handleDownloadReport() {
+    if (!report) return;
+    const html = buildExpenseMonthReportHtml(report);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `expense-report-${report.year}-${String(report.month).padStart(2, '0')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setActionMsg('Report downloaded.');
+  }
+
+  function handlePrintReport() {
+    if (!report) return;
+    printBillHtml(buildExpenseMonthReportHtml(report));
   }
 
   return (
@@ -261,6 +325,86 @@ export function Expenses() {
           </div>
         </>
       )}
+
+      {!loading ? (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => void handleReport()}
+            disabled={reporting || !selected}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 py-3.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
+          >
+            {reporting ? <Spinner size="sm" className="text-white" /> : <FileText className="h-4 w-4" />}
+            {reporting ? 'Preparing report…' : `Report · ${periodLabel || selected?.label || 'Month'}`}
+          </button>
+          <p className="text-center text-xs text-gray-500">
+            Share or download revenue, expenses, net profit, and total orders for the selected month.
+          </p>
+        </div>
+      ) : null}
+
+      <Modal
+        open={reportOpen && !!report}
+        onClose={() => setReportOpen(false)}
+        title={report ? `Report — ${report.period_label}` : 'Monthly report'}
+      >
+        {report && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-[10px] font-semibold uppercase text-gray-500">Revenue</p>
+                <p className="text-base font-bold">{formatMoney(report.total_revenue)}</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-[10px] font-semibold uppercase text-gray-500">Expenses</p>
+                <p className="text-base font-bold">{formatMoney(report.total_expenses)}</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-[10px] font-semibold uppercase text-gray-500">Net profit</p>
+                <p
+                  className={`text-base font-bold ${
+                    report.net >= 0 ? 'text-emerald-700' : 'text-red-600'
+                  }`}
+                >
+                  {formatMoney(report.net)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-[10px] font-semibold uppercase text-gray-500">Total orders</p>
+                <p className="text-base font-bold">{report.total_orders}</p>
+              </div>
+            </div>
+
+            {actionMsg && <p className="text-xs text-green-700">{actionMsg}</p>}
+
+            <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+              <button
+                type="button"
+                onClick={() => void handleShareReport()}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                <Share2 className="h-4 w-4" />
+                Share
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadReport}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintReport}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
+              >
+                Print / PDF
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

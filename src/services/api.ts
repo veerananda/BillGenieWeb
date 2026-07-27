@@ -1128,6 +1128,33 @@ class APIClient {
     await this.makeRequest(`/expenses/${id}`, 'DELETE');
   }
 
+  async getExpenseMonthReport(year: number, month: number): Promise<{
+    year: number;
+    month: number;
+    period_label: string;
+    restaurant_name: string;
+    total_revenue: number;
+    total_expenses: number;
+    net: number;
+    total_orders: number;
+  }> {
+    const params = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+    });
+    const r = await this.makeRequest(`/expenses/settle-report?${params}`);
+    return {
+      year: Number(r?.year ?? year),
+      month: Number(r?.month ?? month),
+      period_label: r?.period_label ?? '',
+      restaurant_name: r?.restaurant_name ?? '',
+      total_revenue: Number(r?.total_revenue ?? 0),
+      total_expenses: Number(r?.total_expenses ?? 0),
+      net: Number(r?.net ?? 0),
+      total_orders: Number(r?.total_orders ?? 0),
+    };
+  }
+
   async bulkUpdateIngredients(
     items: Array<{
       ingredient_id: string;
