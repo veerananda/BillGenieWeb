@@ -572,6 +572,7 @@ export function StockRefill() {
   const [deductUnit, setDeductUnit] = useState('');
   const [deducting, setDeducting] = useState(false);
   const [deductError, setDeductError] = useState<string | null>(null);
+  const [deductExpanded, setDeductExpanded] = useState(false);
   const [deductSuccess, setDeductSuccess] = useState<string | null>(null);
 
   const fetchMonthlySpend = useCallback(async () => {
@@ -797,72 +798,88 @@ export function StockRefill() {
 
       {canManageStock && (
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <MinusCircle className="h-4 w-4 text-red-500" />
-            <h3 className="text-sm font-bold text-gray-900">Deduct expired stock</h3>
-          </div>
-          <p className="mb-3 text-xs text-gray-500">
-            Remove spoiled or expired quantity from inventory. Admin and managers only.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-[1fr_100px_90px_auto]">
-            <select
-              value={deductIngredientId}
-              onChange={(e) => {
-                setDeductError(null);
-                setDeductIngredientId(e.target.value);
-              }}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
-            >
-              <option value="">Select ingredient…</option>
-              {[...ingredients]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((ing) => (
-                  <option key={ing.id} value={ing.id}>
-                    {ing.name} ({formatInventoryQty(ing.currentStock, ing.unit)})
-                  </option>
-                ))}
-            </select>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              inputMode="decimal"
-              value={deductQty}
-              onChange={(e) => {
-                setDeductError(null);
-                setDeductQty(e.target.value);
-              }}
-              placeholder="Qty"
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary"
+          <button
+            type="button"
+            onClick={() => setDeductExpanded((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <MinusCircle className="h-4 w-4 text-red-500" />
+              <h3 className="text-sm font-bold text-gray-900">Deduct expired stock</h3>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 text-gray-400 transition-transform ${deductExpanded ? 'rotate-180' : ''}`}
             />
-            {deductUnitChoices.length > 1 ? (
-              <select
-                value={deductUnit}
-                onChange={(e) => setDeductUnit(e.target.value)}
-                className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold outline-none focus:border-primary"
-              >
-                {deductUnitChoices.map((u) => (
-                  <option key={u} value={u}>
-                    {shortUnitLabel(u)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                {shortUnitLabel(deductUnit || selectedDeductIngredient?.unit || '')}
+          </button>
+          {!deductExpanded && (
+            <p className="mt-2 text-xs text-gray-500">Tap to remove spoiled or expired quantity.</p>
+          )}
+          {deductExpanded && (
+            <>
+              <p className="mb-3 mt-2 text-xs text-gray-500">
+                Remove spoiled or expired quantity from inventory. Admin and managers only.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-[1fr_100px_90px_auto]">
+                <select
+                  value={deductIngredientId}
+                  onChange={(e) => {
+                    setDeductError(null);
+                    setDeductIngredientId(e.target.value);
+                  }}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Select ingredient…</option>
+                  {[...ingredients]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((ing) => (
+                      <option key={ing.id} value={ing.id}>
+                        {ing.name} ({formatInventoryQty(ing.currentStock, ing.unit)})
+                      </option>
+                    ))}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={deductQty}
+                  onChange={(e) => {
+                    setDeductError(null);
+                    setDeductQty(e.target.value);
+                  }}
+                  placeholder="Qty"
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+                {deductUnitChoices.length > 1 ? (
+                  <select
+                    value={deductUnit}
+                    onChange={(e) => setDeductUnit(e.target.value)}
+                    className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold outline-none focus:border-primary"
+                  >
+                    {deductUnitChoices.map((u) => (
+                      <option key={u} value={u}>
+                        {shortUnitLabel(u)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                    {shortUnitLabel(deductUnit || selectedDeductIngredient?.unit || '')}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleDeduct()}
+                  disabled={deducting || !deductIngredientId}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deducting ? 'Deducting…' : 'Deduct'}
+                </button>
               </div>
-            )}
-            <button
-              type="button"
-              onClick={() => void handleDeduct()}
-              disabled={deducting || !deductIngredientId}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-            >
-              {deducting ? 'Deducting…' : 'Deduct'}
-            </button>
-          </div>
-          {deductError && <p className="mt-2 text-xs text-red-600">{deductError}</p>}
-          {deductSuccess && <p className="mt-2 text-xs text-green-700">{deductSuccess}</p>}
+              {deductError && <p className="mt-2 text-xs text-red-600">{deductError}</p>}
+              {deductSuccess && <p className="mt-2 text-xs text-green-700">{deductSuccess}</p>}
+            </>
+          )}
         </div>
       )}
 
@@ -877,8 +894,17 @@ export function StockRefill() {
         />
       </div>
       <p className="text-xs text-gray-500">
-        Enter add qty, optional purchase price (₹), and choose g/kg or ml/L when available. Prices are added to this month’s stock spend.
+        Enter add qty and optional purchase price (₹) for one or many items, then tap Stock Refill
+        below. Prices are added to this month’s stock spend.
       </p>
+
+      {pendingItems.length > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-semibold text-primary">
+          <Package className="h-4 w-4 shrink-0" />
+          {pendingItems.length} item{pendingItems.length === 1 ? '' : 's'} ready
+          {pendingSpend > 0 ? ` · ${formatInr(pendingSpend)}` : ''}. Use Stock Refill below.
+        </div>
+      )}
 
       {successMsg && (
         <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
@@ -976,20 +1002,39 @@ export function StockRefill() {
         </div>
       )}
 
-      <div className="sticky bottom-0 z-10 -mx-1 border-t border-gray-100 bg-white/95 px-1 py-3 backdrop-blur">
-        {pendingSpend > 0 && (
-          <p className="mb-2 text-center text-xs text-gray-500">
-            This refill cost: <span className="font-semibold text-gray-800">{formatInr(pendingSpend)}</span>
+      <div
+        className={`sticky bottom-0 z-20 -mx-1 border-t bg-white/95 px-1 py-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur ${
+          pendingItems.length > 0 ? 'border-primary' : 'border-gray-100'
+        }`}
+      >
+        {pendingItems.length > 0 ? (
+          pendingSpend > 0 ? (
+            <p className="mb-2 text-center text-xs text-gray-500">
+              This refill cost:{' '}
+              <span className="font-semibold text-gray-800">{formatInr(pendingSpend)}</span>
+            </p>
+          ) : (
+            <p className="mb-2 text-center text-xs text-gray-500">
+              {pendingItems.length} item{pendingItems.length === 1 ? '' : 's'} ready to refill
+            </p>
+          )
+        ) : (
+          <p className="mb-2 text-center text-xs text-gray-400">
+            Enter quantities above, then tap Stock Refill
           </p>
         )}
         <button
           type="button"
           onClick={() => void handleBulkRefill()}
           disabled={submitting || pendingItems.length === 0}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+          className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
+            pendingItems.length > 0
+              ? 'bg-primary text-white hover:bg-primary/90 disabled:opacity-60'
+              : 'border-2 border-primary bg-white text-primary disabled:opacity-80'
+          }`}
         >
           {submitting ? (
-            <Spinner size="sm" className="text-white" />
+            <Spinner size="sm" className={pendingItems.length > 0 ? 'text-white' : 'text-primary'} />
           ) : (
             <RefreshCw className="h-4 w-4" />
           )}
