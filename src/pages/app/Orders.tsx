@@ -463,19 +463,29 @@ function OrderDetailPanel({
   const gross = computedSubtotal;
 
   const [customerNameDraft, setCustomerNameDraft] = useState(order.customer_name ?? '');
-  const [savingName, setSavingName] = useState(false);
+  const [customerPhoneDraft, setCustomerPhoneDraft] = useState(order.customer_phone ?? '');
+  const [savingCustomer, setSavingCustomer] = useState(false);
 
-  const handleSaveCustomerName = async () => {
-    const trimmed = customerNameDraft.trim();
-    if (trimmed === (order.customer_name ?? '')) return;
-    setSavingName(true);
+  useEffect(() => {
+    setCustomerNameDraft(order.customer_name ?? '');
+    setCustomerPhoneDraft(order.customer_phone ?? '');
+  }, [order.id, order.customer_name, order.customer_phone]);
+
+  const handleSaveCustomer = async () => {
+    const name = customerNameDraft.trim();
+    const phone = customerPhoneDraft.trim();
+    if (name === (order.customer_name ?? '') && phone === (order.customer_phone ?? '')) return;
+    setSavingCustomer(true);
     try {
-      const updated = await apiClient.updateOrder(order.id, { customer_name: trimmed || undefined });
+      const updated = await apiClient.updateOrder(order.id, {
+        customer_name: name,
+        customer_phone: phone,
+      });
       dispatch(upsertActiveOrder(updated));
     } catch {
       // silent — non-critical
     } finally {
-      setSavingName(false);
+      setSavingCustomer(false);
     }
   };
 
@@ -926,18 +936,29 @@ function OrderDetailPanel({
           </button>
         </div>
 
-        {/* Customer name — editable */}
+        {/* Customer details — editable */}
         <div className="border-b border-gray-100 px-6 py-3">
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Customer</p>
-          <input
-            type="text"
-            value={customerNameDraft}
-            onChange={(e) => setCustomerNameDraft(e.target.value)}
-            onBlur={handleSaveCustomerName}
-            disabled={savingName}
-            placeholder="Add customer name (optional)"
-            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
-          />
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={customerNameDraft}
+              onChange={(e) => setCustomerNameDraft(e.target.value)}
+              onBlur={() => void handleSaveCustomer()}
+              disabled={savingCustomer}
+              placeholder="Customer name (optional)"
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+            <input
+              type="tel"
+              value={customerPhoneDraft}
+              onChange={(e) => setCustomerPhoneDraft(e.target.value)}
+              onBlur={() => void handleSaveCustomer()}
+              disabled={savingCustomer}
+              placeholder="Phone number (optional)"
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </div>
         </div>
 
         {/* Items */}
@@ -1269,22 +1290,25 @@ function OrderDetailPanel({
             </div>
 
             {/* Attended by */}
-            <div className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-sm">
-              <label htmlFor="attended-by" className="shrink-0 text-xs font-semibold text-gray-600">
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+              <label htmlFor="attended-by" className="block text-sm font-semibold text-gray-900">
                 Attended by
               </label>
+              <p className="mt-1 text-xs text-gray-500">
+                Select the staff member who served this table. This name appears on the bill.
+              </p>
               <select
                 id="attended-by"
                 value={attendedByUserId}
                 onChange={(e) => setAttendedByUserId(e.target.value)}
-                className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {attendants.length === 0 ? (
-                  <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Staff'}</option>
+                  <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Current staff'}</option>
                 ) : (
                   attendants.map((person) => (
                     <option key={person.id} value={person.id}>
-                      {person.name} ({person.role})
+                      {person.name} — {person.role}
                     </option>
                   ))
                 )}
@@ -1588,6 +1612,7 @@ function TakeOrderPanel({
   const [activeCategory, setActiveCategory] = useState<string>(() => menuCategories[0] ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
 
@@ -1709,6 +1734,7 @@ function TakeOrderPanel({
           table_number: table.name,
           order_type: 'dine_in',
           customer_name: customerName.trim() || undefined,
+          customer_phone: customerPhone.trim() || undefined,
           items: cart.map((c) => ({
             menu_item_id: c.menuItem.id,
             quantity: c.quantity,
@@ -1904,12 +1930,19 @@ function TakeOrderPanel({
               </div>
 
               {!existingOrder && (
-                <div className="border-t border-gray-100 px-3 py-3">
+                <div className="space-y-2 border-t border-gray-100 px-3 py-3">
                   <input
                     type="text"
                     placeholder="Customer name (optional)"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone number (optional)"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
                     className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
