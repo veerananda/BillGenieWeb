@@ -1290,25 +1290,22 @@ function OrderDetailPanel({
             </div>
 
             {/* Attended by */}
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-              <label htmlFor="attended-by" className="block text-sm font-semibold text-gray-900">
+            <div className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-sm">
+              <label htmlFor="attended-by" className="shrink-0 text-xs font-semibold text-gray-600">
                 Attended by
               </label>
-              <p className="mt-1 text-xs text-gray-500">
-                Select the staff member who served this table. This name appears on the bill.
-              </p>
               <select
                 id="attended-by"
                 value={attendedByUserId}
                 onChange={(e) => setAttendedByUserId(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {attendants.length === 0 ? (
-                  <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Current staff'}</option>
+                  <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Staff'}</option>
                 ) : (
                   attendants.map((person) => (
                     <option key={person.id} value={person.id}>
-                      {person.name} — {person.role}
+                      {person.name} ({person.role})
                     </option>
                   ))
                 )}
