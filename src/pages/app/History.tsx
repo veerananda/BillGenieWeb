@@ -434,24 +434,28 @@ function OrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
       onClick={onClick}
       className="flex w-full items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="truncate text-sm font-semibold text-gray-900">{getOrderTitle(order)}</span>
-          <span className="truncate text-xs text-gray-500">
-            {isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`}
-            {' · '}
-            {formatOrderTime(order)}
-            {' · '}
-            {itemCount} item{itemCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-      </div>
-      {payment ? (
-        <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
-          {payment}
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="max-w-[42%] shrink-0 truncate text-sm font-semibold text-gray-900">
+          {getOrderTitle(order)}
         </span>
-      ) : null}
-      <span className="shrink-0 text-sm font-bold text-primary">{fmt(order.total)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-gray-500">
+          {isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`}
+          {' · '}
+          {formatOrderTime(order)}
+          {' · '}
+          {itemCount} item{itemCount !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {payment ? (
+          <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
+            {payment}
+          </span>
+        ) : null}
+        <span className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums text-primary">
+          {fmt(order.total)}
+        </span>
+      </div>
     </button>
   );
 }
