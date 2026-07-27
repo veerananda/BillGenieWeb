@@ -23,6 +23,8 @@ import type { Order, RestaurantTable, MenuItem } from '../../services/api';
 import type { AppDispatch } from '../../store';
 import { playAssistanceBell } from '../../lib/notificationSound';
 
+import { useIdleLogout } from '../../hooks/useIdleLogout';
+
 function isCounterOrder(data: Record<string, unknown>): boolean {
   return data.order_type === 'counter' || data.orderType === 'counter';
 }
@@ -91,6 +93,7 @@ function upsertOrderFromWsEvent(data: Record<string, unknown>, dispatch: AppDisp
 export function AppShell() {
   const dispatch = useAppDispatch();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useIdleLogout(true);
 
   function runCatchUpSync() {
     if (!apiClient.isAuthenticated()) return;
