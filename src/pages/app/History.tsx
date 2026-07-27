@@ -423,36 +423,33 @@ function ReceiptModal({
   );
 }
 
-// ─── Order card ───────────────────────────────────────────────────────────────
+// ─── Order row ────────────────────────────────────────────────────────────────
 
-function OrderCard({ order, onClick }: { order: Order; onClick: () => void }) {
+function OrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
   const itemCount = order.items?.length ?? 0;
   const payment = (order.payment_method || '').toUpperCase();
+  const orderRef = isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`;
+  const meta = [orderRef, formatOrderTime(order), `${itemCount} item${itemCount !== 1 ? 's' : ''}`]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-white px-3 py-3 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-base font-bold text-gray-900">{getOrderTitle(order)}</span>
-        <span className="shrink-0 text-base font-bold text-primary">{fmt(order.total)}</span>
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-sm text-gray-500">
-        <span>{isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`}</span>
-        <span className="text-gray-300">·</span>
-        <span>{formatOrderTime(order)}</span>
-      </div>
-      <div className="mt-2.5 flex items-center justify-between">
-        <span className="text-sm text-gray-400">
-          {itemCount} item{itemCount !== 1 ? 's' : ''}
+      <span className="min-w-0 flex-1 truncate text-sm text-gray-900">
+        <span className="font-semibold">{getOrderTitle(order)}</span>
+        {meta ? <span className="font-medium text-gray-500">{` · ${meta}`}</span> : null}
+      </span>
+      {payment ? (
+        <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
+          {payment}
         </span>
-        {payment && (
-          <span className="rounded-md bg-green-50 px-2 py-0.5 text-xs font-bold text-green-700">
-            {payment}
-          </span>
-        )}
-      </div>
+      ) : null}
+      <span className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums text-primary">
+        {fmt(order.total)}
+      </span>
     </button>
   );
 }
@@ -639,9 +636,9 @@ export function History() {
         />
       ) : (
         <>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {orders.map((order) => (
-              <OrderCard key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
+              <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
             ))}
           </div>
 
