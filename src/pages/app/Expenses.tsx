@@ -34,8 +34,11 @@ export function Expenses() {
     [profile]
   );
 
-  const [selectedKey, setSelectedKey] = useState(currentExpenseMonthKey);
-  const selected = monthOptions.find((o) => o.key === selectedKey) ?? monthOptions[0];
+  const [selectedKey, setSelectedKey] = useState(() => currentExpenseMonthKey());
+  const selected =
+    monthOptions.find((o) => o.key === selectedKey) ??
+    monthOptions.find((o) => o.key === currentExpenseMonthKey()) ??
+    monthOptions[0];
   const isCurrentMonth = selected?.key === currentExpenseMonthKey();
 
   const [loading, setLoading] = useState(true);
@@ -74,6 +77,13 @@ export function Expenses() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!monthOptions.length) return;
+    if (!monthOptions.some((o) => o.key === selectedKey)) {
+      setSelectedKey(currentExpenseMonthKey());
+    }
+  }, [monthOptions, selectedKey]);
 
   useEffect(() => {
     if (!allowed || !selected) return;
@@ -194,10 +204,15 @@ export function Expenses() {
         >
           {monthOptions.map((option) => (
             <option key={option.key} value={option.key}>
-              {option.label}
+              {option.key === currentExpenseMonthKey()
+                ? `${option.label} · until today`
+                : option.label}
             </option>
           ))}
         </select>
+        {isCurrentMonth ? (
+          <span className="text-sm text-gray-500">Showing data through today</span>
+        ) : null}
       </div>
 
       {error && (
