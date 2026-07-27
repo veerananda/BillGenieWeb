@@ -115,6 +115,14 @@ export function isReadilyAvailableMenuItem(
   return Boolean(match?.readily_available);
 }
 
+/** Readily-available items skip kitchen and start ready for staff serve confirmation. */
+export function initialKitchenItemStatus(
+  menuId: string | undefined,
+  menuItems: Array<{ id: string; readily_available?: boolean }> = []
+): KitchenItemStatus {
+  return isReadilyAvailableMenuItem(menuId, menuItems) ? 'ready' : 'pending';
+}
+
 function resolveTableLabel(order: Order, tables: Pick<RestaurantTable, 'id' | 'name'>[]): string {
   if (isCounterOrder(order)) {
     const ticket = getCounterTicketNumber(order);
