@@ -444,7 +444,11 @@ function DeleteModal({
       onDeleted(ingredient.id);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete. If this item is used in a recipe, remove it from Ingredient Management first.'
+      );
       setDeleting(false);
     }
   }
@@ -452,11 +456,14 @@ function DeleteModal({
   return (
     <Modal open={!!ingredient} onClose={onClose} title="Delete Ingredient" maxWidth="sm">
       <p className="text-sm text-gray-600">
-        Are you sure you want to delete{' '}
-        <span className="font-semibold text-gray-900">{ingredient?.name}</span>? This cannot be undone.
+        Delete <span className="font-semibold text-gray-900">{ingredient?.name}</span> from inventory?
+        This is only allowed if it is not used in any dish recipe. Remove it from Ingredient
+        Management first if it appears in a recipe.
       </p>
       {error && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {error}
+        </p>
       )}
       <div className="mt-5 flex gap-3">
         <button
