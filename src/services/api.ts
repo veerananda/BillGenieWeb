@@ -188,32 +188,6 @@ export interface Ingredient {
   updated_at: string;
 }
 
-export interface ExpenseSettleReport {
-  year: number;
-  month: number;
-  period_label: string;
-  period_start: string;
-  period_end: string;
-  restaurant_name: string;
-  currency: string;
-  total_expenses: number;
-  manual_expenses: number;
-  stock_expenses: number;
-  total_orders: number;
-  total_revenue: number;
-  average_order_value: number;
-  net: number;
-  top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
-  expense_lines: Array<{
-    id: string;
-    name: string;
-    amount: number;
-    source: string;
-    created_at: string;
-  }>;
-  generated_at: string;
-}
-
 export interface SubscriptionRenewalQuote {
   billing_cycle: 'monthly' | 'annual';
   subtotal_inr: number;
@@ -1152,14 +1126,6 @@ class APIClient {
 
   async deleteExpense(id: string): Promise<void> {
     await this.makeRequest(`/expenses/${id}`, 'DELETE');
-  }
-
-  async getExpenseSettleReport(year?: number, month?: number): Promise<ExpenseSettleReport> {
-    const params = new URLSearchParams();
-    if (year != null) params.set('year', String(year));
-    if (month != null) params.set('month', String(month));
-    const q = params.toString();
-    return this.makeRequest(`/expenses/settle-report${q ? `?${q}` : ''}`);
   }
 
   async bulkUpdateIngredients(
