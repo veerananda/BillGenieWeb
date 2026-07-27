@@ -5,19 +5,29 @@ export type ExpenseMonthOption = {
   label: string;
 };
 
-/** Calendar months from start (inclusive) through the current month, newest first. */
+/**
+ * Calendar months from restaurant creation month (inclusive) through the current month,
+ * newest first. Months older than creation are never included.
+ * If creation date is missing/invalid, only the current month is returned.
+ */
 export function buildExpenseMonthOptions(start?: Date | string | null): ExpenseMonthOption[] {
   const now = new Date();
   const endY = now.getFullYear();
   const endM = now.getMonth();
 
-  let startDate = start ? new Date(start) : new Date(endY, endM - 35, 1);
+  let startDate = start ? new Date(start) : now;
   if (Number.isNaN(startDate.getTime())) {
-    startDate = new Date(endY, endM - 35, 1);
+    startDate = now;
   }
 
+  // Never start before creation month; also never start after current month.
   let y = startDate.getFullYear();
   let m = startDate.getMonth();
+  if (y > endY || (y === endY && m > endM)) {
+    y = endY;
+    m = endM;
+  }
+
   const options: ExpenseMonthOption[] = [];
 
   while (y < endY || (y === endY && m <= endM)) {

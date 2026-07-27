@@ -30,8 +30,8 @@ export function Expenses() {
   const allowed = role === 'admin' || role === 'manager';
 
   const monthOptions = useMemo(
-    () => buildExpenseMonthOptions((profile as { created_at?: string } | null)?.created_at),
-    [profile]
+    () => buildExpenseMonthOptions(profile?.created_at),
+    [profile?.created_at]
   );
 
   const [selectedKey, setSelectedKey] = useState(() => currentExpenseMonthKey());
