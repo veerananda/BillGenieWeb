@@ -96,6 +96,18 @@ export function Login() {
             </div>
           )}
 
+          {logoutReason === 'idle_timeout' && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Signed out due to inactivity</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  You were inactive for more than an hour, so we signed you out for security. Please log in again.
+                </p>
+              </div>
+            </div>
+          )}
+
           {logoutReason === 'refresh_failed' && (
             <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
               <MonitorSmartphone size={18} className="mt-0.5 shrink-0 text-amber-600" />

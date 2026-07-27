@@ -830,7 +830,17 @@ class APIClient {
     }
   }
 
-  async getSalesSummary(period: 'today' | 'month'): Promise<{
+  async getSalesSummary(
+    period:
+      | 'today'
+      | 'month'
+      | 'this_month'
+      | 'last_month'
+      | 'current_quarter'
+      | 'last_quarter'
+      | 'range' = 'today',
+    options?: { order_type?: 'all' | 'dine_in' | 'counter'; from?: string; to?: string }
+  ): Promise<{
     total_revenue: number;
     total_orders: number;
     average_order_value: number;
@@ -840,10 +850,26 @@ class APIClient {
     counter_orders?: number;
     counter_revenue?: number;
   }> {
-    return this.makeRequest(`/orders/sales-summary?period=${period}`);
+    const p = new URLSearchParams({ period });
+    if (options?.order_type) p.set('order_type', options.order_type);
+    if (options?.from) p.set('from', options.from);
+    if (options?.to) p.set('to', options.to);
+    return this.makeRequest(`/orders/sales-summary?${p}`);
   }
 
-  async getSalesAnalytics(period: 'week' | 'last_week' | 'month'): Promise<{
+  async getSalesAnalytics(
+    period:
+      | 'week'
+      | 'last_week'
+      | 'month'
+      | 'today'
+      | 'this_month'
+      | 'last_month'
+      | 'current_quarter'
+      | 'last_quarter'
+      | 'range' = 'this_month',
+    options?: { order_type?: 'all' | 'dine_in' | 'counter'; from?: string; to?: string }
+  ): Promise<{
     period: string;
     from: string;
     to: string;
@@ -860,7 +886,11 @@ class APIClient {
     };
     top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
   }> {
-    return this.makeRequest(`/orders/sales-analytics?period=${period}`);
+    const p = new URLSearchParams({ period });
+    if (options?.order_type) p.set('order_type', options.order_type);
+    if (options?.from) p.set('from', options.from);
+    if (options?.to) p.set('to', options.to);
+    return this.makeRequest(`/orders/sales-analytics?${p}`);
   }
 
   async listOrderHistory(params: { from: string; to: string; order_type?: string; limit?: number; offset?: number }): Promise<{ orders: Order[]; total: number; limit: number; offset: number }> {

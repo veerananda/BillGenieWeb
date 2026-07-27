@@ -7,7 +7,6 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  ChevronDown,
 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
@@ -16,10 +15,15 @@ import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type SalesPeriod =
+  | 'today'
+  | 'this_month'
+  | 'last_month'
+  | 'current_quarter'
+  | 'last_quarter'
+  | 'range';
 
-type SummaryPeriod = 'today' | 'month';
-type ChartPeriod = 'week' | 'last_week' | 'month';
+type ChannelFilter = 'all' | 'dine_in' | 'counter';
 
 interface SalesSummary {
   total_revenue: number;
@@ -50,7 +54,14 @@ interface SalesAnalytics {
   top_items: Array<{ name: string; category: string; quantity: number; revenue: number }>;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const PERIOD_OPTIONS: Array<{ value: SalesPeriod; label: string }> = [
+  { value: 'today', label: 'Today' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'current_quarter', label: 'Current quarter' },
+  { value: 'last_quarter', label: 'Last quarter' },
+  { value: 'range', label: 'Date range' },
+];
 
 function formatCurrency(amount: number): string {
   return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -62,72 +73,49 @@ function formatCompact(amount: number): string {
   return `${Math.round(amount)}`;
 }
 
-function chartPeriodLabel(period: ChartPeriod): string {
-  if (period === 'last_week') return 'Last week';
-  if (period === 'month') return 'This month';
-  return 'This week';
-}
-
-function previousPeriodLabel(period: ChartPeriod): string {
-  if (period === 'month') return 'last month';
-  if (period === 'last_week') return 'the week before';
-  return 'last week';
-}
-
 function formatCategory(category: string): string {
   const trimmed = (category || '').trim();
   if (!trimmed) return 'Uncategorized';
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  iconBg: string;
-  iconColor: string;
-  loading: boolean;
+function periodLabel(period: SalesPeriod): string {
+  return PERIOD_OPTIONS.find((p) => p.value === period)?.label ?? period;
 }
 
-function StatCard({ icon, label, value, iconBg, iconColor, loading }: StatCardProps) {
-  return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconBg}`}>
-          <span className={iconColor}>{icon}</span>
-        </div>
-      </div>
-      <div className="mt-4">
-        <p className="text-sm font-medium text-gray-500">{label}</p>
-        {loading ? (
-          <div className="mt-2 h-8 w-32 animate-pulse rounded-lg bg-gray-100" />
-        ) : (
-          <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
-        )}
-      </div>
-    </div>
-  );
+function previousPeriodLabel(period: SalesPeriod): string {
+  switch (period) {
+    case 'today':
+      return 'yesterday';
+    case 'this_month':
+      return 'last month';
+    case 'last_month':
+      return 'the month before';
+    case 'current_quarter':
+      return 'last quarter';
+    case 'last_quarter':
+      return 'the quarter before';
+    default:
+      return 'the previous period';
+  }
 }
 
-function SkeletonCards() {
-  return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-          <div className="h-12 w-12 animate-pulse rounded-xl bg-gray-100" />
-          <div className="mt-4 space-y-2">
-            <div className="h-4 w-24 animate-pulse rounded bg-gray-100" />
-            <div className="h-8 w-32 animate-pulse rounded-lg bg-gray-100" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+function todayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-// ─── Line Chart ───────────────────────────────────────────────────────────────
+function daysAgoISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 function SalesLineChart({ series }: { series: SalesAnalytics['series'] }) {
   const maxRevenue = Math.max(...series.map((p) => p.revenue), 0) || 1;
@@ -160,14 +148,7 @@ function SalesLineChart({ series }: { series: SalesAnalytics['series'] }) {
   return (
     <div className="w-full overflow-x-auto">
       <svg width={width} height={height} className="min-w-full">
-        <line
-          x1={padL}
-          y1={padT}
-          x2={padL}
-          y2={padT + chartH}
-          stroke="#e5e7eb"
-          strokeWidth={1}
-        />
+        <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke="#e5e7eb" strokeWidth={1} />
         <line
           x1={padL}
           y1={padT + chartH}
@@ -214,7 +195,32 @@ function SalesLineChart({ series }: { series: SalesAnalytics['series'] }) {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+interface StatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  iconBg: string;
+  iconColor: string;
+  loading: boolean;
+}
+
+function StatCard({ icon, label, value, iconBg, iconColor, loading }: StatCardProps) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconBg}`}>
+        <span className={iconColor}>{icon}</span>
+      </div>
+      <div className="mt-4">
+        <p className="text-sm font-medium text-gray-500">{label}</p>
+        {loading ? (
+          <div className="mt-2 h-8 w-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : (
+          <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function Sales() {
   const profile = useAppSelector(selectProfile);
@@ -227,34 +233,52 @@ export function Sales() {
   );
   const showDineIn = limits.dine_in_enabled;
   const showCounter = limits.counter_enabled;
-  const showChannelBreakdown = showDineIn && showCounter;
+  const showChannelToggle = showDineIn && showCounter;
 
-  const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>('today');
-  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('week');
+  const [period, setPeriod] = useState<SalesPeriod>('today');
+  const [channel, setChannel] = useState<ChannelFilter>('all');
+  const [rangeFrom, setRangeFrom] = useState(daysAgoISO(30));
+  const [rangeTo, setRangeTo] = useState(todayISO());
   const [summary, setSummary] = useState<SalesSummary | null>(null);
   const [analytics, setAnalytics] = useState<SalesAnalytics | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
-  const fetchSummary = useCallback(async (p: SummaryPeriod) => {
+  const queryOptions = useMemo(() => {
+    const order_type: ChannelFilter =
+      !showChannelToggle
+        ? showCounter && !showDineIn
+          ? 'counter'
+          : showDineIn && !showCounter
+            ? 'dine_in'
+            : channel
+        : channel;
+    if (period === 'range') {
+      return { order_type, from: rangeFrom, to: rangeTo };
+    }
+    return { order_type };
+  }, [channel, period, rangeFrom, rangeTo, showChannelToggle, showCounter, showDineIn]);
+
+  const fetchSummary = useCallback(async () => {
+    if (period === 'range' && (!rangeFrom || !rangeTo)) return;
     setSummaryLoading(true);
     setError(null);
     try {
-      const data = await apiClient.getSalesSummary(p);
+      const data = await apiClient.getSalesSummary(period === 'this_month' ? 'this_month' : period, queryOptions);
       setSummary(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sales data');
     } finally {
       setSummaryLoading(false);
     }
-  }, []);
+  }, [period, queryOptions, rangeFrom, rangeTo]);
 
-  const fetchAnalytics = useCallback(async (p: ChartPeriod) => {
+  const fetchAnalytics = useCallback(async () => {
+    if (period === 'range' && (!rangeFrom || !rangeTo)) return;
     setAnalyticsLoading(true);
     try {
-      const data = await apiClient.getSalesAnalytics(p);
+      const data = await apiClient.getSalesAnalytics(period, queryOptions);
       setAnalytics(data);
     } catch (err) {
       console.error(err);
@@ -262,25 +286,24 @@ export function Sales() {
     } finally {
       setAnalyticsLoading(false);
     }
-  }, []);
+  }, [period, queryOptions, rangeFrom, rangeTo]);
 
   useEffect(() => {
-    fetchSummary(summaryPeriod);
-  }, [fetchSummary, summaryPeriod]);
+    void fetchSummary();
+  }, [fetchSummary]);
 
   useEffect(() => {
-    fetchAnalytics(chartPeriod);
-  }, [fetchAnalytics, chartPeriod]);
+    void fetchAnalytics();
+  }, [fetchAnalytics]);
 
   const stats: StatCardProps[] = summary
     ? [
         {
           icon: <IndianRupee className="h-6 w-6" />,
-          label: showChannelBreakdown
-            ? 'Total Revenue'
-            : showCounter && !showDineIn
+          label:
+            channel === 'counter'
               ? 'Counter Revenue'
-              : showDineIn && !showCounter
+              : channel === 'dine_in'
                 ? 'Dine-in Revenue'
                 : 'Total Revenue',
           value: formatCurrency(summary.total_revenue),
@@ -290,11 +313,10 @@ export function Sales() {
         },
         {
           icon: <ShoppingBag className="h-6 w-6" />,
-          label: showChannelBreakdown
-            ? 'Total Orders'
-            : showCounter && !showDineIn
+          label:
+            channel === 'counter'
               ? 'Counter Orders'
-              : showDineIn && !showCounter
+              : channel === 'dine_in'
                 ? 'Dine-in Orders'
                 : 'Total Orders',
           value: summary.total_orders.toLocaleString('en-IN'),
@@ -313,8 +335,6 @@ export function Sales() {
       ]
     : [];
 
-  const selectedChartLabel = chartPeriodLabel(chartPeriod);
-  const previousLabel = previousPeriodLabel(chartPeriod);
   const comparison = analytics?.comparison;
   const ComparisonIcon =
     comparison?.direction === 'up'
@@ -334,35 +354,91 @@ export function Sales() {
     [analytics]
   );
 
+  const selectedLabel = periodLabel(period);
+
   return (
     <div className="space-y-8">
       <PageHeader title="Sales" />
 
-      {/* 1. Sales info */}
       <section>
         <h2 className="mb-3 text-base font-bold text-gray-900">Sales info</h2>
-        <div className="mb-6 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
-          {(['today', 'month'] as SummaryPeriod[]).map((p) => (
+
+        {showChannelToggle ? (
+          <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+            {(
+              [
+                { value: 'all' as const, label: 'Both' },
+                { value: 'dine_in' as const, label: 'Dine-in' },
+                { value: 'counter' as const, label: 'Counter' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setChannel(opt.value)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+                  channel === opt.value
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {PERIOD_OPTIONS.map((opt) => (
             <button
-              key={p}
-              onClick={() => setSummaryPeriod(p)}
-              className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all ${
-                summaryPeriod === p
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+              key={opt.value}
+              type="button"
+              onClick={() => setPeriod(opt.value)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition-all ${
+                period === opt.value
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
               }`}
             >
-              {p === 'today' ? "Today's Sales" : 'Monthly Revenue'}
+              {opt.label}
             </button>
           ))}
         </div>
+
+        {period === 'range' ? (
+          <div className="mb-6 flex flex-wrap items-end gap-3">
+            <label className="text-sm text-gray-600">
+              From
+              <input
+                type="date"
+                value={rangeFrom}
+                max={rangeTo}
+                onChange={(e) => setRangeFrom(e.target.value)}
+                className="mt-1 block rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="text-sm text-gray-600">
+              To
+              <input
+                type="date"
+                value={rangeTo}
+                min={rangeFrom}
+                max={todayISO()}
+                onChange={(e) => setRangeTo(e.target.value)}
+                className="mt-1 block rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </label>
+            <p className="pb-2 text-xs text-gray-400">Up to 1 year of history (plan limits apply).</p>
+          </div>
+        ) : null}
 
         {error && (
           <div className="mb-6 flex items-center gap-3 rounded-xl bg-red-50 px-5 py-4 text-sm text-red-600">
             <AlertCircle className="h-5 w-5 shrink-0" />
             <span>{error}</span>
             <button
-              onClick={() => fetchSummary(summaryPeriod)}
+              type="button"
+              onClick={() => void fetchSummary()}
               className="ml-auto shrink-0 rounded-lg bg-red-100 px-3 py-1 font-semibold hover:bg-red-200 transition-colors"
             >
               Retry
@@ -371,99 +447,34 @@ export function Sales() {
         )}
 
         {summaryLoading && !summary ? (
-          <SkeletonCards />
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-32 animate-pulse rounded-2xl bg-gray-100" />
+            ))}
+          </div>
         ) : summary ? (
-          <>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-              {stats.map((stat) => (
-                <StatCard key={stat.label} {...stat} />
-              ))}
-            </div>
-            {showChannelBreakdown ? (
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Dine-in</p>
-                  <p className="mt-2 text-xl font-bold text-gray-900">
-                    {formatCurrency(Number(summary.dine_in_revenue) || 0)}
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {(Number(summary.dine_in_orders) || 0).toLocaleString('en-IN')} order
-                    {(Number(summary.dine_in_orders) || 0) === 1 ? '' : 's'}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Counter</p>
-                  <p className="mt-2 text-xl font-bold text-gray-900">
-                    {formatCurrency(Number(summary.counter_revenue) || 0)}
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {(Number(summary.counter_orders) || 0).toLocaleString('en-IN')} order
-                    {(Number(summary.counter_orders) || 0) === 1 ? '' : 's'}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-          </>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {stats.map((stat) => (
+              <StatCard key={stat.label} {...stat} />
+            ))}
+          </div>
         ) : null}
 
         {summary && !summaryLoading && (
           <p className="mt-4 text-xs text-gray-400">
             Showing data for:{' '}
-            <span className="font-medium capitalize text-gray-500">
-              {summaryPeriod === 'today' ? "Today's Sales" : 'Monthly Revenue'}
+            <span className="font-medium text-gray-500">
+              {selectedLabel}
+              {analytics?.from && analytics?.to ? ` (${analytics.from} → ${analytics.to})` : ''}
             </span>
           </p>
         )}
-
-        {summaryLoading && summary && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
-            <Spinner size="sm" className="text-primary" />
-            Updating...
-          </div>
-        )}
       </section>
 
-      {/* 2. Graph */}
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-gray-900">Sales trend</h2>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary"
-            >
-              {selectedChartLabel}
-              <ChevronDown className="h-4 w-4" />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg">
-                {(
-                  [
-                    { value: 'week', label: 'This week' },
-                    { value: 'last_week', label: 'Last week' },
-                    { value: 'month', label: 'This month' },
-                  ] as const
-                ).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      setChartPeriod(option.value);
-                      setMenuOpen(false);
-                    }}
-                    className={`block w-full px-4 py-2.5 text-left text-sm font-semibold ${
-                      chartPeriod === option.value
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <span className="text-xs font-semibold text-primary">{selectedLabel}</span>
         </div>
 
         {analyticsLoading && !analytics ? (
@@ -481,7 +492,7 @@ export function Sales() {
                 {comparison && comparison.revenue_change_pct >= 0 ? '+' : ''}
                 {(comparison?.revenue_change_pct ?? 0).toFixed(1)}%
               </span>
-              <span className="text-xs text-gray-500">vs {previousLabel}</span>
+              <span className="text-xs text-gray-500">vs {previousPeriodLabel(period)}</span>
               <span className="text-xs text-gray-400">
                 {formatCurrency(analytics.total_revenue)} · {analytics.total_orders} orders
               </span>
@@ -495,11 +506,10 @@ export function Sales() {
         )}
       </section>
 
-      {/* 3. Top selling items */}
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-bold text-gray-900">Top selling items</h2>
-          <span className="text-xs font-semibold text-primary">{selectedChartLabel}</span>
+          <span className="text-xs font-semibold text-primary">{selectedLabel}</span>
         </div>
 
         {analyticsLoading && !analytics ? (
