@@ -381,6 +381,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         payment_method: 'cash',
         amount_received: cashGiven,
         change_returned: changeDue,
+        discount_amount: discountAmt,
         ...attendantPayload,
       } as CompletePaymentRequest,
       `Change: ${fmt(changeDue)}`
@@ -410,12 +411,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
             upi_amount: splitUpiAmount,
             amount_received: splitCashGivenAmount,
             change_returned: splitChange,
+            discount_amount: discountAmt,
             upi_transaction_id: upiTxnId.trim() || undefined,
             ...attendantPayload,
           }
         : {
             payment_method: 'upi',
             amount_received: finalAmount,
+            discount_amount: discountAmt,
             upi_transaction_id: upiTxnId.trim(),
             ...attendantPayload,
           },

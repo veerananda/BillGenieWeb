@@ -703,7 +703,12 @@ function OrderDetailPanel({
     setCheckoutConflictMsg(null);
     setCheckoutAcquired(false);
     apiClient.startCheckout(order.id)
-      .then(() => setCheckoutAcquired(true))
+      .then(() => {
+        setCheckoutAcquired(true);
+        void apiClient.createBillShare(order.id, discountValue).catch(() => {
+          // Non-blocking — bill preview can refresh when discount changes
+        });
+      })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message.toLowerCase() : '';
         if (msg.includes('no longer active')) {
@@ -720,6 +725,17 @@ function OrderDetailPanel({
         setPaymentError(err instanceof Error ? err.message : 'Could not start checkout');
       });
   };
+
+  // Keep customer QR bill review in sync when discount changes during checkout.
+  useEffect(() => {
+    if (!paymentOpen || !checkoutAcquired) return;
+    const timer = window.setTimeout(() => {
+      void apiClient.createBillShare(order.id, discountValue).catch(() => {
+        // Non-blocking for checkout UI
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [paymentOpen, checkoutAcquired, order.id, discountValue]);
 
   const handleOpenAssistanceQr = async () => {
     setAssistanceOpen(true);
@@ -815,7 +831,7 @@ function OrderDetailPanel({
         amount_received: splitCashGivenAmount,
         change_returned: splitChange,
         ...(upiTransactionId.trim() ? { upi_transaction_id: upiTransactionId.trim() } : {}),
-        ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+        ...( { discount_amount: discountValue } ),
         ...(attendedByUserId ? { attended_by_user_id: attendedByUserId } : {}),
       };
     } else {
@@ -823,7 +839,7 @@ function OrderDetailPanel({
         payment_method: paymentMethod,
         amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : effectiveTotal,
         change_returned: paymentMethod === 'cash' ? changeAmount : 0,
-        ...(discountValue > 0 ? { discount_amount: discountValue } : {}),
+        ...( { discount_amount: discountValue } ),
         ...(attendedByUserId ? { attended_by_user_id: attendedByUserId } : {}),
         ...(paymentMethod === 'upi' && upiTransactionId.trim()
           ? { upi_transaction_id: upiTransactionId.trim() }
@@ -1253,12 +1269,15 @@ function OrderDetailPanel({
             </div>
 
             {/* Attended by */}
-            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
-              <p className="text-sm font-semibold text-gray-800">Attended by</p>
+            <div className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-sm">
+              <label htmlFor="attended-by" className="shrink-0 text-xs font-semibold text-gray-600">
+                Attended by
+              </label>
               <select
+                id="attended-by"
                 value={attendedByUserId}
                 onChange={(e) => setAttendedByUserId(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {attendants.length === 0 ? (
                   <option value={attendedByUserId}>{resolveAttendantName(attendedByUserId) || 'Staff'}</option>
