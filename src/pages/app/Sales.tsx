@@ -7,6 +7,9 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Receipt,
+  Banknote,
+  Smartphone,
 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
@@ -34,6 +37,9 @@ interface SalesSummary {
   dine_in_revenue?: number;
   counter_orders?: number;
   counter_revenue?: number;
+  total_gst?: number;
+  cash_amount?: number;
+  upi_amount?: number;
 }
 
 interface SalesAnalytics {
@@ -332,6 +338,30 @@ export function Sales() {
           iconColor: 'text-amber-600',
           loading: summaryLoading,
         },
+        {
+          icon: <Receipt className="h-6 w-6" />,
+          label: 'GST',
+          value: formatCurrency(summary.total_gst ?? 0),
+          iconBg: 'bg-violet-50',
+          iconColor: 'text-violet-600',
+          loading: summaryLoading,
+        },
+        {
+          icon: <Banknote className="h-6 w-6" />,
+          label: 'Paid by Cash',
+          value: formatCurrency(summary.cash_amount ?? 0),
+          iconBg: 'bg-emerald-50',
+          iconColor: 'text-emerald-600',
+          loading: summaryLoading,
+        },
+        {
+          icon: <Smartphone className="h-6 w-6" />,
+          label: 'Paid by UPI',
+          value: formatCurrency(summary.upi_amount ?? 0),
+          iconBg: 'bg-sky-50',
+          iconColor: 'text-sky-600',
+          loading: summaryLoading,
+        },
       ]
     : [];
 
@@ -361,8 +391,6 @@ export function Sales() {
       <PageHeader title="Sales" />
 
       <section>
-        <h2 className="mb-3 text-base font-bold text-gray-900">Sales info</h2>
-
         {showChannelToggle ? (
           <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
             {(
@@ -447,13 +475,13 @@ export function Sales() {
         )}
 
         {summaryLoading && !summary ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {[0, 1, 2].map((i) => (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="h-32 animate-pulse rounded-2xl bg-gray-100" />
             ))}
           </div>
         ) : summary ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {stats.map((stat) => (
               <StatCard key={stat.label} {...stat} />
             ))}

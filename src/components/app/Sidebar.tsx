@@ -51,7 +51,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Dine-in',            to: '/app/orders',    icon: ClipboardList,   roles: ['admin', 'manager', 'staff'], subscriptionKey: 'dine_in_enabled' },
   { label: 'Counter / Takeaway', to: '/app/counter',   icon: ShoppingBag,     roles: ['admin', 'manager', 'staff'], subscriptionKey: 'counter_enabled' },
   { label: 'Kitchen',            to: '/app/kitchen',   icon: Flame,           roles: ['admin', 'manager', 'chef'],  subscriptionKey: 'kitchen' },
-  { label: 'Sales Info',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
+  { label: 'Sales',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
   { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
   { label: 'Expenses',           to: '/app/expenses',  icon: Wallet,          roles: ['admin', 'manager'] },
   { label: 'Ingredient Mgmt',    to: '/app/ingredient-management', icon: ChefHat,     inventoryKind: 'ingredients' },

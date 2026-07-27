@@ -850,6 +850,9 @@ class APIClient {
     dine_in_revenue?: number;
     counter_orders?: number;
     counter_revenue?: number;
+    total_gst?: number;
+    cash_amount?: number;
+    upi_amount?: number;
   }> {
     const p = new URLSearchParams({ period });
     if (options?.order_type) p.set('order_type', options.order_type);
