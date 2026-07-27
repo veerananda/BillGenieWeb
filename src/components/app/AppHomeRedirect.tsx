@@ -3,22 +3,19 @@ import { useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { hasKitchenAccess, parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { getDefaultAppPath } from '../../lib/defaultAppPath';
 
-interface Props {
-  children: React.ReactNode;
-}
-
-export function KitchenRoute({ children }: Props) {
-  const profile = useAppSelector(selectProfile);
+/** Role-aware landing when visiting /app (Dashboard nav is hidden). */
+export function AppHomeRedirect() {
   const role = useAppSelector(selectAuthRole);
+  const profile = useAppSelector(selectProfile);
   const limits = parseSubscriptionLimits(
     (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
   );
-
-  if (!hasKitchenAccess(limits)) {
-    const redirectTo = role === 'chef' ? '/app/support' : '/app/orders';
-    return <Navigate to={redirectTo} replace />;
-  }
-
-  return <>{children}</>;
+  return (
+    <Navigate
+      to={getDefaultAppPath(role, { hasKitchenAccess: hasKitchenAccess(limits) })}
+      replace
+    />
+  );
 }

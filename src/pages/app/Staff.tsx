@@ -338,6 +338,7 @@ function StaffFormModal({
       {/* Newly created key banner */}
       {newlyCreatedKey && (
         <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4">
+          <p className="mb-3 text-center text-lg font-bold text-gray-900">{form.name}</p>
           <p className="mb-1 text-sm font-semibold text-green-800">Staff member created!</p>
           <p className="mb-2 text-xs text-green-700">
             Share this login key and password with them:
@@ -369,26 +370,28 @@ function StaffFormModal({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Full Name */}
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Full Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => {
-              setForm((f) => ({ ...f, name: e.target.value }));
-              setErrors((er) => ({ ...er, name: '' }));
-            }}
-            placeholder="Enter staff member's name"
-            autoFocus
-            className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
-              errors.name ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
-            }`}
-          />
-          {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
-        </div>
+        {/* Full Name — editable only while creating/editing, not on create confirmation */}
+        {!newlyCreatedKey && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Full Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, name: e.target.value }));
+                setErrors((er) => ({ ...er, name: '' }));
+              }}
+              placeholder="Enter staff member's name"
+              autoFocus
+              className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/20 ${
+                errors.name ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-primary'
+              }`}
+            />
+            {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+          </div>
+        )}
 
 
         {/* Login Key — add mode only */}
