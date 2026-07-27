@@ -239,6 +239,7 @@ export interface RestaurantProfile {
   prices_include_gst?: boolean;
   composite_scheme?: boolean;
   is_closed?: boolean;
+  created_at?: string;
   subscription_end?: string;
   subscription_phase?: string;
   requires_plan_selection?: boolean;
