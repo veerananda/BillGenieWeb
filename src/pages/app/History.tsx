@@ -428,34 +428,28 @@ function ReceiptModal({
 function OrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
   const itemCount = order.items?.length ?? 0;
   const payment = (order.payment_method || '').toUpperCase();
+  const orderRef = isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`;
+  const meta = [orderRef, formatOrderTime(order), `${itemCount} item${itemCount !== 1 ? 's' : ''}`]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 border-b border-gray-100 bg-white px-3 py-3 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+      className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-white px-3 py-3 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="max-w-[42%] shrink-0 truncate text-sm font-semibold text-gray-900">
-          {getOrderTitle(order)}
+      <span className="min-w-0 flex-1 truncate text-sm text-gray-900">
+        <span className="font-semibold">{getOrderTitle(order)}</span>
+        {meta ? <span className="font-medium text-gray-500">{` · ${meta}`}</span> : null}
+      </span>
+      {payment ? (
+        <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
+          {payment}
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs text-gray-500">
-          {isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`}
-          {' · '}
-          {formatOrderTime(order)}
-          {' · '}
-          {itemCount} item{itemCount !== 1 ? 's' : ''}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {payment ? (
-          <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
-            {payment}
-          </span>
-        ) : null}
-        <span className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums text-primary">
-          {fmt(order.total)}
-        </span>
-      </div>
+      ) : null}
+      <span className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums text-primary">
+        {fmt(order.total)}
+      </span>
     </button>
   );
 }
@@ -642,7 +636,7 @@ export function History() {
         />
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+          <div className="space-y-2">
             {orders.map((order) => (
               <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
             ))}
