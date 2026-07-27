@@ -389,10 +389,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   }
 
   async function handleUpiPayment() {
-    if (paymentMethod !== 'split' && !upiTxnId.trim()) {
-      setError('Please enter UPI transaction ID.');
-      return;
-    }
     if (paymentMethod === 'split' && !isSplitCashValid) {
       setError('Split payment incomplete.');
       return;
@@ -412,14 +408,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
             amount_received: splitCashGivenAmount,
             change_returned: splitChange,
             discount_amount: discountAmt,
-            upi_transaction_id: upiTxnId.trim() || undefined,
+            ...(upiTxnId.trim() ? { upi_transaction_id: upiTxnId.trim() } : {}),
             ...attendantPayload,
           }
         : {
             payment_method: 'upi',
             amount_received: finalAmount,
             discount_amount: discountAmt,
-            upi_transaction_id: upiTxnId.trim(),
+            ...(upiTxnId.trim() ? { upi_transaction_id: upiTxnId.trim() } : {}),
             ...attendantPayload,
           },
       summary

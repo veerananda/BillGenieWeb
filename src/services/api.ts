@@ -112,6 +112,7 @@ export interface Order {
   change_returned?: number;
   cash_amount?: number;
   upi_amount?: number;
+  upi_transaction_id?: string;
   notes?: string;
   items: OrderItem[];
   created_at: string;
