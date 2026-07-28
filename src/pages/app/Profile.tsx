@@ -23,6 +23,7 @@ import {
   formatSubscriptionPlanName,
   type SubscriptionSelection,
 } from '../../data/pricing';
+import { INDIA_LOCATION_OPTIONS, districtsForState, formatCityTier } from '../../data/indiaLocations';
 
 // ??? Types ????????????????????????????????????????????????????????????????????
 
@@ -30,6 +31,8 @@ interface ProfileForm {
   name: string;
   address: string;
   city: string;
+  state: string;
+  district: string;
   cuisine: string;
   contact_number: string;
   upi_id: string;
@@ -47,6 +50,8 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     name: p.name ?? '',
     address: p.address ?? '',
     city: p.city ?? '',
+    state: p.state ?? '',
+    district: p.district ?? '',
     cuisine: p.cuisine ?? '',
     contact_number: p.contact_number ?? '',
     upi_id: p.upi_id ?? '',
@@ -482,6 +487,8 @@ export function Profile() {
     name: '',
     address: '',
     city: '',
+    state: '',
+    district: '',
     cuisine: '',
     contact_number: '',
     upi_id: '',
@@ -586,6 +593,9 @@ export function Profile() {
       const payload = {
         name: form.name.trim() || undefined,
         address: form.address.trim() || undefined,
+        city: form.city.trim() || undefined,
+        state: form.state.trim() || undefined,
+        district: form.district.trim() || undefined,
         contact_number: form.contact_number.trim() || undefined,
         upi_id: form.upi_id.trim() || undefined,
         upi_qr_code: form.upi_qr_code || undefined,
@@ -731,6 +741,7 @@ export function Profile() {
   }
 
   // ?? Render ????????????????????????????????????????????????????????????????
+  const districtOptions = districtsForState(form.state);
 
   return (
     <div className="space-y-6">
@@ -789,6 +800,33 @@ export function Profile() {
                 className={inputClass}
               />
             </Field>
+            <Field label="State">
+              <select
+                value={form.state}
+                onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, district: '' }))}
+                className={inputClass}
+              >
+                <option value="">Select state</option>
+                {INDIA_LOCATION_OPTIONS.map((item) => (
+                  <option key={item.state} value={item.state}>{item.state}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="District">
+              <select
+                value={form.district}
+                onChange={(e) => set('district', e.target.value)}
+                className={inputClass}
+                disabled={!form.state}
+              >
+                <option value="">{form.state ? 'Select district' : 'Select state first'}</option>
+                {districtOptions.map((item) => (
+                  <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+            </Field>
             <Field label="Cuisine type" optional>
               <input
                 type="text"
@@ -799,6 +837,11 @@ export function Profile() {
               />
             </Field>
           </div>
+          {form.district ? (
+            <p className="text-xs text-gray-500">
+              Detected pricing tier: {formatCityTier((districtOptions.find((item) => item.name === form.district)?.tier) ?? 'tier_3')}
+            </p>
+          ) : null}
         </SectionCard>
 
         {/* Section 2: Tables */}

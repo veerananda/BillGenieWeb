@@ -57,6 +57,8 @@ export interface RegisterData {
   start_mode: 'trial' | 'paid';
   address?: string;
   city?: string;
+  state?: string;
+  district?: string;
   cuisine?: string;
   subscription?: import('../data/pricing').SubscriptionSelection;
 }
@@ -233,6 +235,9 @@ export interface RestaurantProfile {
   upi_id: string;
   upi_qr_code: string;
   city: string;
+  state?: string;
+  district?: string;
+  city_tier?: 'tier_1' | 'tier_2' | 'tier_3';
   cuisine: string;
   is_self_service: boolean;
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
@@ -258,6 +263,9 @@ export interface RestaurantProfile {
 export interface UpdateProfileRequest {
   name?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  district?: string;
   contact_number?: string;
   upi_id?: string;
   upi_qr_code?: string;
