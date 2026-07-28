@@ -100,6 +100,17 @@ type ReceiptLineItem = {
   total: number;
 };
 
+function padReceiptLine(left: string, right: string, width = 32): string {
+  const r = right.length > width ? right.slice(right.length - width) : right;
+  const maxLeft = Math.max(0, width - r.length - 1);
+  let l = left;
+  if (l.length > maxLeft) {
+    l = maxLeft <= 1 ? '' : `${l.slice(0, maxLeft - 1)}.`;
+  }
+  const spaces = Math.max(1, width - l.length - r.length);
+  return `${l}${' '.repeat(spaces)}${r}`;
+}
+
 function groupReceiptItems(items: NonNullable<Order['items']>): ReceiptLineItem[] {
   const grouped = new Map<string, ReceiptLineItem>();
 
@@ -186,6 +197,7 @@ function buildReceiptText(
     lines.push(restaurant.name);
     if (restaurant.address) lines.push(restaurant.address);
     if (restaurantContact) lines.push(restaurantContact);
+    if (restaurant.gst_number) lines.push(`GSTIN: ${restaurant.gst_number}`);
     lines.push('');
   }
 
@@ -197,12 +209,15 @@ function buildReceiptText(
   if (showCustomer) lines.push(`Customer: ${order.customer_name}`);
   if (order.customer_phone) lines.push(`Phone: ${order.customer_phone}`);
   lines.push(divider);
+  lines.push(padReceiptLine('Item', 'Qty'));
+  lines.push(padReceiptLine('', 'Rate   Price'));
 
   receiptItems.forEach((item) => {
-    lines.push(`${item.quantity} x ${item.name}`);
+    const rate = item.unitRate > 0 ? item.unitRate : item.quantity > 0 ? item.total / item.quantity : 0;
+    lines.push(padReceiptLine(item.name, String(item.quantity)));
     if (item.category) lines.push(`   ${item.category}`);
     if (item.notes) lines.push(`   Notes: ${item.notes}`);
-    lines.push(`   ${fmt(item.total)}`);
+    lines.push(padReceiptLine('', `${fmt(rate)}  ${fmt(item.total)}`));
   });
 
   lines.push(divider);

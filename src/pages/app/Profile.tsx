@@ -38,6 +38,7 @@ interface ProfileForm {
   counter_service_modes: 'both' | 'eat_here' | 'takeaway' | '';
   prices_include_gst: boolean;
   composite_scheme: boolean;
+  gst_number: string;
   is_closed: boolean;
 }
 
@@ -54,6 +55,7 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     counter_service_modes: p.counter_service_modes ?? '',
     prices_include_gst: p.prices_include_gst ?? false,
     composite_scheme: p.composite_scheme ?? false,
+    gst_number: p.gst_number ?? '',
     is_closed: p.is_closed ?? false,
   };
 }
@@ -488,6 +490,7 @@ export function Profile() {
     counter_service_modes: '',
     prices_include_gst: false,
     composite_scheme: false,
+    gst_number: '',
     is_closed: false,
   });
 
@@ -593,6 +596,7 @@ export function Profile() {
             : undefined,
         prices_include_gst: form.composite_scheme ? undefined : form.prices_include_gst,
         composite_scheme: form.composite_scheme,
+        gst_number: form.gst_number.trim().toUpperCase(),
       };
       const { restaurant } = await apiClient.updateRestaurantProfile(payload);
       dispatch(updateProfile(restaurant));
@@ -873,6 +877,23 @@ export function Profile() {
           title="Billing & Tax"
           subtitle="Controls how GST is shown on customer bills"
         >
+          <div>
+            <label htmlFor="gst-number" className="mb-1.5 block text-sm font-semibold text-gray-800">
+              GST number (GSTIN)
+            </label>
+            <input
+              id="gst-number"
+              type="text"
+              value={form.gst_number}
+              onChange={(e) => set('gst_number', e.target.value.toUpperCase())}
+              maxLength={15}
+              placeholder="22AAAAA0000A1Z5"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium tracking-wide text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <p className="mt-1.5 text-xs text-gray-500">
+              Printed on bills with restaurant name and address. Leave blank if not registered.
+            </p>
+          </div>
           <Toggle
             checked={form.composite_scheme}
             onChange={(v) => set('composite_scheme', v)}

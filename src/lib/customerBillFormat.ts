@@ -4,6 +4,8 @@ import { subtotalLabel, taxLabel } from './orderTax';
 export interface CustomerBillLineItem {
   name: string;
   quantity: number;
+  /** Unit price (rate). */
+  unitRate?: number;
   total: number;
 }
 
@@ -11,6 +13,7 @@ export interface CustomerBillData {
   restaurantName?: string;
   address?: string;
   contactNumber?: string;
+  gstNumber?: string;
   orderNumber?: number | string;
   tableNumber?: string;
   customerName?: string;
@@ -26,6 +29,8 @@ export interface CustomerBillData {
   paymentMethod?: string;
   isPaid?: boolean;
 }
+
+const THERMAL_WIDTH = 32;
 
 function formatCurrency(amount: number): string {
   return `₹${Number(amount || 0).toFixed(2)}`;
@@ -52,6 +57,23 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function padThermalLine(left: string, right: string, width = THERMAL_WIDTH): string {
+  const r = right.length > width ? right.slice(right.length - width) : right;
+  const maxLeft = Math.max(0, width - r.length - 1);
+  let l = left;
+  if (l.length > maxLeft) {
+    l = maxLeft <= 1 ? '' : `${l.slice(0, maxLeft - 1)}.`;
+  }
+  const spaces = Math.max(1, width - l.length - r.length);
+  return `${l}${' '.repeat(spaces)}${r}`;
+}
+
+function lineUnitRate(item: CustomerBillLineItem): number {
+  if (item.unitRate != null && item.unitRate > 0) return item.unitRate;
+  if (item.quantity > 0) return item.total / item.quantity;
+  return 0;
+}
+
 export function buildCustomerBillHtml(data: CustomerBillData): string {
   const title = escapeHtml(data.restaurantName || 'Bill Summary');
   const metaParts: string[] = [];
@@ -68,16 +90,21 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       ? escapeHtml(data.customerName)
       : '';
   const attendedBy = data.attendedByName ? escapeHtml(data.attendedByName) : '';
+  const address = data.address ? escapeHtml(data.address) : '';
+  const contact = data.contactNumber ? escapeHtml(data.contactNumber) : '';
+  const gst = data.gstNumber ? escapeHtml(data.gstNumber) : '';
 
   const itemRows = data.items
-    .map(
-      (item) => `
+    .map((item) => {
+      const rate = lineUnitRate(item);
+      return `
         <tr>
           <td class="item-name">${escapeHtml(item.name)}</td>
           <td class="qty">${item.quantity}</td>
+          <td class="rate">${formatCurrency(rate)}</td>
           <td class="amount">${formatCurrency(item.total)}</td>
-        </tr>`
-    )
+        </tr>`;
+    })
     .join('');
 
   const subtotalRow =
@@ -160,7 +187,10 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       padding-bottom: 10px;
       border-bottom: 1px solid #e2e8f0;
     }
-    th.qty, th.amount, td.qty, td.amount { text-align: right; }
+    th.qty, th.rate, th.amount, td.qty, td.rate, td.amount { text-align: right; }
+    th.qty, td.qty { width: 12%; white-space: nowrap; }
+    th.rate, td.rate { width: 18%; white-space: nowrap; padding-left: 8px; }
+    th.amount, td.amount { width: 22%; white-space: nowrap; padding-left: 8px; }
     td {
       padding: 12px 0;
       border-bottom: 1px solid #f1f5f9;
@@ -206,6 +236,9 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     <div class="head">
       <div class="brand">Bill Summary</div>
       <h1>${title}</h1>
+      ${address ? `<p class="meta">${address}</p>` : ''}
+      ${contact ? `<p class="meta">${contact}</p>` : ''}
+      ${gst ? `<p class="meta">GSTIN: ${gst}</p>` : ''}
       ${meta ? `<p class="meta">${meta}</p>` : ''}
       ${dateLine ? `<p class="date">${escapeHtml(dateLine)}</p>` : ''}
       ${customer ? `<p class="customer">Customer: ${customer}</p>` : ''}
@@ -217,7 +250,8 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
           <tr>
             <th>Item</th>
             <th class="qty">Qty</th>
-            <th class="amount">Amount</th>
+            <th class="rate">Rate</th>
+            <th class="amount">Price</th>
           </tr>
         </thead>
         <tbody>${itemRows}</tbody>
@@ -288,6 +322,7 @@ function orderBillData(
     restaurantName: profile?.name,
     address: profile?.address,
     contactNumber: profile?.contact_number || profile?.phone,
+    gstNumber: profile?.gst_number,
     orderNumber: order.order_number,
     tableNumber: String(order.table_number),
     customerName: order.customer_name,
@@ -313,6 +348,7 @@ export function buildCustomerBillText(data: CustomerBillData): string {
     lines.push(data.restaurantName);
     if (data.address) lines.push(data.address);
     if (data.contactNumber) lines.push(data.contactNumber);
+    if (data.gstNumber) lines.push(`GSTIN: ${data.gstNumber}`);
     lines.push('');
   }
 
@@ -336,9 +372,12 @@ export function buildCustomerBillText(data: CustomerBillData): string {
   if (dateLine) lines.push(`Date: ${dateLine}`);
 
   lines.push(divider);
+  lines.push(padThermalLine('Item', 'Qty'));
+  lines.push(padThermalLine('', 'Rate   Price'));
   data.items.forEach((item) => {
-    lines.push(`${item.quantity} x ${item.name}`);
-    lines.push(`   ${formatCurrency(item.total)}`);
+    const rate = lineUnitRate(item);
+    lines.push(padThermalLine(item.name, String(item.quantity)));
+    lines.push(padThermalLine('', `${formatCurrency(rate)}  ${formatCurrency(item.total)}`));
   });
   lines.push(divider);
 

@@ -240,6 +240,7 @@ export interface RestaurantProfile {
   composite_scheme?: boolean;
   is_closed?: boolean;
   created_at?: string;
+  gst_number?: string;
   subscription_end?: string;
   subscription_phase?: string;
   requires_plan_selection?: boolean;
@@ -264,6 +265,7 @@ export interface UpdateProfileRequest {
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
   composite_scheme?: boolean;
+  gst_number?: string;
   is_closed?: boolean;
 }
 

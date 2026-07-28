@@ -785,6 +785,7 @@ function OrderDetailPanel({
     const billItems = groupedItems.map((item) => ({
       name: item.name,
       quantity: item.quantity,
+      unitRate: item.quantity > 0 ? item.total / item.quantity : 0,
       total: item.total,
     }));
     const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems);
