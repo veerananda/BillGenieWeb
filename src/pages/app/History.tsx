@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order, RestaurantProfile } from '../../services/api';
-import { printBillHtml, formatBillMoney, formatBillDateTime, formatThermalItemBlock } from '../../lib/customerBillFormat';
+import { printBillHtml, formatBillMoney, formatBillDateTime, formatThermalItemBlock, thermalWidthForPaper } from '../../lib/customerBillFormat';
+import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
 import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -165,7 +166,9 @@ function buildReceiptText(
   order: Order,
   restaurant: RestaurantProfile | null | undefined,
   receiptItems: ReceiptLineItem[],
+  paperWidthMm: 58 | 80 = 58,
 ): string {
+  const width = thermalWidthForPaper(paperWidthMm);
   const counter = isCounter(order);
   const completedAt = order.completed_at || order.updated_at || order.created_at;
   const restaurantContact = restaurant?.contact_number || restaurant?.phone;
@@ -173,7 +176,7 @@ function buildReceiptText(
     ? !!order.customer_name && !['Takeaway', 'Counter', 'Self Service'].includes(order.customer_name)
     : !!order.customer_name;
   const lines: string[] = [];
-  const divider = '--------------------------------';
+  const divider = '-'.repeat(width);
 
   if (restaurant?.name) {
     lines.push(restaurant.name);
@@ -200,7 +203,7 @@ function buildReceiptText(
         total: item.total,
         notes: item.notes,
       })),
-      32,
+      width,
     ),
   );
 
@@ -223,8 +226,9 @@ function buildReceiptText(
   return lines.join('\n');
 }
 
-function buildReceiptHtml(text: string, order: Order): string {
+function buildReceiptHtml(text: string, order: Order, paperWidthMm: 58 | 80 = 58): string {
   const escaped = escapeHtml(text).replace(/\n/g, '<br/>');
+  const sheetMm = paperWidthMm === 80 ? 72 : 48;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -233,9 +237,10 @@ function buildReceiptHtml(text: string, order: Order): string {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Receipt ${escapeHtml(String(order.order_number || ''))}</title>
   <style>
-    body { margin: 0; padding: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; }
-    .receipt { max-width: 320px; margin: 0 auto; font-size: 14px; line-height: 1.45; }
-    @media print { body { padding: 0; } .receipt { max-width: none; } }
+    @page { size: ${paperWidthMm}mm auto; margin: 2mm; }
+    body { margin: 0; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; font-size: ${paperWidthMm === 80 ? 12 : 11}px; line-height: 1.35; }
+    .receipt { width: ${sheetMm}mm; max-width: 100%; margin: 0 auto; white-space: pre-wrap; }
+    @media print { body { padding: 0; } .receipt { width: ${sheetMm}mm; } }
   </style>
 </head>
 <body>
@@ -247,14 +252,16 @@ function buildReceiptHtml(text: string, order: Order): string {
 function buildCombinedReceiptHtml(
   orders: Order[],
   restaurant: RestaurantProfile | null | undefined,
+  paperWidthMm: 58 | 80 = 58,
 ): string {
+  const sheetMm = paperWidthMm === 80 ? 72 : 48;
   const blocks = orders
     .map((order) => {
       const receiptItems = groupReceiptItems(
         order.items ?? [],
         restaurant?.category_display_blocklist ?? [],
       );
-      const text = buildReceiptText(order, restaurant, receiptItems);
+      const text = buildReceiptText(order, restaurant, receiptItems, paperWidthMm);
       const escaped = escapeHtml(text).replace(/\n/g, '<br/>');
       return `<div class="receipt">${escaped}</div>`;
     })
@@ -267,10 +274,11 @@ function buildCombinedReceiptHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Order history receipts</title>
   <style>
-    body { margin: 0; padding: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; }
-    .receipt { max-width: 320px; margin: 0 auto 24px; font-size: 14px; line-height: 1.45; page-break-after: always; }
+    @page { size: ${paperWidthMm}mm auto; margin: 2mm; }
+    body { margin: 0; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #111827; font-size: ${paperWidthMm === 80 ? 12 : 11}px; line-height: 1.35; }
+    .receipt { width: ${sheetMm}mm; max-width: 100%; margin: 0 auto 16px; white-space: pre-wrap; page-break-after: always; }
     .receipt:last-child { page-break-after: auto; margin-bottom: 0; }
-    @media print { body { padding: 0; } .receipt { max-width: none; } }
+    @media print { body { padding: 0; } .receipt { width: ${sheetMm}mm; } }
   </style>
 </head>
 <body>
@@ -305,7 +313,8 @@ function ReceiptModal({
     restaurant?.category_display_blocklist ?? [],
   );
   const paymentRows = getPaymentReceiptRows(order, fmt);
-  const receiptText = buildReceiptText(order, restaurant, receiptItems);
+  const paperWidthMm = getPaperWidthMm('bill');
+  const receiptText = buildReceiptText(order, restaurant, receiptItems, paperWidthMm);
 
   // On counter orders, skip generic placeholder names
   const showCustomer = counter
@@ -333,7 +342,7 @@ function ReceiptModal({
 
   const handlePrintReceipt = () => {
     setActionMessage(null);
-    printBillHtml(buildReceiptHtml(receiptText, order));
+    printBillHtml(buildReceiptHtml(receiptText, order, paperWidthMm));
   };
 
   return (
@@ -622,7 +631,7 @@ export function History() {
 
       if (!all.length) return;
 
-      printBillHtml(buildCombinedReceiptHtml(all, profile));
+      printBillHtml(buildCombinedReceiptHtml(all, profile, getPaperWidthMm('bill')));
     } catch (err) {
       console.error('Print all failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to print receipts');

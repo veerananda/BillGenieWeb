@@ -9,9 +9,11 @@
 
 const STORAGE_KEY = 'billgenie_browser_thermal_printers_v1';
 const FEED_STORAGE_KEY = 'billgenie_print_feed_lines_v1';
+const PAPER_STORAGE_KEY = 'billgenie_paper_width_mm_v1';
 
 export type BrowserPrinterRole = 'bill' | 'kot';
 export type BrowserPrinterKind = 'serial' | 'bluetooth';
+export type PaperWidthMm = 58 | 80;
 
 export type BrowserPrinterConfig = {
   kind: BrowserPrinterKind;
@@ -20,6 +22,8 @@ export type BrowserPrinterConfig = {
   bluetoothDeviceId?: string;
   /** Last connected label for UI. */
   connectedAt?: string;
+  /** Thermal paper width used for column layout (32 vs 48 cols). */
+  paperWidthMm?: PaperWidthMm;
 };
 
 export type PrintFeedLines = { top: number; bottom: number };
@@ -52,6 +56,53 @@ export function getCachedPrintFeedLines(): PrintFeedLines {
     };
   } catch {
     return { top: 0, bottom: 3 };
+  }
+}
+
+function parsePaperWidthMm(value: unknown): PaperWidthMm {
+  return Number(value) === 80 ? 80 : 58;
+}
+
+type StoredPaperWidths = { bill?: PaperWidthMm; kot?: PaperWidthMm };
+
+function readPaperStore(): StoredPaperWidths {
+  try {
+    const raw = localStorage.getItem(PAPER_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StoredPaperWidths;
+    return {
+      bill: parsed.bill ? parsePaperWidthMm(parsed.bill) : undefined,
+      kot: parsed.kot ? parsePaperWidthMm(parsed.kot) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writePaperStore(next: StoredPaperWidths) {
+  localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(next));
+}
+
+/** Preferred paper width for a role (browser printer override, else cached preference). */
+export function getPaperWidthMm(role: BrowserPrinterRole = 'bill'): PaperWidthMm {
+  const printer = getBrowserPrinter(role);
+  if (printer?.paperWidthMm) return parsePaperWidthMm(printer.paperWidthMm);
+  const cached = readPaperStore()[role];
+  return cached ?? 58;
+}
+
+/** Persist paper width for a role and attach it to a paired browser printer when present. */
+export function setPaperWidthMm(role: BrowserPrinterRole, width: PaperWidthMm): void {
+  const paperWidthMm = parsePaperWidthMm(width);
+  const papers = readPaperStore();
+  papers[role] = paperWidthMm;
+  writePaperStore(papers);
+
+  const store = readStore();
+  const existing = store[role];
+  if (existing) {
+    store[role] = { ...existing, paperWidthMm };
+    writeStore(store);
   }
 }
 
@@ -283,10 +334,12 @@ export async function pairSerialPrinter(role: BrowserPrinterRole): Promise<Brows
   await port.open({ baudRate: 9600 });
   await port.close();
 
+  const paperWidthMm = getPaperWidthMm(role);
   const config: BrowserPrinterConfig = {
     kind: 'serial',
     name,
     connectedAt: new Date().toISOString(),
+    paperWidthMm,
   };
   const store = readStore();
   store[role] = config;
@@ -303,11 +356,13 @@ export async function pairBluetoothPrinter(role: BrowserPrinterRole): Promise<Br
     acceptAllDevices: true,
     optionalServices: BLE_PRINT_SERVICES,
   });
+  const paperWidthMm = getPaperWidthMm(role);
   const config: BrowserPrinterConfig = {
     kind: 'bluetooth',
     name: device.name || 'Bluetooth printer',
     bluetoothDeviceId: device.id,
     connectedAt: new Date().toISOString(),
+    paperWidthMm,
   };
   const store = readStore();
   store[role] = config;
@@ -380,14 +435,17 @@ export async function printTextToBrowserPrinter(
 }
 
 export async function printTestToBrowserPrinter(role: BrowserPrinterRole): Promise<void> {
+  const width = getPaperWidthMm(role) === 80 ? 48 : 32;
+  const divider = '-'.repeat(width);
   const ok = await printTextToBrowserPrinter(
     role,
     [
       'BillGenie test print',
-      '--------------------------------',
+      divider,
       `Role: ${role.toUpperCase()}`,
+      `Paper: ${getPaperWidthMm(role)}mm (${width} cols)`,
       `Time: ${new Date().toLocaleString('en-IN')}`,
-      '--------------------------------',
+      divider,
       'Browser Bluetooth / serial OK',
       '',
     ].join('\n')

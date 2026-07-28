@@ -21,6 +21,7 @@ import {
   printBillHtml,
   type CustomerBillLineItem,
 } from '../../lib/customerBillFormat';
+import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -464,6 +465,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       pricesIncludeGst,
       compositeScheme,
       isPaid: false,
+      paperWidthMm: getPaperWidthMm('bill'),
     });
     printBillHtml(html);
   }
