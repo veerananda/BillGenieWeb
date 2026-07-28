@@ -433,12 +433,42 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const attendantPayload = attendedByUserId ? { attended_by_user_id: attendedByUserId } : {};
 
   function handlePrintBill() {
-    const html = `<html><body style="font-family:monospace;padding:20px;max-width:400px;margin:auto">
-      <h2 style="text-align:center">Counter Order</h2>
+    const restaurantName = profile?.name || 'Counter Order';
+    const address = profile?.address || '';
+    const contact = profile?.contact_number || profile?.phone || '';
+    const gst = profile?.gst_number || '';
+    const itemRows = cart
+      .map((c) => {
+        const name = cartDisplayName(c.name, c.variantLabel);
+        const rate = c.price;
+        const price = c.price * c.quantity;
+        return `<tr>
+          <td style="text-align:left;padding:4px 0">${name}</td>
+          <td style="text-align:right;padding:4px 0 4px 8px">${c.quantity}</td>
+          <td style="text-align:right;padding:4px 0 4px 8px">₹${rate.toFixed(2)}</td>
+          <td style="text-align:right;padding:4px 0 4px 8px">₹${price.toFixed(2)}</td>
+        </tr>`;
+      })
+      .join('');
+    const html = `<html><body style="font-family:system-ui,sans-serif;padding:20px;max-width:420px;margin:auto">
+      <h2 style="text-align:center;margin:0 0 8px">${restaurantName}</h2>
+      ${address ? `<p style="text-align:center;margin:0;color:#64748b;font-size:13px">${address}</p>` : ''}
+      ${contact ? `<p style="text-align:center;margin:4px 0 0;color:#64748b;font-size:13px">${contact}</p>` : ''}
+      ${gst ? `<p style="text-align:center;margin:4px 0 0;color:#64748b;font-size:13px">GSTIN: ${gst}</p>` : ''}
       ${customerName.trim() ? `<p>Customer: ${customerName.trim()}</p>` : ''}
       ${attendedByName ? `<p>Attended by: ${attendedByName}</p>` : ''}
       <hr/>
-      ${cart.map((c) => `<div style="display:flex;justify-content:space-between"><span>${cartDisplayName(c.name, c.variantLabel)} ×${c.quantity}</span><span>₹${(c.price * c.quantity).toFixed(2)}</span></div>`).join('')}
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <thead>
+          <tr>
+            <th style="text-align:left">Item</th>
+            <th style="text-align:right">Qty</th>
+            <th style="text-align:right">Rate</th>
+            <th style="text-align:right">Price</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
       <hr/>
       <div style="display:flex;justify-content:space-between"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
       ${showTax ? `<div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>` : ''}
