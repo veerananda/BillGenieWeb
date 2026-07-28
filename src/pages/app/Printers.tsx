@@ -216,12 +216,6 @@ export function Printers() {
           r.settings.top_feed_lines ?? 0,
           r.settings.bottom_feed_lines ?? 3
         );
-        if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
-          setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
-        }
-        if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
-          setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
-        }
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load printer settings.');
@@ -254,12 +248,6 @@ export function Printers() {
         r.settings.top_feed_lines ?? 0,
         r.settings.bottom_feed_lines ?? 3
       );
-      if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
-        setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
-      }
-      if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
-        setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
-      }
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
       setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');

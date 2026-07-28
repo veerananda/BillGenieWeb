@@ -71,8 +71,18 @@ function readPaperStore(): StoredPaperWidths {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as StoredPaperWidths;
     return {
-      bill: parsed.bill ? parsePaperWidthMm(parsed.bill) : undefined,
-      kot: parsed.kot ? parsePaperWidthMm(parsed.kot) : undefined,
+      bill:
+        parsed.bill === 58 || parsed.bill === 80
+          ? parsed.bill
+          : parsed.bill != null
+            ? parsePaperWidthMm(parsed.bill)
+            : undefined,
+      kot:
+        parsed.kot === 58 || parsed.kot === 80
+          ? parsed.kot
+          : parsed.kot != null
+            ? parsePaperWidthMm(parsed.kot)
+            : undefined,
     };
   } catch {
     return {};
@@ -83,10 +93,12 @@ function writePaperStore(next: StoredPaperWidths) {
   localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(next));
 }
 
-/** Preferred paper width for a role (browser printer override, else cached preference). */
+/** Preferred paper width for a role (paired browser printer, else cached preference). */
 export function getPaperWidthMm(role: BrowserPrinterRole = 'bill'): PaperWidthMm {
   const printer = getBrowserPrinter(role);
-  if (printer?.paperWidthMm) return parsePaperWidthMm(printer.paperWidthMm);
+  if (printer && (printer.paperWidthMm === 58 || printer.paperWidthMm === 80)) {
+    return printer.paperWidthMm;
+  }
   const cached = readPaperStore()[role];
   return cached ?? 58;
 }
