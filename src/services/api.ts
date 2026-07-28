@@ -285,6 +285,7 @@ export interface PrintSettings {
   kot_printer_port: number;
   bill_printing_enabled: boolean;
   kot_printing_enabled: boolean;
+  bill_auto_print_on_checkout?: boolean;
   bill_paper_width_mm?: 58 | 80;
   kot_paper_width_mm?: 58 | 80;
   top_feed_lines?: number;

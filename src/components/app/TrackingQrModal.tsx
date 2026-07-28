@@ -1,4 +1,4 @@
-import { Ticket } from 'lucide-react';
+import { Printer, Ticket } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Modal } from './Modal';
 
@@ -12,6 +12,8 @@ interface TrackingQrModalProps {
   title?: string;
   confirmLabel?: string;
   zIndexClass?: string;
+  onPrintBill?: () => void;
+  printBusy?: boolean;
 }
 
 export function TrackingQrModal({
@@ -24,6 +26,8 @@ export function TrackingQrModal({
   title = 'Payment successful',
   confirmLabel = 'Close',
   zIndexClass = 'z-[60]',
+  onPrintBill,
+  printBusy = false,
 }: TrackingQrModalProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="sm" zIndexClass={zIndexClass}>
@@ -61,10 +65,22 @@ export function TrackingQrModal({
           <p className="text-sm text-gray-500">Order placed successfully</p>
         )}
 
+        {onPrintBill ? (
+          <button
+            type="button"
+            disabled={printBusy}
+            onClick={onPrintBill}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3 font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" />
+            {printBusy ? 'Printing…' : 'Print bill'}
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={onClose}
-          className="mt-6 w-full rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90 transition-colors"
+          className="mt-3 w-full rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90 transition-colors"
         >
           {confirmLabel}
         </button>
