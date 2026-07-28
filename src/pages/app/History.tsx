@@ -474,27 +474,33 @@ function ReceiptModal({
 
 function OrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
   const payment = (order.payment_method || '').toUpperCase();
-  const orderRef = isCounter(order) ? getServiceModeLabel(order) : `#${order.order_number}`;
-  const meta = [orderRef, formatOrderTime(order)].filter(Boolean).join(' · ');
+  const counter = isCounter(order);
 
   return (
-    <button
+    <tr
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-white px-3 py-3 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="cursor-pointer transition-colors hover:bg-primary/5"
     >
-      <span className="min-w-0 flex-1 truncate text-sm text-gray-900">
-        <span className="font-semibold">{getOrderTitle(order)}</span>
-        {meta ? <span className="font-medium text-gray-500">{` · ${meta}`}</span> : null}
-      </span>
-      {payment ? (
-        <span className="shrink-0 rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
-          {payment}
-        </span>
-      ) : null}
-      <span className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums text-primary">
+      <td className="px-4 py-3.5 font-semibold text-gray-900">
+        {getOrderTitle(order)}
+      </td>
+      <td className="px-4 py-3.5 text-gray-500">
+        {counter ? getServiceModeLabel(order) : `#${order.order_number}`}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3.5 text-gray-500">
+        {formatOrderTime(order)}
+      </td>
+      <td className="px-4 py-3.5">
+        {payment ? (
+          <span className="rounded-md bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">
+            {payment}
+          </span>
+        ) : null}
+      </td>
+      <td className="px-4 py-3.5 text-right font-bold tabular-nums text-primary">
         {fmt(order.total)}
-      </span>
-    </button>
+      </td>
+    </tr>
   );
 }
 
@@ -729,10 +735,23 @@ export function History() {
         />
       ) : (
         <>
-          <div className="space-y-2">
-            {orders.map((order) => (
-              <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
-            ))}
+          <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  <th className="px-4 py-3">{orderType === 'dine_in' ? 'Table' : 'Order'}</th>
+                  <th className="px-4 py-3">{orderType === 'dine_in' ? 'Order #' : 'Mode'}</th>
+                  <th className="px-4 py-3">Date &amp; Time</th>
+                  <th className="px-4 py-3">Payment</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {orders.map((order) => (
+                  <OrderRow key={order.id} order={order} onClick={() => setSelectedOrder(order)} />
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Load more */}
