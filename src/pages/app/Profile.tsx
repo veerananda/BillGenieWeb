@@ -24,7 +24,7 @@ import {
   formatSubscriptionPlanName,
   type SubscriptionSelection,
 } from '../../data/pricing';
-import { INDIA_LOCATION_OPTIONS, districtsForState, formatCityTier } from '../../data/indiaLocations';
+import { INDIA_LOCATION_OPTIONS, citiesForState, formatCityTier } from '../../data/indiaLocations';
 
 // ??? Types ????????????????????????????????????????????????????????????????????
 
@@ -33,7 +33,6 @@ interface ProfileForm {
   address: string;
   city: string;
   state: string;
-  district: string;
   cuisine: string;
   contact_number: string;
   upi_id: string;
@@ -52,7 +51,6 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     address: p.address ?? '',
     city: p.city ?? '',
     state: p.state ?? '',
-    district: p.district ?? '',
     cuisine: p.cuisine ?? '',
     contact_number: p.contact_number ?? '',
     upi_id: p.upi_id ?? '',
@@ -490,7 +488,6 @@ export function Profile() {
     address: '',
     city: '',
     state: '',
-    district: '',
     cuisine: '',
     contact_number: '',
     upi_id: '',
@@ -597,7 +594,6 @@ export function Profile() {
         address: form.address.trim() || undefined,
         city: form.city.trim() || undefined,
         state: form.state.trim() || undefined,
-        district: form.district.trim() || undefined,
         contact_number: form.contact_number.trim() || undefined,
         upi_id: form.upi_id.trim() || undefined,
         upi_qr_code: form.upi_qr_code || undefined,
@@ -743,7 +739,7 @@ export function Profile() {
   }
 
   // ?? Render ????????????????????????????????????????????????????????????????
-  const districtOptions = districtsForState(form.state);
+  const cityOptions = citiesForState(form.state);
 
   return (
     <div className="space-y-6">
@@ -793,19 +789,10 @@ export function Profile() {
             />
           </Field>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="City">
-              <input
-                type="text"
-                value={form.city}
-                onChange={(e) => set('city', e.target.value)}
-                placeholder="e.g. Mumbai"
-                className={inputClass}
-              />
-            </Field>
             <Field label="State">
               <select
                 value={form.state}
-                onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, district: '' }))}
+                onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, city: '' }))}
                 className={inputClass}
               >
                 <option value="">Select state</option>
@@ -814,21 +801,21 @@ export function Profile() {
                 ))}
               </select>
             </Field>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="District">
+            <Field label="City">
               <select
-                value={form.district}
-                onChange={(e) => set('district', e.target.value)}
+                value={form.city}
+                onChange={(e) => set('city', e.target.value)}
                 className={inputClass}
                 disabled={!form.state}
               >
-                <option value="">{form.state ? 'Select district' : 'Select state first'}</option>
-                {districtOptions.map((item) => (
+                <option value="">{form.state ? 'Select city' : 'Select state first'}</option>
+                {cityOptions.map((item) => (
                   <option key={item.name} value={item.name}>{item.name}</option>
                 ))}
               </select>
             </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Cuisine type" optional>
               <input
                 type="text"
@@ -839,9 +826,9 @@ export function Profile() {
               />
             </Field>
           </div>
-          {form.district ? (
+          {form.city ? (
             <p className="text-xs text-gray-500">
-              Detected pricing tier: {formatCityTier((districtOptions.find((item) => item.name === form.district)?.tier) ?? 'tier_3')}
+              Detected pricing tier: {formatCityTier((cityOptions.find((item) => item.name === form.city)?.tier) ?? 'tier_3')}
             </p>
           ) : null}
         </SectionCard>

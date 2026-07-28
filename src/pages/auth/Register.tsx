@@ -24,7 +24,7 @@ import {
   type CityTier,
   priceForTier,
 } from '../../data/pricing';
-import { INDIA_LOCATION_OPTIONS, districtsForState, formatCityTier, resolveCityTier } from '../../data/indiaLocations';
+import { INDIA_LOCATION_OPTIONS, citiesForState, formatCityTier, resolveCityTier } from '../../data/indiaLocations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ function generateLoginId(): string {
 
 type StartMode = 'trial' | 'paid';
 
-interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; district: string; }
+interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
 
 const TRIAL_INCLUDES = [
@@ -411,7 +411,7 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '', state: '', district: '' });
+  const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '', state: '' });
   const [step2, setStep2] = useState<Step2>({ ownerName: '', email: '', phone: '' });
   const [startMode, setStartMode] = useState<StartMode>('trial');
   const [subscription, setSubscription] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
@@ -437,8 +437,8 @@ export function Register() {
       setTimeout(() => setCopied(false), 2000);
     });
   }, [loginId]);
-  const districtOptions = useMemo(() => districtsForState(step1.state), [step1.state]);
-  const cityTier = useMemo<CityTier>(() => resolveCityTier(step1.state, step1.district), [step1.state, step1.district]);
+  const cityOptions = useMemo(() => citiesForState(step1.state), [step1.state]);
+  const cityTier = useMemo<CityTier>(() => resolveCityTier(step1.state, step1.city), [step1.state, step1.city]);
 
   // ── Validation ────────────────────────────────────────────────────────────
 
@@ -446,7 +446,7 @@ export function Register() {
     if (step === 0) {
       if (!step1.restaurantName.trim()) return 'Restaurant name is required.';
       if (!step1.state.trim()) return 'State is required.';
-      if (!step1.district.trim()) return 'District is required.';
+      if (!step1.city.trim()) return 'City is required.';
     } else if (step === 1) {
       if (!step2.ownerName.trim()) return 'Owner name is required.';
       if (!step2.email.trim()) return 'Email is required.';
@@ -485,9 +485,8 @@ export function Register() {
       const response = await apiClient.register({
         restaurant_name: step1.restaurantName.trim(),
         cuisine: step1.cuisine.trim() || undefined,
-        city: step1.city.trim() || undefined,
+        city: step1.city.trim(),
         state: step1.state.trim(),
-        district: step1.district.trim(),
         address: step1.address.trim() || undefined,
         owner_name: step2.ownerName.trim(),
         email: step2.email.trim(),
@@ -544,14 +543,10 @@ export function Register() {
                   <input type="text" placeholder="e.g. North Indian, Chinese" value={step1.cuisine} onChange={s1('cuisine')} className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>City <span className="text-xs font-normal text-gray-400">(optional)</span></label>
-                  <input type="text" placeholder="e.g. Mumbai" value={step1.city} onChange={s1('city')} className={inputCls} />
-                </div>
-                <div>
                   <label className={labelCls}>State <span className="text-red-500">*</span></label>
                   <select
                     value={step1.state}
-                    onChange={(e) => setStep1((p) => ({ ...p, state: e.target.value, district: '' }))}
+                    onChange={(e) => setStep1((p) => ({ ...p, state: e.target.value, city: '' }))}
                     className={inputCls}
                   >
                     <option value="">Select state</option>
@@ -561,19 +556,19 @@ export function Register() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>District <span className="text-red-500">*</span></label>
+                  <label className={labelCls}>City <span className="text-red-500">*</span></label>
                   <select
-                    value={step1.district}
-                    onChange={(e) => setStep1((p) => ({ ...p, district: e.target.value }))}
+                    value={step1.city}
+                    onChange={(e) => setStep1((p) => ({ ...p, city: e.target.value }))}
                     className={inputCls}
                     disabled={!step1.state}
                   >
-                    <option value="">{step1.state ? 'Select district' : 'Select state first'}</option>
-                    {districtOptions.map((item) => (
+                    <option value="">{step1.state ? 'Select city' : 'Select state first'}</option>
+                    {cityOptions.map((item) => (
                       <option key={item.name} value={item.name}>{item.name}</option>
                     ))}
                   </select>
-                  {step1.district ? (
+                  {step1.city ? (
                     <p className="mt-1.5 text-xs text-gray-500">Detected pricing tier: {formatCityTier(cityTier)}</p>
                   ) : null}
                 </div>

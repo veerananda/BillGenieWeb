@@ -58,7 +58,6 @@ export interface RegisterData {
   address?: string;
   city?: string;
   state?: string;
-  district?: string;
   cuisine?: string;
   subscription?: import('../data/pricing').SubscriptionSelection;
 }
@@ -265,7 +264,6 @@ export interface UpdateProfileRequest {
   address?: string;
   city?: string;
   state?: string;
-  district?: string;
   contact_number?: string;
   upi_id?: string;
   upi_qr_code?: string;
