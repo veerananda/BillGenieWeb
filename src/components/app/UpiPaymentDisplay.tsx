@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Printer } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { RestaurantProfile } from '../../services/api';
 import { buildUpiPaymentUriFromProfile } from '../../lib/upiPayment';
@@ -8,6 +9,8 @@ interface UpiPaymentDisplayProps {
   amount: number;
   transactionNote?: string;
   qrSize?: number;
+  onPrintBill?: () => void;
+  printBusy?: boolean;
 }
 
 export function UpiPaymentDisplay({
@@ -15,11 +18,26 @@ export function UpiPaymentDisplay({
   amount,
   transactionNote = 'Counter order',
   qrSize = 176,
+  onPrintBill,
+  printBusy = false,
 }: UpiPaymentDisplayProps) {
   const upiUri = useMemo(
     () => buildUpiPaymentUriFromProfile(profile, amount, transactionNote),
     [profile, amount, transactionNote]
   );
+
+  const printButton =
+    onPrintBill ? (
+      <button
+        type="button"
+        disabled={printBusy}
+        onClick={onPrintBill}
+        className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+      >
+        <Printer className="h-4 w-4" />
+        {printBusy ? 'Printing…' : 'Print bill'}
+      </button>
+    ) : null;
 
   if (upiUri) {
     return (
@@ -32,6 +50,7 @@ export function UpiPaymentDisplay({
         {profile?.upi_id ? (
           <p className="text-xs text-gray-500">UPI ID: {profile.upi_id}</p>
         ) : null}
+        {printButton}
       </div>
     );
   }
@@ -48,13 +67,17 @@ export function UpiPaymentDisplay({
           className="rounded-lg object-contain"
           style={{ width: qrSize, height: qrSize }}
         />
+        {printButton}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-500">
-      Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
+    <div className="space-y-2">
+      <div className="rounded-xl bg-gray-50 px-5 py-4 text-center text-sm text-gray-500">
+        Add a UPI ID in Restaurant Profile to enable dynamic payment QR codes.
+      </div>
+      {printButton}
     </div>
   );
 }

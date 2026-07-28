@@ -20,12 +20,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { calculateRestaurantOrderTax, splitItemGross, subtotalLabel, taxLabel } from '../../lib/orderTax';
-import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder, printBillHtml } from '../../lib/customerBillFormat';
+import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder } from '../../lib/customerBillFormat';
+import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
 import {
-  getBrowserPrinter,
-  getPaperWidthMm,
-  printTextToBrowserPrinter,
-} from '../../lib/browserThermalPrinter';
+  printBillSmart,
+  resolveBillAutoPrintOnCheckout,
+} from '../../lib/printBillSmart';
 import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
@@ -806,24 +806,7 @@ function OrderDetailPanel({
     const paperWidthMm = getPaperWidthMm('bill');
     const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems, paperWidthMm);
     const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems, paperWidthMm);
-    const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
-    // Avoid system print dialog when a browser thermal printer is already paired.
-    if (!hasBrowserThermal) {
-      printBillHtml(html);
-    }
-    void (async () => {
-      try {
-        const sentToBrowser = await printTextToBrowserPrinter('bill', text);
-        if (sentToBrowser) return;
-      } catch {
-        // Fall through to agent queue.
-      }
-      try {
-        await apiClient.enqueueBillPrint(order.id);
-      } catch {
-        // Agent queue is optional when browser/system print already ran.
-      }
-    })();
+    void printBillSmart({ html, text, orderId: order.id });
   };
 
   const handlePayment = async () => {
@@ -877,6 +860,9 @@ function OrderDetailPanel({
     setPaymentLoading(true);
     try {
       await apiClient.completeOrderWithPayment(order.id, payload);
+      if (await resolveBillAutoPrintOnCheckout()) {
+        handlePrintBill();
+      }
       const updatedTable = await apiClient.setTableVacant(table.id);
       dispatch(upsertTable(updatedTable));
       dispatch(removeActiveOrder(order.id));
@@ -1413,6 +1399,7 @@ function OrderDetailPanel({
                     amount={displayTotal}
                     transactionNote={`Table ${table.name} order`}
                     qrSize={144}
+                    onPrintBill={handlePrintBill}
                   />
                   <input
                     type="text"
@@ -1504,6 +1491,7 @@ function OrderDetailPanel({
                     amount={splitUpiAmount}
                     transactionNote={`Table ${table.name} split payment`}
                     qrSize={128}
+                    onPrintBill={handlePrintBill}
                   />
                   <p className="text-center text-xs text-gray-500">
                     Cash paid: {fmt(splitCashPortionAmount)}

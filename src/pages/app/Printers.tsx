@@ -19,6 +19,7 @@ import {
   type BrowserPrinterRole,
   type PaperWidthMm,
 } from '../../lib/browserThermalPrinter';
+import { cacheBillAutoPrintOnCheckout } from '../../lib/printBillSmart';
 
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-gray-50 disabled:text-gray-400';
@@ -216,12 +217,7 @@ export function Printers() {
           r.settings.top_feed_lines ?? 0,
           r.settings.bottom_feed_lines ?? 3
         );
-        if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
-          setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
-        }
-        if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
-          setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
-        }
+        cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load printer settings.');
@@ -254,12 +250,7 @@ export function Printers() {
         r.settings.top_feed_lines ?? 0,
         r.settings.bottom_feed_lines ?? 3
       );
-      if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
-        setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
-      }
-      if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
-        setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
-      }
+      cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
       setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');
@@ -382,7 +373,7 @@ export function Printers() {
             <div>
               <p className="text-sm font-medium text-gray-800">Bill printing</p>
               <p className="text-xs text-gray-400">
-                When on, Print bill queues a slip. Checkout does not auto-print.
+                When on, Print bill can queue a slip to the print agent bill printer.
               </p>
             </div>
             <button
@@ -403,6 +394,37 @@ export function Printers() {
               <span
                 className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
                   printSettings.bill_printing_enabled ? 'translate-x-5' : ''
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Auto-print bill on checkout</p>
+              <p className="text-xs text-gray-400">
+                After dine-in or counter payment succeeds, print the bill from this browser’s
+                bill printer (or the print agent).
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(printSettings.bill_auto_print_on_checkout)}
+              disabled={!canManageEnables || printSaving}
+              onClick={() => {
+                if (!canManageEnables) return;
+                void savePrintSettings({
+                  bill_auto_print_on_checkout: !printSettings.bill_auto_print_on_checkout,
+                });
+              }}
+              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
+                printSettings.bill_auto_print_on_checkout ? 'bg-primary' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                  printSettings.bill_auto_print_on_checkout ? 'translate-x-5' : ''
                 }`}
               />
             </button>

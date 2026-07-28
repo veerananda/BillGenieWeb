@@ -18,10 +18,14 @@ import { calculateOrderTotals } from '../../lib/orderCalculations';
 import { formatVariantLabelSuffix, formatOrderItemPrepProgress, formatOrderLineDisplayName } from '../../lib/orderHelpers';
 import {
   buildCustomerBillHtml,
-  printBillHtml,
+  buildCustomerBillText,
   type CustomerBillLineItem,
 } from '../../lib/customerBillFormat';
 import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
+import {
+  printBillSmart,
+  resolveBillAutoPrintOnCheckout,
+} from '../../lib/printBillSmart';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -55,6 +59,9 @@ interface PostPaymentQr {
   ticket: number | null;
   trackingUrl: string | null;
   summary: string | null;
+  orderId?: string;
+  billHtml?: string;
+  billText?: string;
 }
 
 function cartLineKey(menuItemId: string, variantId?: string) {
@@ -322,57 +329,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     );
   }
 
-  async function saveOrder(payment: CompletePaymentRequest, summary: string) {
-    setProcessing(true);
-    setError(null);
-    try {
-      const createdOrder = await apiClient.createOrder({
-        order_type: 'counter',
-        service_mode: serviceMode,
-        customer_name: customerName.trim() || undefined,
-        customer_phone: customerPhone.trim() || undefined,
-        items: cart.map((c) => ({
-          menu_item_id: c.menuItemId,
-          quantity: c.quantity,
-          notes: c.notes?.trim() || undefined,
-          variant_id: c.variantId,
-        })),
-      });
-
-      const result = await apiClient.completeOrderWithPayment(createdOrder.id, payment);
-      const { url, ticket: resolvedTicket } = await resolveTrackingUrlAfterPayment(
-        result,
-        createdOrder.id
-      );
-
-      const paidOrder: Order = {
-        ...(result.order ?? createdOrder),
-        id: createdOrder.id,
-        tracking_token: result.tracking_token ?? result.order?.tracking_token,
-        tracking_url: url ?? undefined,
-        ticket_number: resolvedTicket ?? result.ticket_number ?? result.order?.ticket_number,
-      };
-
-      const ticket =
-        resolvedTicket ??
-        result.ticket_number ??
-        paidOrder.ticket_number ??
-        createdOrder.ticket_number ??
-        createdOrder.order_number ??
-        null;
-
-      setShowCheckout(false);
-      onCreated(paidOrder);
-      onPaymentComplete({ ticket, trackingUrl: url, summary });
-      resetForNextOrder();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed');
-      throw err;
-    } finally {
-      setProcessing(false);
-    }
-  }
-
   async function handleCashPayment() {
     if (cashGiven < finalAmount) {
       setCashInputError(true);
@@ -438,7 +394,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const paymentFlowActive = processing || showCheckout;
   const attendantPayload = attendedByUserId ? { attended_by_user_id: attendedByUserId } : {};
 
-  function handlePrintBill() {
+  function buildCheckoutBillDocuments() {
     const billItems: CustomerBillLineItem[] = cart.map((c) => ({
       name: formatOrderLineDisplayName(
         cartDisplayName(c.name, c.variantLabel),
@@ -449,7 +405,8 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       unitRate: c.price,
       total: c.price * c.quantity,
     }));
-    const html = buildCustomerBillHtml({
+    const paperWidthMm = getPaperWidthMm('bill');
+    const data = {
       restaurantName: profile?.name || 'Counter Order',
       address: profile?.address || '',
       contactNumber: profile?.contact_number || profile?.phone || '',
@@ -465,9 +422,80 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       pricesIncludeGst,
       compositeScheme,
       isPaid: false,
-      paperWidthMm: getPaperWidthMm('bill'),
-    });
-    printBillHtml(html);
+      paperWidthMm,
+    };
+    return {
+      html: buildCustomerBillHtml(data),
+      text: buildCustomerBillText(data),
+    };
+  }
+
+  function handlePrintBill(orderId?: string) {
+    const { html, text } = buildCheckoutBillDocuments();
+    void printBillSmart({ html, text, orderId });
+  }
+
+  async function saveOrder(payment: CompletePaymentRequest, summary: string) {
+    setProcessing(true);
+    setError(null);
+    const { html: billHtml, text: billText } = buildCheckoutBillDocuments();
+    try {
+      const createdOrder = await apiClient.createOrder({
+        order_type: 'counter',
+        service_mode: serviceMode,
+        customer_name: customerName.trim() || undefined,
+        customer_phone: customerPhone.trim() || undefined,
+        items: cart.map((c) => ({
+          menu_item_id: c.menuItemId,
+          quantity: c.quantity,
+          notes: c.notes?.trim() || undefined,
+          variant_id: c.variantId,
+        })),
+      });
+
+      const result = await apiClient.completeOrderWithPayment(createdOrder.id, payment);
+      const { url, ticket: resolvedTicket } = await resolveTrackingUrlAfterPayment(
+        result,
+        createdOrder.id
+      );
+
+      const paidOrder: Order = {
+        ...(result.order ?? createdOrder),
+        id: createdOrder.id,
+        tracking_token: result.tracking_token ?? result.order?.tracking_token,
+        tracking_url: url ?? undefined,
+        ticket_number: resolvedTicket ?? result.ticket_number ?? result.order?.ticket_number,
+      };
+
+      const ticket =
+        resolvedTicket ??
+        result.ticket_number ??
+        paidOrder.ticket_number ??
+        createdOrder.ticket_number ??
+        createdOrder.order_number ??
+        null;
+
+      if (await resolveBillAutoPrintOnCheckout()) {
+        void printBillSmart({ html: billHtml, text: billText, orderId: createdOrder.id });
+      }
+
+      setShowCheckout(false);
+      onCreated(paidOrder);
+      onPaymentComplete({
+        ticket,
+        trackingUrl: url,
+        summary,
+        orderId: createdOrder.id,
+        billHtml,
+        billText,
+      });
+      resetForNextOrder();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Payment failed');
+      throw err;
+    } finally {
+      setProcessing(false);
+    }
   }
 
   async function handleConfirmPayment() {
@@ -816,7 +844,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               <p className="text-sm font-semibold text-gray-800">Staff print</p>
               <button
                 type="button"
-                onClick={handlePrintBill}
+                onClick={() => handlePrintBill()}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
               >
                 <Printer className="h-4 w-4" />
@@ -881,7 +909,12 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               {/* UPI inputs */}
               {paymentMethod === 'upi' && (
                 <div className="space-y-3 pt-1">
-                  <UpiPaymentDisplay profile={profile} amount={finalAmount} transactionNote="Counter order" />
+                  <UpiPaymentDisplay
+                    profile={profile}
+                    amount={finalAmount}
+                    transactionNote="Counter order"
+                    onPrintBill={() => handlePrintBill()}
+                  />
                   <input
                     type="text"
                     value={upiTxnId}
@@ -919,7 +952,12 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               {/* Split — UPI phase */}
               {paymentMethod === 'split' && splitPhase === 'upi' && (
                 <div className="space-y-3 pt-1">
-                  <UpiPaymentDisplay profile={profile} amount={splitUpiAmount} transactionNote="Counter order (UPI portion)" />
+                  <UpiPaymentDisplay
+                    profile={profile}
+                    amount={splitUpiAmount}
+                    transactionNote="Counter order (UPI portion)"
+                    onPrintBill={() => handlePrintBill()}
+                  />
                   <div className="flex justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
                     <span className="text-blue-700">Cash paid</span>
                     <span className="font-semibold text-blue-800">{fmt(splitCashPortionAmount)}</span>
@@ -985,6 +1023,7 @@ export function Counter() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [postPaymentQr, setPostPaymentQr] = useState<PostPaymentQr | null>(null);
+  const [qrPrintBusy, setQrPrintBusy] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1171,6 +1210,19 @@ export function Counter() {
         paymentSummary={activeQr?.summary ?? null}
         kitchenEnabled={counterKitchenEnabled}
         zIndexClass="z-[70]"
+        printBusy={qrPrintBusy}
+        onPrintBill={
+          postPaymentQr?.billHtml && postPaymentQr?.billText
+            ? () => {
+                setQrPrintBusy(true);
+                void printBillSmart({
+                  html: postPaymentQr.billHtml!,
+                  text: postPaymentQr.billText!,
+                  orderId: postPaymentQr.orderId,
+                }).finally(() => setQrPrintBusy(false));
+              }
+            : undefined
+        }
       />
     </div>
   );

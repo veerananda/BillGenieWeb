@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order, RestaurantProfile } from '../../services/api';
-import { printBillHtml, formatBillMoney, formatBillDateTime, formatThermalItemBlock, thermalWidthForPaper } from '../../lib/customerBillFormat';
+import { formatBillMoney, formatBillDateTime, formatThermalItemBlock, thermalWidthForPaper, printBillHtml } from '../../lib/customerBillFormat';
 import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
+import { printBillSmart } from '../../lib/printBillSmart';
 import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -342,7 +343,15 @@ function ReceiptModal({
 
   const handlePrintReceipt = () => {
     setActionMessage(null);
-    printBillHtml(buildReceiptHtml(receiptText, order, paperWidthMm));
+    void printBillSmart({
+      html: buildReceiptHtml(receiptText, order, paperWidthMm),
+      text: receiptText,
+      orderId: order.id,
+    }).then((result) => {
+      if (result === 'none') {
+        setActionMessage('Could not reach a bill printer. Pair one in Printers or check agent settings.');
+      }
+    });
   };
 
   return (
@@ -631,7 +640,25 @@ export function History() {
 
       if (!all.length) return;
 
-      printBillHtml(buildCombinedReceiptHtml(all, profile, getPaperWidthMm('bill')));
+      const paperWidthMm = getPaperWidthMm('bill');
+      let anySent = false;
+      for (const historyOrder of all) {
+        const receiptItems = groupReceiptItems(
+          historyOrder.items ?? [],
+          profile?.category_display_blocklist ?? [],
+        );
+        const text = buildReceiptText(historyOrder, profile, receiptItems, paperWidthMm);
+        const result = await printBillSmart({
+          html: buildReceiptHtml(text, historyOrder, paperWidthMm),
+          text,
+          orderId: historyOrder.id,
+          allowSystemPrint: false,
+        });
+        if (result !== 'none') anySent = true;
+      }
+      if (!anySent) {
+        printBillHtml(buildCombinedReceiptHtml(all, profile, paperWidthMm));
+      }
     } catch (err) {
       console.error('Print all failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to print receipts');
