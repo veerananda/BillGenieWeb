@@ -4,6 +4,7 @@
 
 export type BillingCycle = 'monthly' | 'annual';
 export type OperationMode = 'dine_in' | 'counter' | 'both';
+export type CityTier = 'tier_1' | 'tier_2' | 'tier_3';
 
 export const SUBSCRIPTION_INCLUDED = {
   admins: 1,
@@ -75,6 +76,7 @@ export interface SubscriptionQuote {
   bundled_staff: number;
   bundled_managers: number;
   table_bundles: number;
+  city_tier?: CityTier;
 }
 
 export interface AddonOption {
@@ -148,7 +150,22 @@ export function normalizeMaxTables(maxTables: number): number {
   return Math.min(MAX_TABLES, Math.max(MIN_TABLES_DINE_IN, normalized));
 }
 
-export function calculateSubscriptionQuote(selection: SubscriptionSelection): SubscriptionQuote {
+function tierMultiplier(tier: CityTier): number {
+  switch (tier) {
+    case 'tier_1':
+      return 1.25;
+    case 'tier_3':
+      return 0.75;
+    default:
+      return 1;
+  }
+}
+
+export function priceForTier(amount: number, tier: CityTier): number {
+  return Math.round(amount * tierMultiplier(tier));
+}
+
+export function calculateSubscriptionQuote(selection: SubscriptionSelection, cityTier: CityTier = 'tier_2'): SubscriptionQuote {
   const clamp = (v: number, max = 50) => Math.max(0, Math.min(max, Math.floor(v)));
   const sel: SubscriptionSelection = {
     ...selection,
@@ -169,17 +186,28 @@ export function calculateSubscriptionQuote(selection: SubscriptionSelection): Su
     : bundledStaffFromTables(sel.max_tables);
   const bundledManagers = sel.operation_mode === 'counter' ? 0 : bundledManagersFromTables(sel.max_tables);
 
+  const pricing = {
+    basic: priceForTier(BASIC_MONTHLY_PRICE, cityTier),
+    extra_staff: priceForTier(PRICING.extra_staff, cityTier),
+    extra_manager: priceForTier(PRICING.extra_manager, cityTier),
+    dual_service: priceForTier(PRICING.dual_service, cityTier),
+    history_extended: priceForTier(PRICING.history_extended, cityTier),
+    inventory: priceForTier(PRICING.inventory, cityTier),
+    kitchen_dine_in: priceForTier(PRICING.kitchen_dine_in, cityTier),
+    kitchen_counter: priceForTier(PRICING.kitchen_counter, cityTier),
+    table_staff_bundle: priceForTier(PRICING.table_staff_bundle, cityTier),
+  };
   const line_items: SubscriptionLineItem[] = [
-    { id: 'basic', label: `Basic — 1 admin + ${SUBSCRIPTION_INCLUDED.staff} staff, ${INCLUDED_TABLES_BASIC} tables, menu, sales, 30-day history`, amount: BASIC_MONTHLY_PRICE },
+    { id: 'basic', label: `Basic — 1 admin + ${SUBSCRIPTION_INCLUDED.staff} staff, ${INCLUDED_TABLES_BASIC} tables, menu, sales, 30-day history`, amount: pricing.basic },
   ];
-  let monthly = BASIC_MONTHLY_PRICE;
+  let monthly = pricing.basic;
 
   if (sel.operation_mode === 'both') {
-    line_items.push({ id: 'dual_service', label: 'Dine-in + Counter (both service modes)', amount: PRICING.dual_service });
-    monthly += PRICING.dual_service;
+    line_items.push({ id: 'dual_service', label: 'Dine-in + Counter (both service modes)', amount: pricing.dual_service });
+    monthly += pricing.dual_service;
   }
   if (sel.operation_mode !== 'counter' && tableBundles > 0) {
-    const amount = tableBundles * PRICING.table_staff_bundle;
+    const amount = tableBundles * pricing.table_staff_bundle;
     line_items.push({ id: 'table_staff_bundles', label: `Table bundles ×${tableBundles} (+${tableBundles * TABLE_STAFF_BUNDLE_SIZE} tables, +${tableBundles} staff)`, amount });
     monthly += amount;
   }
@@ -187,30 +215,30 @@ export function calculateSubscriptionQuote(selection: SubscriptionSelection): Su
     line_items.push({ id: 'tables_capacity', label: `${sel.max_tables} tables · ${bundledStaff} staff · ${bundledManagers} manager${bundledManagers === 1 ? '' : 's'} included`, amount: 0 });
   }
   if (sel.extra_staff > 0) {
-    const amount = sel.extra_staff * PRICING.extra_staff;
+    const amount = sel.extra_staff * pricing.extra_staff;
     line_items.push({ id: 'extra_staff', label: `Extra staff ×${sel.extra_staff}`, amount });
     monthly += amount;
   }
   if (sel.extra_managers > 0) {
-    const amount = sel.extra_managers * PRICING.extra_manager;
+    const amount = sel.extra_managers * pricing.extra_manager;
     line_items.push({ id: 'extra_managers', label: `Extra managers ×${sel.extra_managers}`, amount });
     monthly += amount;
   }
   if (sel.history_extended) {
-    line_items.push({ id: 'history_extended', label: 'Extended order history (2 years)', amount: PRICING.history_extended });
-    monthly += PRICING.history_extended;
+    line_items.push({ id: 'history_extended', label: 'Extended order history (2 years)', amount: pricing.history_extended });
+    monthly += pricing.history_extended;
   }
   if (sel.inventory) {
-    line_items.push({ id: 'inventory', label: 'Inventory & stock management', amount: PRICING.inventory });
-    monthly += PRICING.inventory;
+    line_items.push({ id: 'inventory', label: 'Inventory & stock management', amount: pricing.inventory });
+    monthly += pricing.inventory;
   }
   if (sel.kitchen_dine_in) {
-    line_items.push({ id: 'kitchen_dine_in', label: 'Kitchen — dine-in orders', amount: PRICING.kitchen_dine_in });
-    monthly += PRICING.kitchen_dine_in;
+    line_items.push({ id: 'kitchen_dine_in', label: 'Kitchen — dine-in orders', amount: pricing.kitchen_dine_in });
+    monthly += pricing.kitchen_dine_in;
   }
   if (sel.kitchen_counter) {
-    line_items.push({ id: 'kitchen_counter', label: 'Kitchen — counter / takeaway', amount: PRICING.kitchen_counter });
-    monthly += PRICING.kitchen_counter;
+    line_items.push({ id: 'kitchen_counter', label: 'Kitchen — counter / takeaway', amount: pricing.kitchen_counter });
+    monthly += pricing.kitchen_counter;
   }
 
   const annual_total = monthly * ANNUAL_MULTIPLIER;
@@ -224,6 +252,7 @@ export function calculateSubscriptionQuote(selection: SubscriptionSelection): Su
     bundled_staff: bundledStaff + sel.extra_staff,
     bundled_managers: bundledManagers + sel.extra_managers,
     table_bundles: tableBundles,
+    city_tier: cityTier,
   };
 }
 
@@ -271,7 +300,7 @@ export function annualMonthlyEquivalent(monthly: number): number {
 }
 
 export function annualSavings(monthly: number): number {
-  return monthly * 2;
+  return monthly;
 }
 
 export function formatInr(amount: number): string {

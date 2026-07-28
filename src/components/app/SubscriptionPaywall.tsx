@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, CreditCard, Pencil, Loader2 } from 'lucide-react';
 import apiClient from '../../services/api';
 import type { SubscriptionRenewalQuote } from '../../services/api';
-import { useAppDispatch } from '../../store/hooks';
-import { setProfile } from '../../store/profileSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { selectProfile, setProfile } from '../../store/profileSlice';
 import {
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
@@ -45,6 +45,7 @@ export function SubscriptionPaywall({
   pendingPayment = false,
 }: Props) {
   const dispatch = useAppDispatch();
+  const profile = useAppSelector(selectProfile);
   const [quote, setQuote] = useState<SubscriptionRenewalQuote | null>(null);
   const [planSelection, setPlanSelection] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
   const [editingPlan, setEditingPlan] = useState(false);
@@ -58,8 +59,8 @@ export function SubscriptionPaywall({
 
   const localQuote = useMemo(() => {
     if (!allowsPlanReview) return null;
-    return calculateSubscriptionQuote(planSelection);
-  }, [planSelection, allowsPlanReview]);
+    return calculateSubscriptionQuote(planSelection, profile?.city_tier ?? 'tier_2');
+  }, [planSelection, allowsPlanReview, profile?.city_tier]);
 
   const displayQuote = useMemo(() => {
     if (allowsPlanReview && localQuote) {

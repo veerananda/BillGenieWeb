@@ -21,7 +21,10 @@ import {
   type SubscriptionSelection,
   type OperationMode,
   type BillingCycle,
+  type CityTier,
+  priceForTier,
 } from '../../data/pricing';
+import { INDIA_LOCATION_OPTIONS, districtsForState, formatCityTier, resolveCityTier } from '../../data/indiaLocations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -34,7 +37,7 @@ function generateLoginId(): string {
 
 type StartMode = 'trial' | 'paid';
 
-interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; }
+interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; district: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
 
 const TRIAL_INCLUDES = [
@@ -135,9 +138,11 @@ function NumericStepper({
 function TableCapacityStepper({
   value,
   onChange,
+  cityTier,
 }: {
   value: number;
   onChange: (n: number) => void;
+  cityTier: CityTier;
 }) {
   const tables = value || INCLUDED_TABLES_BASIC;
   const staffIncluded = bundledStaffFromTables(tables);
@@ -157,7 +162,7 @@ function TableCapacityStepper({
       <div className="flex-1 pr-4">
         <div className="text-sm font-medium text-gray-900">Max dine-in tables</div>
         <div className="mt-1 text-xs text-gray-500 leading-5">
-          {INCLUDED_TABLES_BASIC} included in basic. Each +{TABLE_STAFF_BUNDLE_SIZE} tables adds 1 staff ({formatInr(PRICING.table_staff_bundle)}/mo).<br />
+          {INCLUDED_TABLES_BASIC} included in basic. Each +{TABLE_STAFF_BUNDLE_SIZE} tables adds 1 staff ({formatInr(priceForTier(PRICING.table_staff_bundle, cityTier))}/mo).<br />
           Includes {staffIncluded} staff · {managersIncluded} manager{managersIncluded === 1 ? '' : 's'} (1 per 15 tables).
         </div>
       </div>
@@ -189,11 +194,13 @@ function TableCapacityStepper({
 function PlanStep({
   subscription,
   onChange,
+  cityTier,
 }: {
   subscription: SubscriptionSelection;
   onChange: (s: SubscriptionSelection) => void;
+  cityTier: CityTier;
 }) {
-  const quote = useMemo(() => calculateSubscriptionQuote(subscription), [subscription]);
+  const quote = useMemo(() => calculateSubscriptionQuote(subscription, cityTier), [cityTier, subscription]);
 
   function setMode(mode: OperationMode) {
     onChange({
@@ -231,7 +238,7 @@ function PlanStep({
         <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div className="flex items-baseline justify-between">
             <span className="text-base font-bold text-gray-900">Basic</span>
-            <span className="text-base font-bold text-gray-900">{formatInr(BASIC_MONTHLY_PRICE)}<span className="text-xs font-normal text-gray-500">/mo</span></span>
+            <span className="text-base font-bold text-gray-900">{formatInr(priceForTier(BASIC_MONTHLY_PRICE, cityTier))}<span className="text-xs font-normal text-gray-500">/mo</span></span>
           </div>
           <p className="mt-1 text-xs text-gray-500">Includes after {TRIAL_DURATION_DAYS}-day free trial:</p>
           <ul className="mt-2 space-y-1">
@@ -253,7 +260,7 @@ function PlanStep({
           {([
             ['dine_in', 'Dine-in only'],
             ['counter', 'Counter only'],
-            ['both', `Both (+${formatInr(PRICING.dual_service)})`],
+            ['both', `Both (+${formatInr(priceForTier(PRICING.dual_service, cityTier))})`],
           ] as const).map(([mode, label]) => (
             <button
               key={mode}
@@ -280,6 +287,7 @@ function PlanStep({
             <TableCapacityStepper
               value={subscription.max_tables || INCLUDED_TABLES_BASIC}
               onChange={(max_tables) => onChange({ ...subscription, max_tables })}
+              cityTier={cityTier}
             />
           </div>
         </div>
@@ -292,13 +300,13 @@ function PlanStep({
         <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-4">
           <NumericStepper
             label="Additional staff"
-            subtitle={`${formatInr(PRICING.extra_staff)} / month each`}
+            subtitle={`${formatInr(priceForTier(PRICING.extra_staff, cityTier))} / month each`}
             value={subscription.extra_staff}
             onChange={(extra_staff) => onChange({ ...subscription, extra_staff })}
           />
           <NumericStepper
             label="Additional managers"
-            subtitle={`${formatInr(PRICING.extra_manager)} / month each`}
+            subtitle={`${formatInr(priceForTier(PRICING.extra_manager, cityTier))} / month each`}
             value={subscription.extra_managers}
             max={10}
             onChange={(extra_managers) => onChange({ ...subscription, extra_managers })}
@@ -325,7 +333,7 @@ function PlanStep({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-sm font-medium text-gray-900">{addon.title}</span>
-                    <span className="shrink-0 text-xs font-semibold text-primary">+{formatInr(addon.price)}/mo</span>
+                    <span className="shrink-0 text-xs font-semibold text-primary">+{formatInr(priceForTier(addon.price, cityTier))}/mo</span>
                   </div>
                   <p className="mt-0.5 text-xs text-gray-500">{addon.description}</p>
                 </div>
@@ -365,6 +373,7 @@ function PlanStep({
           {subscription.billing_cycle === 'annual' ? 'Estimated after trial' : 'Estimated monthly (excl. 18% GST)'}
         </p>
         <p className="mt-1 text-2xl font-extrabold text-primary">{displayTotal}</p>
+        <p className="mt-1 text-xs text-gray-500">Location tier: {formatCityTier(cityTier)}</p>
         {subscription.operation_mode !== 'counter' && (
           <p className="mt-1 text-xs text-gray-600">
             Plan includes {quote.bundled_staff} staff and {quote.bundled_managers} manager{quote.bundled_managers === 1 ? '' : 's'} for {quote.selection.max_tables} tables.
@@ -402,7 +411,7 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '' });
+  const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '', state: '', district: '' });
   const [step2, setStep2] = useState<Step2>({ ownerName: '', email: '', phone: '' });
   const [startMode, setStartMode] = useState<StartMode>('trial');
   const [subscription, setSubscription] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
@@ -428,12 +437,16 @@ export function Register() {
       setTimeout(() => setCopied(false), 2000);
     });
   }, [loginId]);
+  const districtOptions = useMemo(() => districtsForState(step1.state), [step1.state]);
+  const cityTier = useMemo<CityTier>(() => resolveCityTier(step1.state, step1.district), [step1.state, step1.district]);
 
   // ── Validation ────────────────────────────────────────────────────────────
 
   function validate(): string | null {
     if (step === 0) {
       if (!step1.restaurantName.trim()) return 'Restaurant name is required.';
+      if (!step1.state.trim()) return 'State is required.';
+      if (!step1.district.trim()) return 'District is required.';
     } else if (step === 1) {
       if (!step2.ownerName.trim()) return 'Owner name is required.';
       if (!step2.email.trim()) return 'Email is required.';
@@ -473,6 +486,8 @@ export function Register() {
         restaurant_name: step1.restaurantName.trim(),
         cuisine: step1.cuisine.trim() || undefined,
         city: step1.city.trim() || undefined,
+        state: step1.state.trim(),
+        district: step1.district.trim(),
         address: step1.address.trim() || undefined,
         owner_name: step2.ownerName.trim(),
         email: step2.email.trim(),
@@ -531,6 +546,36 @@ export function Register() {
                 <div>
                   <label className={labelCls}>City <span className="text-xs font-normal text-gray-400">(optional)</span></label>
                   <input type="text" placeholder="e.g. Mumbai" value={step1.city} onChange={s1('city')} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>State <span className="text-red-500">*</span></label>
+                  <select
+                    value={step1.state}
+                    onChange={(e) => setStep1((p) => ({ ...p, state: e.target.value, district: '' }))}
+                    className={inputCls}
+                  >
+                    <option value="">Select state</option>
+                    {INDIA_LOCATION_OPTIONS.map((item) => (
+                      <option key={item.state} value={item.state}>{item.state}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>District <span className="text-red-500">*</span></label>
+                  <select
+                    value={step1.district}
+                    onChange={(e) => setStep1((p) => ({ ...p, district: e.target.value }))}
+                    className={inputCls}
+                    disabled={!step1.state}
+                  >
+                    <option value="">{step1.state ? 'Select district' : 'Select state first'}</option>
+                    {districtOptions.map((item) => (
+                      <option key={item.name} value={item.name}>{item.name}</option>
+                    ))}
+                  </select>
+                  {step1.district ? (
+                    <p className="mt-1.5 text-xs text-gray-500">Detected pricing tier: {formatCityTier(cityTier)}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className={labelCls}>Address <span className="text-xs font-normal text-gray-400">(optional)</span></label>
@@ -635,7 +680,7 @@ export function Register() {
 
                 {/* Paid: full plan picker */}
                 {startMode === 'paid' && (
-                  <PlanStep subscription={subscription} onChange={setSubscription} />
+                  <PlanStep subscription={subscription} onChange={setSubscription} cityTier={cityTier} />
                 )}
 
                 <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />
