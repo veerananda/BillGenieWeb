@@ -41,6 +41,8 @@ interface ProfileForm {
   counter_service_modes: 'both' | 'eat_here' | 'takeaway' | '';
   prices_include_gst: boolean;
   composite_scheme: boolean;
+  category_display_blocklist: string[];
+  category_blocklist_draft: string;
   gst_number: string;
   is_closed: boolean;
 }
@@ -59,6 +61,8 @@ function profileToForm(p: RestaurantProfile): ProfileForm {
     counter_service_modes: p.counter_service_modes ?? '',
     prices_include_gst: p.prices_include_gst ?? false,
     composite_scheme: p.composite_scheme ?? false,
+    category_display_blocklist: [...(p.category_display_blocklist ?? [])],
+    category_blocklist_draft: '',
     gst_number: p.gst_number ?? '',
     is_closed: p.is_closed ?? false,
   };
@@ -496,6 +500,8 @@ export function Profile() {
     counter_service_modes: '',
     prices_include_gst: false,
     composite_scheme: false,
+    category_display_blocklist: [],
+    category_blocklist_draft: '',
     gst_number: '',
     is_closed: false,
   });
@@ -604,6 +610,7 @@ export function Profile() {
             : undefined,
         prices_include_gst: form.composite_scheme ? undefined : form.prices_include_gst,
         composite_scheme: form.composite_scheme,
+        category_display_blocklist: form.category_display_blocklist,
         gst_number: form.gst_number.trim().toUpperCase(),
       };
       const { restaurant } = await apiClient.updateRestaurantProfile(payload);
@@ -948,6 +955,81 @@ export function Profile() {
               }
             />
           )}
+          <div>
+            <p className="mb-1.5 text-sm font-semibold text-gray-800">
+              Categories that stay as section labels
+            </p>
+            <p className="mb-2 text-xs text-gray-500">
+              These are not appended to dish names (e.g. Main Course). Dish-type categories like
+              Biryani or Pulao still append automatically. Built-in section labels are always
+              excluded.
+            </p>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {form.category_display_blocklist.map((cat) => (
+                <span
+                  key={cat}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700"
+                >
+                  {cat}
+                  <button
+                    type="button"
+                    className="text-gray-400 hover:text-gray-700"
+                    onClick={() =>
+                      set(
+                        'category_display_blocklist',
+                        form.category_display_blocklist.filter((c) => c !== cat),
+                      )
+                    }
+                    aria-label={`Remove ${cat}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {form.category_display_blocklist.length === 0 && (
+                <span className="text-xs text-gray-400">No custom labels yet</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={form.category_blocklist_draft}
+                onChange={(e) => set('category_blocklist_draft', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  const next = form.category_blocklist_draft.trim();
+                  if (!next) return;
+                  const exists = form.category_display_blocklist.some(
+                    (c) => c.toLowerCase() === next.toLowerCase(),
+                  );
+                  if (!exists) {
+                    set('category_display_blocklist', [...form.category_display_blocklist, next]);
+                  }
+                  set('category_blocklist_draft', '');
+                }}
+                placeholder="e.g. House Special"
+                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                className="shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                onClick={() => {
+                  const next = form.category_blocklist_draft.trim();
+                  if (!next) return;
+                  const exists = form.category_display_blocklist.some(
+                    (c) => c.toLowerCase() === next.toLowerCase(),
+                  );
+                  if (!exists) {
+                    set('category_display_blocklist', [...form.category_display_blocklist, next]);
+                  }
+                  set('category_blocklist_draft', '');
+                }}
+              >
+                Add
+              </button>
+            </div>
+          </div>
         </SectionCard>
 
         {role === 'admin' ? (

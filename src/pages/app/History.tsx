@@ -11,6 +11,7 @@ import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 import { appendPaymentReceiptText, getPaymentReceiptRows } from '../../lib/receiptPaymentDetails';
+import { formatOrderLineDisplayName } from '../../lib/orderHelpers';
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -111,16 +112,21 @@ function padReceiptLine(left: string, right: string, width = 32): string {
   return `${l}${' '.repeat(spaces)}${r}`;
 }
 
-function groupReceiptItems(items: NonNullable<Order['items']>): ReceiptLineItem[] {
+function groupReceiptItems(
+  items: NonNullable<Order['items']>,
+  categoryBlocklist: string[] = [],
+): ReceiptLineItem[] {
   const grouped = new Map<string, ReceiptLineItem>();
+  const opts = { categoryBlocklist };
 
   items.forEach((item) => {
     const parts = getItemParts(item);
     const unitRate = Number(item.unit_rate || item.menu_item?.price || 0);
     const notes = item.notes?.trim();
+    const displayName = formatOrderLineDisplayName(parts.name, parts.category, opts);
     const key = [
       item.menu_id || parts.name,
-      parts.name,
+      displayName,
       parts.category,
       unitRate,
       notes || '',
@@ -137,7 +143,7 @@ function groupReceiptItems(items: NonNullable<Order['items']>): ReceiptLineItem[
 
     grouped.set(key, {
       key,
-      name: parts.name,
+      name: displayName,
       category: parts.category,
       notes,
       quantity,
@@ -215,7 +221,12 @@ function buildReceiptText(
   receiptItems.forEach((item) => {
     const rate = item.unitRate > 0 ? item.unitRate : item.quantity > 0 ? item.total / item.quantity : 0;
     lines.push(padReceiptLine(item.name, String(item.quantity)));
-    if (item.category) lines.push(`   ${item.category}`);
+    if (
+      item.category &&
+      !item.name.toLowerCase().includes(item.category.toLowerCase())
+    ) {
+      lines.push(`   ${item.category}`);
+    }
     if (item.notes) lines.push(`   Notes: ${item.notes}`);
     lines.push(padReceiptLine('', `${fmt(rate)}  ${fmt(item.total)}`));
   });
@@ -264,7 +275,10 @@ function buildCombinedReceiptHtml(
 ): string {
   const blocks = orders
     .map((order) => {
-      const receiptItems = groupReceiptItems(order.items ?? []);
+      const receiptItems = groupReceiptItems(
+        order.items ?? [],
+        restaurant?.category_display_blocklist ?? [],
+      );
       const text = buildReceiptText(order, restaurant, receiptItems);
       const escaped = escapeHtml(text).replace(/\n/g, '<br/>');
       return `<div class="receipt">${escaped}</div>`;
@@ -311,7 +325,10 @@ function ReceiptModal({
   const title = getOrderTitle(order);
   const completedAt = order.completed_at || order.updated_at || order.created_at;
   const restaurantContact = restaurant?.contact_number || restaurant?.phone;
-  const receiptItems = groupReceiptItems(order.items ?? []);
+  const receiptItems = groupReceiptItems(
+    order.items ?? [],
+    restaurant?.category_display_blocklist ?? [],
+  );
   const paymentRows = getPaymentReceiptRows(order, fmt);
   const receiptText = buildReceiptText(order, restaurant, receiptItems);
 
@@ -386,7 +403,8 @@ function ReceiptModal({
                     <span className="ml-1 text-xs font-normal italic text-amber-600">({item.notes})</span>
                   )}
                 </p>
-                {item.category ? (
+                {item.category &&
+                !item.name.toLowerCase().includes(item.category.toLowerCase()) ? (
                   <p className="mt-0.5 text-xs text-gray-400">{item.category}</p>
                 ) : null}
                 <p className="mt-0.5 text-xs text-gray-400">

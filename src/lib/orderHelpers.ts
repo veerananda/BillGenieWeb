@@ -47,12 +47,77 @@ export function formatOrderItemPrepProgress(
 
 type MenuLookupItem = { id: string; name?: string; category?: string };
 
+export type ItemDisplayNameOptions = {
+  /** Extra restaurant-defined section labels that must not append into the dish name. */
+  categoryBlocklist?: string[] | null;
+};
+
+const BUILTIN_CATEGORY_DISPLAY_BLOCKLIST = new Set([
+  'main course',
+  'main courses',
+  'mains',
+  'starter',
+  'starters',
+  'appetizer',
+  'appetizers',
+  'starter/appetizer',
+  'beverage',
+  'beverages',
+  'drink',
+  'drinks',
+  'dessert',
+  'desserts',
+  'sweet',
+  'sweets',
+  'snack',
+  'snacks',
+  'bread',
+  'breads',
+  'roti',
+  'rotis',
+  'combo',
+  'combos',
+  'special',
+  'specials',
+  'other',
+  'others',
+  'miscellaneous',
+  'misc',
+  'addon',
+  'add-on',
+  'add ons',
+  'add-ons',
+  'side',
+  'sides',
+  'accompaniment',
+  'accompaniments',
+]);
+
+function normalizeCategoryKey(category: string): string {
+  return category.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** True when category is a menu section label (built-in or restaurant custom). */
+export function isBlockedDisplayCategory(
+  categoryName?: string | null,
+  extraBlocklist?: string[] | null
+): boolean {
+  const key = normalizeCategoryKey(String(categoryName ?? ''));
+  if (!key) return false;
+  if (BUILTIN_CATEGORY_DISPLAY_BLOCKLIST.has(key)) return true;
+  return (extraBlocklist ?? []).some((item) => normalizeCategoryKey(item) === key);
+}
+
 /**
- * Build a readable line-item label, e.g. "Veg" under category "Biryani" → "Veg Biryani".
+ * Build a readable line-item label once (smart rules).
+ * - "Veg" + "Biryani" → "Veg Biryani"
+ * - "chitti mutyalu chicken" + "Pulao" → "chitti mutyalu chicken Pulao"
+ * - "Paneer Butter Masala" + "Main Course" → "Paneer Butter Masala"
  */
 export function getOrderItemDisplayName(
   itemName?: string | null,
-  categoryName?: string | null
+  categoryName?: string | null,
+  options?: ItemDisplayNameOptions
 ): string {
   const name = String(itemName ?? '').trim();
   const category = String(categoryName ?? '').trim();
@@ -65,12 +130,9 @@ export function getOrderItemDisplayName(
 
   if (nameLower === categoryLower) return name;
   if (nameLower.includes(categoryLower)) return name;
+  if (isBlockedDisplayCategory(category, options?.categoryBlocklist)) return name;
 
-  if (!/\s/.test(name)) {
-    return `${name} ${category}`;
-  }
-
-  return name;
+  return `${name} ${category}`;
 }
 
 /** Append `(Half)` etc. when variant is present and not Regular. */
@@ -89,7 +151,34 @@ function withVariantLabel(name: string, variantLabel?: string | null): string {
   return `${name}${formatVariantLabelSuffix(variantLabel)}`;
 }
 
-/** Split order line into item name and category for stacked display. */
+/**
+ * Final label for bills/print. Prefer calling once and reusing the result
+ * (e.g. store as `displayName` on grouped order lines).
+ */
+export function formatOrderLineDisplayName(
+  itemName?: string | null,
+  categoryName?: string | null,
+  options?: ItemDisplayNameOptions | null,
+  variantLabel?: string | null
+): string {
+  const raw = String(itemName ?? '').trim();
+  let base = raw;
+  let label = String(variantLabel ?? '').trim();
+
+  if (!label) {
+    const match = raw.match(/^(.*) \(([^)]+)\)\s*$/);
+    if (match) {
+      base = match[1].trim();
+      label = match[2].trim();
+    }
+  }
+
+  const combined = getOrderItemDisplayName(base || raw, categoryName, options ?? undefined);
+  if (!label || label.toLowerCase() === 'regular') return combined;
+  return withVariantLabel(combined, label);
+}
+
+/** Split order line into item name, category, and a once-derived displayName. */
 export function resolveOrderItemParts(
   item: {
     menu_id?: string;
@@ -98,8 +187,15 @@ export function resolveOrderItemParts(
     category?: string;
     variant_label?: string;
   },
-  menuItems?: MenuLookupItem[]
-): { name: string; category: string } {
+  menuItems?: MenuLookupItem[],
+  options?: ItemDisplayNameOptions
+): { name: string; category: string; displayName: string } {
+  const finish = (name: string, category: string) => ({
+    name,
+    category,
+    displayName: formatOrderLineDisplayName(name, category, options),
+  });
+
   const menuId = item.menu_id;
   let rawName = String(item.menu_item?.name ?? item.name ?? '').trim();
 
@@ -120,15 +216,9 @@ export function resolveOrderItemParts(
             rawName !== menuName &&
             /\(.+\)\s*$/.test(rawName)
           ) {
-            return {
-              name: rawName,
-              category: menuCategory || category,
-            };
+            return finish(rawName, menuCategory || category);
           }
-          return {
-            name: withVariantLabel(menuName, variantLabel),
-            category: menuCategory || category,
-          };
+          return finish(withVariantLabel(menuName, variantLabel), menuCategory || category);
         }
       }
     }
@@ -136,14 +226,14 @@ export function resolveOrderItemParts(
     if (!category) {
       const byDisplayName = menuItems.find(
         (m) =>
-          getOrderItemDisplayName(m.name, m.category).toLowerCase() ===
+          getOrderItemDisplayName(m.name, m.category, options).toLowerCase() ===
           rawName.toLowerCase()
       );
       if (byDisplayName) {
-        return {
-          name: withVariantLabel(String(byDisplayName.name ?? '').trim(), variantLabel),
-          category: String(byDisplayName.category ?? '').trim(),
-        };
+        return finish(
+          withVariantLabel(String(byDisplayName.name ?? '').trim(), variantLabel),
+          String(byDisplayName.category ?? '').trim(),
+        );
       }
     }
 
@@ -164,7 +254,7 @@ export function resolveOrderItemParts(
         ) {
           const stripped = rawName.slice(0, -suffix.length).trim();
           if (stripped) {
-            return { name: withVariantLabel(stripped, variantLabel), category: cat };
+            return finish(withVariantLabel(stripped, variantLabel), cat);
           }
         }
       }
@@ -172,7 +262,7 @@ export function resolveOrderItemParts(
   }
 
   if (!rawName) {
-    return { name: withVariantLabel(category || 'Unknown Item', variantLabel), category: '' };
+    return finish(withVariantLabel(category || 'Unknown Item', variantLabel), '');
   }
 
   if (category) {
@@ -183,14 +273,14 @@ export function resolveOrderItemParts(
     ) {
       const stripped = rawName.slice(0, -suffix.length).trim();
       if (stripped) {
-        return { name: withVariantLabel(stripped, variantLabel), category };
+        return finish(withVariantLabel(stripped, variantLabel), category);
       }
     } else if (rawName.toLowerCase() === category.toLowerCase()) {
-      return { name: withVariantLabel(rawName, variantLabel), category: '' };
+      return finish(withVariantLabel(rawName, variantLabel), '');
     }
   }
 
-  return { name: withVariantLabel(rawName, variantLabel), category };
+  return finish(withVariantLabel(rawName, variantLabel), category);
 }
 
 export function getOrderItemGroupKey(item: {
@@ -205,7 +295,7 @@ export function getOrderItemGroupKey(item: {
   return variantKey ? `${base}::${variantKey}` : base;
 }
 
-/** Resolve display name from an order line, using menu_item/category or menu cache. */
+/** Resolve display name from an order line (derived once via resolveOrderItemParts). */
 export function resolveOrderItemName(
   item: {
     menu_id?: string;
@@ -214,36 +304,10 @@ export function resolveOrderItemName(
     category?: string;
     variant_label?: string;
   },
-  menuItems?: MenuLookupItem[]
+  menuItems?: MenuLookupItem[],
+  options?: ItemDisplayNameOptions
 ): string {
-  const menuId = item.menu_id;
-  let rawName = String(item.menu_item?.name ?? item.name ?? '').trim();
-  let category = item.menu_item?.category ?? item.category;
-
-  if (menuItems?.length && menuId) {
-    const match = menuItems.find((m) => m.id === menuId);
-    if (match) {
-      const menuName = String(match.name ?? '').trim();
-      if (!rawName) rawName = menuName;
-      if (!category) category = match.category;
-      // Prefer server name that already encodes a portion when label is missing.
-      if (
-        !item.variant_label &&
-        rawName &&
-        menuName &&
-        rawName !== menuName &&
-        /\(.+\)\s*$/.test(rawName)
-      ) {
-        return rawName;
-      }
-    }
-  }
-
-  if (!rawName) {
-    return withVariantLabel(category?.trim() || 'Unknown Item', item.variant_label);
-  }
-
-  return withVariantLabel(getOrderItemDisplayName(rawName, category), item.variant_label);
+  return resolveOrderItemParts(item, menuItems, options).displayName;
 }
 
 type OrderItemLike = { status?: string };

@@ -29,6 +29,7 @@ import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
   isAdjustableOrderItem,
+  isBlockedDisplayCategory,
   orderHasServedItems,
   formatVariantLabelSuffix,
 } from '../../lib/orderHelpers';
@@ -599,6 +600,9 @@ function OrderDetailPanel({
     }
   };
 
+  const categoryBlocklist = profile?.category_display_blocklist ?? [];
+  const displayNameOpts = { categoryBlocklist };
+
   // ── Group duplicate menu items by menu_id (exclude kitchen-cancelled lines) ─
   const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
   const cancelledLines = (order.items ?? []).filter((i) => i.status === 'cancelled');
@@ -609,6 +613,7 @@ function OrderDetailPanel({
         menuId: string;
         name: string;
         category: string;
+        displayName: string;
         isVeg: boolean;
         quantity: number;
         total: number;
@@ -616,7 +621,7 @@ function OrderDetailPanel({
         ids: string[];
       }>
     >((acc, item) => {
-      const parts = resolveOrderItemParts(item, menuItems);
+      const parts = resolveOrderItemParts(item, menuItems, displayNameOpts);
       const groupKey = getOrderItemGroupKey({
         menuId: item.menu_id,
         name: parts.name,
@@ -640,6 +645,7 @@ function OrderDetailPanel({
           menuId: item.menu_id,
           name: parts.name,
           category: parts.category,
+          displayName: parts.displayName,
           isVeg,
           quantity: item.quantity,
           total: itemTotal,
@@ -791,7 +797,7 @@ function OrderDetailPanel({
       attendedByName: resolveAttendantName(attendedByUserId),
     };
     const billItems = groupedItems.map((item) => ({
-      name: item.name,
+      name: item.displayName,
       quantity: item.quantity,
       unitRate: item.quantity > 0 ? item.total / item.quantity : 0,
       total: item.total,
@@ -1055,10 +1061,11 @@ function OrderDetailPanel({
                   {/* Name + qty */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                      <p className="truncate text-sm font-medium text-gray-900">{item.displayName}</p>
                       <VegBadge isVeg={item.isVeg} />
                     </div>
-                    {item.category ? (
+                    {item.category &&
+                    isBlockedDisplayCategory(item.category, categoryBlocklist) ? (
                       <p className="truncate text-xs text-gray-400">{item.category}</p>
                     ) : null}
                     <p className="text-xs text-gray-500">{item.quantity}× {fmt(unitPrice)}</p>
@@ -1220,10 +1227,11 @@ function OrderDetailPanel({
                     <div key={item.groupKey} className="flex items-start justify-between gap-2 text-sm">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="truncate text-gray-600">{item.name}</span>
+                          <span className="truncate text-gray-600">{item.displayName}</span>
                           <VegBadge isVeg={item.isVeg} />
                         </div>
-                        {item.category ? (
+                        {item.category &&
+                        isBlockedDisplayCategory(item.category, categoryBlocklist) ? (
                           <p className="truncate text-xs text-gray-400">{item.category}</p>
                         ) : null}
                       </div>
