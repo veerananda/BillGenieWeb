@@ -490,6 +490,7 @@ export function Profile() {
     counter_service_modes: '',
     prices_include_gst: false,
     composite_scheme: false,
+    gst_number: '',
     is_closed: false,
   });
 
