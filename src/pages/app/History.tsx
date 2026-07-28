@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order, RestaurantProfile } from '../../services/api';
-import { printBillHtml } from '../../lib/customerBillFormat';
+import { printBillHtml, formatBillMoney, formatBillDateTime, formatThermalItemBlock } from '../../lib/customerBillFormat';
 import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -30,7 +30,11 @@ const FIXED_PERIODS: { key: Exclude<HistoryPeriod, 'range'>; label: string }[] =
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number | null | undefined): string {
-  return `₹${Number(n || 0).toFixed(2)}`;
+  return formatBillMoney(Number(n || 0), true);
+}
+
+function formatDateTime(value?: string | null): string {
+  return formatBillDateTime(value || undefined);
 }
 
 function isoDate(d: Date): string {
@@ -101,17 +105,6 @@ type ReceiptLineItem = {
   total: number;
 };
 
-function padReceiptLine(left: string, right: string, width = 32): string {
-  const r = right.length > width ? right.slice(right.length - width) : right;
-  const maxLeft = Math.max(0, width - r.length - 1);
-  let l = left;
-  if (l.length > maxLeft) {
-    l = maxLeft <= 1 ? '' : `${l.slice(0, maxLeft - 1)}.`;
-  }
-  const spaces = Math.max(1, width - l.length - r.length);
-  return `${l}${' '.repeat(spaces)}${r}`;
-}
-
 function groupReceiptItems(
   items: NonNullable<Order['items']>,
   categoryBlocklist: string[] = [],
@@ -157,24 +150,7 @@ function groupReceiptItems(
 
 function formatOrderTime(order: Order): string {
   const raw = order.completed_at || order.updated_at || order.created_at;
-  if (!raw) return '';
-  return new Date(raw).toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return '';
-  return new Date(value).toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatBillDateTime(raw || undefined);
 }
 
 function escapeHtml(value: string): string {
@@ -215,28 +191,27 @@ function buildReceiptText(
   if (showCustomer) lines.push(`Customer: ${order.customer_name}`);
   if (order.customer_phone) lines.push(`Phone: ${order.customer_phone}`);
   lines.push(divider);
-  lines.push(padReceiptLine('Item', 'Qty'));
-  lines.push(padReceiptLine('', 'Rate   Price'));
-
-  receiptItems.forEach((item) => {
-    const rate = item.unitRate > 0 ? item.unitRate : item.quantity > 0 ? item.total / item.quantity : 0;
-    lines.push(padReceiptLine(item.name, String(item.quantity)));
-    if (
-      item.category &&
-      !item.name.toLowerCase().includes(item.category.toLowerCase())
-    ) {
-      lines.push(`   ${item.category}`);
-    }
-    if (item.notes) lines.push(`   Notes: ${item.notes}`);
-    lines.push(padReceiptLine('', `${fmt(rate)}  ${fmt(item.total)}`));
-  });
+  lines.push(
+    ...formatThermalItemBlock(
+      receiptItems.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        unitRate: item.unitRate,
+        total: item.total,
+        notes: item.notes,
+      })),
+      32,
+    ),
+  );
 
   lines.push(divider);
-  if (order.sub_total > 0) lines.push(`Subtotal: ${fmt(order.sub_total)}`);
-  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${fmt(order.tax_amount)}`);
-  if (Number(order.discount_amount) > 0) lines.push(`Discount: -${fmt(order.discount_amount)}`);
-  lines.push(`Total: ${fmt(order.total)}`);
-  appendPaymentReceiptText(lines, order, fmt);
+  if (order.sub_total > 0) lines.push(`Subtotal: ${formatBillMoney(order.sub_total)}`);
+  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${formatBillMoney(order.tax_amount)}`);
+  if (Number(order.discount_amount) > 0) {
+    lines.push(`Discount: -${formatBillMoney(order.discount_amount)}`);
+  }
+  lines.push(`TOTAL: ${formatBillMoney(order.total, true)}`);
+  appendPaymentReceiptText(lines, order, (n) => formatBillMoney(Number(n || 0), true));
   if (order.notes) {
     lines.push(divider);
     lines.push(`Notes: ${order.notes}`);
