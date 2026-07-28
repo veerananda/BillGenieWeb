@@ -15,7 +15,11 @@ import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/m
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
-import { formatVariantLabelSuffix, formatOrderItemPrepProgress, formatOrderLineDisplayName } from '../../lib/orderHelpers';
+import {
+  formatOrderItemPrepProgress,
+  formatOrderLineDisplayName,
+  isBlockedDisplayCategory,
+} from '../../lib/orderHelpers';
 import {
   buildCustomerBillHtml,
   buildCustomerBillText,
@@ -68,8 +72,13 @@ function cartLineKey(menuItemId: string, variantId?: string) {
   return `${menuItemId}::${variantId ?? ''}`;
 }
 
-function cartDisplayName(name: string, variantLabel?: string) {
-  return `${name}${formatVariantLabelSuffix(variantLabel)}`;
+function cartDisplayName(
+  name: string,
+  category: string | undefined,
+  variantLabel: string | undefined,
+  categoryBlocklist: string[] | null | undefined,
+) {
+  return formatOrderLineDisplayName(name, category, { categoryBlocklist }, variantLabel);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -153,6 +162,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const counterModes = profile?.counter_service_modes ?? 'both';
   const compositeScheme = profile?.composite_scheme ?? false;
   const pricesIncludeGst = profile?.prices_include_gst ?? false;
+  const categoryBlocklist = profile?.category_display_blocklist ?? [];
   const attendedByUserId = localStorage.getItem('user_id') ?? '';
   const attendedByName = localStorage.getItem('user_name') ?? '';
 
@@ -396,11 +406,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
 
   function buildCheckoutBillDocuments() {
     const billItems: CustomerBillLineItem[] = cart.map((c) => ({
-      name: formatOrderLineDisplayName(
-        cartDisplayName(c.name, c.variantLabel),
-        c.category,
-        { categoryBlocklist: profile?.category_display_blocklist },
-      ),
+      name: cartDisplayName(c.name, c.category, c.variantLabel, categoryBlocklist),
       quantity: c.quantity,
       unitRate: c.price,
       total: c.price * c.quantity,
@@ -649,6 +655,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                       getPortionQty={getPortionQty}
                       onAdd={addVariantToCart}
                       onChangeQty={changePortionQty}
+                      categoryBlocklist={categoryBlocklist}
                     />
                   ))}
                 </div>
@@ -679,13 +686,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p className="truncate text-xs font-medium text-gray-900">
-                              {cartDisplayName(c.name, c.variantLabel)}
+                              {cartDisplayName(c.name, c.category, c.variantLabel, categoryBlocklist)}
                             </p>
                             {c.isVeg
                               ? <Leaf size={13} color="#22c55e" className="shrink-0" />
                               : <Beef size={13} color="#dc2626" className="shrink-0" />}
                           </div>
-                          {c.category ? (
+                          {c.category && isBlockedDisplayCategory(c.category, categoryBlocklist) ? (
                             <p className="truncate text-xs text-gray-400">{c.category}</p>
                           ) : null}
                           <p className="text-xs text-gray-400">₹{c.price}</p>
@@ -776,10 +783,12 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                       <div className="flex items-center gap-1.5">
                         <VegDot isVeg={c.isVeg} />
                         <span className="truncate text-sm text-gray-700">
-                          {cartDisplayName(c.name, c.variantLabel)}
+                          {cartDisplayName(c.name, c.category, c.variantLabel, categoryBlocklist)}
                         </span>
                       </div>
-                      {c.category ? <p className="ml-4 text-xs text-gray-400">{c.category}</p> : null}
+                      {c.category && isBlockedDisplayCategory(c.category, categoryBlocklist) ? (
+                        <p className="ml-4 text-xs text-gray-400">{c.category}</p>
+                      ) : null}
                     </div>
                     <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
                       {c.quantity}× {fmt(c.price)}

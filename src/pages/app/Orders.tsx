@@ -32,7 +32,7 @@ import {
   isAdjustableOrderItem,
   isBlockedDisplayCategory,
   orderHasServedItems,
-  formatVariantLabelSuffix,
+  formatOrderLineDisplayName,
 } from '../../lib/orderHelpers';
 import { useAttendants } from '../../lib/useAttendants';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -84,8 +84,12 @@ function cartLineKey(menuItemId: string, variantId?: string) {
   return `${menuItemId}::${variantId ?? ''}`;
 }
 
-function cartDisplayName(item: MenuItem, variantLabel?: string) {
-  return `${item.name}${formatVariantLabelSuffix(variantLabel)}`;
+function cartDisplayName(
+  item: MenuItem,
+  variantLabel: string | undefined,
+  categoryBlocklist: string[] | null | undefined,
+) {
+  return formatOrderLineDisplayName(item.name, item.category, { categoryBlocklist }, variantLabel);
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -972,15 +976,16 @@ function OrderDetailPanel({
                 Cancelled by kitchen ({cancelledLines.length})
               </p>
               {cancelledLines.map((item) => {
-                const parts = resolveOrderItemParts(item, menuItems);
+                const parts = resolveOrderItemParts(item, menuItems, displayNameOpts);
                 return (
                   <div
                     key={item.id}
                     className="flex items-center gap-3 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-rose-800">{parts.name}</p>
-                      {parts.category ? (
+                      <p className="truncate text-sm font-semibold text-rose-800">{parts.displayName}</p>
+                      {parts.category &&
+                      isBlockedDisplayCategory(parts.category, categoryBlocklist) ? (
                         <p className="truncate text-xs text-rose-600/80">{parts.category}</p>
                       ) : null}
                       <p className="mt-0.5 text-xs font-medium text-rose-700">Removed from bill</p>
@@ -1075,7 +1080,7 @@ function OrderDetailPanel({
                           type="button"
                           title="Reduce quantity by 1"
                           disabled={Boolean(adjustingId)}
-                          onClick={() => reduceGroupByOne(item.ids, item.name)}
+                          onClick={() => reduceGroupByOne(item.ids, item.displayName)}
                           className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                         >
                           {adjustingId && item.ids.includes(adjustingId) ? (
@@ -1091,7 +1096,7 @@ function OrderDetailPanel({
                           type="button"
                           title="Remove item"
                           disabled={Boolean(adjustingId)}
-                          onClick={() => removeGroup(item.ids, item.name)}
+                          onClick={() => removeGroup(item.ids, item.displayName)}
                           className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1632,6 +1637,8 @@ function TakeOrderPanel({
   const dispatch = useAppDispatch();
   const menuItems = useAppSelector(selectMenuItems);
   const menuCategories = useAppSelector(selectMenuCategories);
+  const profile = useAppSelector(selectProfile);
+  const categoryBlocklist = profile?.category_display_blocklist ?? [];
 
   const [search, setSearch] = useState('');
   const [dietFilter, setDietFilter] = useState<'all' | 'veg' | 'non_veg'>('all');
@@ -1888,6 +1895,7 @@ function TakeOrderPanel({
                       getPortionQty={getPortionQty}
                       onAdd={addVariantToCart}
                       onChangeQty={changePortionQty}
+                      categoryBlocklist={categoryBlocklist}
                     />
                   ))}
                 </div>
@@ -1917,11 +1925,12 @@ function TakeOrderPanel({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p className="truncate text-xs font-medium text-gray-900">
-                              {cartDisplayName(c.menuItem, c.variantLabel)}
+                              {cartDisplayName(c.menuItem, c.variantLabel, categoryBlocklist)}
                             </p>
                             <VegBadge isVeg={c.menuItem.is_veg} />
                           </div>
-                          {c.menuItem.category ? (
+                          {c.menuItem.category &&
+                          isBlockedDisplayCategory(c.menuItem.category, categoryBlocklist) ? (
                             <p className="truncate text-xs text-gray-400">{c.menuItem.category}</p>
                           ) : null}
                           <p className="text-xs text-gray-400">₹{c.unitPrice}</p>
