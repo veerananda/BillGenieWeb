@@ -15,7 +15,7 @@ import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/m
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
-import { formatVariantLabelSuffix, formatOrderItemPrepProgress } from '../../lib/orderHelpers';
+import { formatVariantLabelSuffix, formatOrderItemPrepProgress, formatOrderLineDisplayName } from '../../lib/orderHelpers';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -439,7 +439,11 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     const gst = profile?.gst_number || '';
     const itemRows = cart
       .map((c) => {
-        const name = cartDisplayName(c.name, c.variantLabel);
+        const name = formatOrderLineDisplayName(
+          cartDisplayName(c.name, c.variantLabel),
+          c.category,
+          { categoryBlocklist: profile?.category_display_blocklist },
+        );
         const rate = c.price;
         const price = c.price * c.quantity;
         return `<tr>

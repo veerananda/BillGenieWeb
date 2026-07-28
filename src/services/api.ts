@@ -242,6 +242,7 @@ export interface RestaurantProfile {
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
   composite_scheme?: boolean;
+  category_display_blocklist?: string[];
   is_closed?: boolean;
   created_at?: string;
   gst_number?: string;
@@ -271,6 +272,7 @@ export interface UpdateProfileRequest {
   counter_service_modes?: 'both' | 'eat_here' | 'takeaway';
   prices_include_gst?: boolean;
   composite_scheme?: boolean;
+  category_display_blocklist?: string[];
   gst_number?: string;
   is_closed?: boolean;
 }
