@@ -23,6 +23,7 @@ import { calculateRestaurantOrderTax, splitItemGross, subtotalLabel, taxLabel } 
 import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder, printBillHtml } from '../../lib/customerBillFormat';
 import {
   getBrowserPrinter,
+  getPaperWidthMm,
   printTextToBrowserPrinter,
 } from '../../lib/browserThermalPrinter';
 import {
@@ -802,8 +803,9 @@ function OrderDetailPanel({
       unitRate: item.quantity > 0 ? item.total / item.quantity : 0,
       total: item.total,
     }));
-    const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems);
-    const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems);
+    const paperWidthMm = getPaperWidthMm('bill');
+    const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems, paperWidthMm);
+    const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems, paperWidthMm);
     const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
     // Avoid system print dialog when a browser thermal printer is already paired.
     if (!hasBrowserThermal) {

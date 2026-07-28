@@ -8,13 +8,16 @@ import {
   clearBrowserPrinter,
   cachePrintFeedLines,
   getBrowserPrinter,
+  getPaperWidthMm,
   isWebBluetoothSupported,
   isWebSerialSupported,
   pairBluetoothPrinter,
   pairSerialPrinter,
   printTestToBrowserPrinter,
+  setPaperWidthMm,
   type BrowserPrinterConfig,
   type BrowserPrinterRole,
+  type PaperWidthMm,
 } from '../../lib/browserThermalPrinter';
 
 const inputClass =
@@ -53,6 +56,7 @@ function BrowserPrinterCard({
   const [config, setConfig] = useState<BrowserPrinterConfig | null>(() =>
     getBrowserPrinter(role)
   );
+  const [paperWidthMm, setPaperWidth] = useState<PaperWidthMm>(() => getPaperWidthMm(role));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const serialOk = isWebSerialSupported();
@@ -64,11 +68,20 @@ function BrowserPrinterCard({
     try {
       await action();
       setConfig(getBrowserPrinter(role));
+      setPaperWidth(getPaperWidthMm(role));
     } catch (err: unknown) {
       setMsg(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setBusy(false);
     }
+  }
+
+  function choosePaper(width: PaperWidthMm) {
+    if (!canEdit || busy) return;
+    setPaperWidthMm(role, width);
+    setPaperWidth(width);
+    setConfig(getBrowserPrinter(role));
+    setMsg(`Paper size set to ${width}mm (${width === 80 ? 48 : 32} columns).`);
   }
 
   return (
@@ -77,8 +90,33 @@ function BrowserPrinterCard({
         <p className="text-sm font-medium text-gray-800">{label}</p>
         <p className="text-xs text-gray-500">
           {config
-            ? `${config.name} · ${config.kind === 'serial' ? 'Serial / Classic Bluetooth' : 'BLE'}`
-            : 'Not paired in this browser'}
+            ? `${config.name} · ${config.kind === 'serial' ? 'Serial / Classic Bluetooth' : 'BLE'} · ${paperWidthMm}mm`
+            : `Not paired in this browser · ${paperWidthMm}mm layout`}
+        </p>
+      </div>
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-gray-600">Paper width</p>
+        <div className="flex flex-wrap gap-2">
+          {([58, 80] as PaperWidthMm[]).map((w) => (
+            <button
+              key={w}
+              type="button"
+              disabled={!canEdit || busy}
+              onClick={() => choosePaper(w)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                paperWidthMm === w
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {w}mm
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-gray-400">
+          {paperWidthMm === 58
+            ? '58mm uses 32 columns — choose this for most portable Bluetooth printers.'
+            : '80mm uses 48 columns — choose this for wider kitchen / counter printers.'}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -178,6 +216,12 @@ export function Printers() {
           r.settings.top_feed_lines ?? 0,
           r.settings.bottom_feed_lines ?? 3
         );
+        if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
+          setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
+        }
+        if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
+          setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
+        }
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load printer settings.');
@@ -210,6 +254,12 @@ export function Printers() {
         r.settings.top_feed_lines ?? 0,
         r.settings.bottom_feed_lines ?? 3
       );
+      if (r.settings.bill_paper_width_mm === 58 || r.settings.bill_paper_width_mm === 80) {
+        setPaperWidthMm('bill', r.settings.bill_paper_width_mm);
+      }
+      if (r.settings.kot_paper_width_mm === 58 || r.settings.kot_paper_width_mm === 80) {
+        setPaperWidthMm('kot', r.settings.kot_paper_width_mm);
+      }
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
       setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');
@@ -423,6 +473,48 @@ export function Printers() {
                 }
               />
             </Field>
+            <Field label="KOT paper width">
+              <div className="flex gap-2">
+                {([58, 80] as const).map((w) => (
+                  <button
+                    key={`kot-paper-${w}`}
+                    type="button"
+                    disabled={!canEditKot || printSaving}
+                    onClick={() =>
+                      setPrintSettings((s) => (s ? { ...s, kot_paper_width_mm: w } : s))
+                    }
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                      (printSettings.kot_paper_width_mm ?? 58) === w
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {w}mm
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Bill paper width">
+              <div className="flex gap-2">
+                {([58, 80] as const).map((w) => (
+                  <button
+                    key={`bill-paper-${w}`}
+                    type="button"
+                    disabled={!canEditBill || printSaving}
+                    onClick={() =>
+                      setPrintSettings((s) => (s ? { ...s, bill_paper_width_mm: w } : s))
+                    }
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                      (printSettings.bill_paper_width_mm ?? 58) === w
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {w}mm
+                  </button>
+                ))}
+              </div>
+            </Field>
           </div>
 
           {canManageEnables ? (
@@ -505,12 +597,14 @@ export function Printers() {
                     ? {
                         kot_printer_host: printSettings.kot_printer_host,
                         kot_printer_port: printSettings.kot_printer_port,
+                        kot_paper_width_mm: printSettings.kot_paper_width_mm ?? 58,
                       }
                     : {}),
                   ...(canEditBill
                     ? {
                         bill_printer_host: printSettings.bill_printer_host,
                         bill_printer_port: printSettings.bill_printer_port,
+                        bill_paper_width_mm: printSettings.bill_paper_width_mm ?? 58,
                       }
                     : {}),
                 })

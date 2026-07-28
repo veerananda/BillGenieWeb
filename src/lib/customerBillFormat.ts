@@ -177,6 +177,9 @@ function lineUnitRate(item: CustomerBillLineItem): number {
 }
 
 export function buildCustomerBillHtml(data: CustomerBillData): string {
+  const paperWidthMm = data.paperWidthMm === 80 ? 80 : 58;
+  const sheetMm = paperWidthMm === 80 ? 72 : 48;
+  const fontPx = paperWidthMm === 80 ? 12 : 11;
   const title = escapeHtml(data.restaurantName || 'Bill Summary');
   const metaParts: string[] = [];
   if (data.orderNumber) metaParts.push(`Order #${escapeHtml(String(data.orderNumber))}`);
@@ -234,37 +237,40 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
   <title>Bill ${escapeHtml(String(data.orderNumber || ''))}</title>
   <style>
     * { box-sizing: border-box; }
+    @page { size: ${paperWidthMm}mm auto; margin: 2mm; }
     body {
       margin: 0;
-      padding: 16px;
+      padding: 0;
       background: #fff;
       color: #111;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: ${fontPx}px;
+      line-height: 1.35;
     }
-    .sheet { max-width: 420px; margin: 0 auto; }
-    .head { text-align: center; margin-bottom: 12px; }
-    .head h1 { margin: 0 0 6px; font-size: 1.15rem; }
-    .meta, .date, .customer { margin: 2px 0; color: #333; font-size: 0.85rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .sheet { width: ${sheetMm}mm; max-width: 100%; margin: 0 auto; }
+    .head { text-align: center; margin-bottom: 8px; }
+    .head h1 { margin: 0 0 4px; font-size: 1.1em; }
+    .meta, .date, .customer { margin: 1px 0; color: #333; font-size: 0.92em; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95em; table-layout: fixed; }
     th {
       text-align: left;
       border-bottom: 1px solid #ccc;
-      padding: 6px 0;
-      font-size: 0.75rem;
+      padding: 4px 0;
+      font-size: 0.8em;
       text-transform: uppercase;
     }
     th.qty, th.rate, th.amount, td.qty, td.rate, td.amount { text-align: right; white-space: nowrap; }
     th.qty, td.qty { width: 12%; }
-    th.rate, td.rate { width: 18%; padding-left: 8px; }
-    th.amount, td.amount { width: 22%; padding-left: 8px; }
-    td { padding: 8px 0; border-bottom: 1px solid #eee; vertical-align: top; }
-    .item-name { padding-right: 8px; word-break: break-word; }
-    .totals { margin-top: 12px; border-top: 1px solid #ccc; padding-top: 8px; }
-    .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.9rem; }
+    th.rate, td.rate { width: 22%; padding-left: 4px; }
+    th.amount, td.amount { width: 24%; padding-left: 4px; }
+    td { padding: 4px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+    .item-name { padding-right: 4px; word-break: break-word; }
+    .totals { margin-top: 8px; border-top: 1px solid #ccc; padding-top: 6px; }
+    .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 0.95em; }
     .row.discount { color: #15803d; }
-    .row.total { margin-top: 6px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 1.05rem; font-weight: 700; }
-    .footer { margin-top: 14px; text-align: center; color: #666; font-size: 0.85rem; }
-    @media print { body { padding: 0; } }
+    .row.total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 1.05em; font-weight: 700; }
+    .footer { margin-top: 10px; text-align: center; color: #666; font-size: 0.9em; }
+    @media print { body { padding: 0; } .sheet { width: ${sheetMm}mm; } }
   </style>
 </head>
 <body>
@@ -316,8 +322,9 @@ export function buildCustomerBillFromOrder(
     attendedByName?: string;
   },
   items: CustomerBillLineItem[],
+  paperWidthMm: 58 | 80 = 58,
 ): string {
-  return buildCustomerBillHtml(orderBillData(order, profile, totals, items));
+  return buildCustomerBillHtml(orderBillData(order, profile, totals, items, paperWidthMm));
 }
 
 export function buildCustomerBillTextFromOrder(
@@ -333,8 +340,9 @@ export function buildCustomerBillTextFromOrder(
     attendedByName?: string;
   },
   items: CustomerBillLineItem[],
+  paperWidthMm: 58 | 80 = 58,
 ): string {
-  return buildCustomerBillText(orderBillData(order, profile, totals, items));
+  return buildCustomerBillText(orderBillData(order, profile, totals, items, paperWidthMm));
 }
 
 function orderBillData(
@@ -350,6 +358,7 @@ function orderBillData(
     attendedByName?: string;
   },
   items: CustomerBillLineItem[],
+  paperWidthMm: 58 | 80 = 58,
 ): CustomerBillData {
   return {
     restaurantName: profile?.name,
@@ -369,6 +378,7 @@ function orderBillData(
     pricesIncludeGst: totals.pricesIncludeGst,
     compositeScheme: totals.compositeScheme,
     isPaid: false,
+    paperWidthMm,
   };
 }
 
