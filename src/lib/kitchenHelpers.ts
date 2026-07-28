@@ -157,12 +157,14 @@ function ticketSubId(item: Order['items'][number], orderId: string): string {
 export function buildKotTickets(
   sourceOrders: Order[],
   tables: Pick<RestaurantTable, 'id' | 'name'>[] = [],
-  menuItems: Array<{ id: string; name?: string; category?: string; readily_available?: boolean }> = []
+  menuItems: Array<{ id: string; name?: string; category?: string; readily_available?: boolean }> = [],
+  categoryBlocklist?: string[] | null,
 ): KotTicket[] {
   const ticketMap = new Map<
     string,
     Omit<KotTicket, 'kotNumber' | 'isAddOn'> & { firedAt: number }
   >();
+  const displayOpts = { categoryBlocklist };
 
   for (const order of sourceOrders) {
     if (!order?.id) continue;
@@ -182,18 +184,8 @@ export function buildKotTickets(
       const subId = ticketSubId(item, order.id);
       const key = `${order.id}:${subId}`;
       const created = parseItemCreatedAt(item, order);
-      const parts = resolveOrderItemParts(item, menuItems);
-      // Prefer an existing portion suffix on the line name when variant_label is missing.
-      const storedName = String(
-        (item as { name?: string }).name || item.menu_item?.name || ''
-      ).trim();
-      const name =
-        !item.variant_label &&
-        storedName &&
-        /\(.+\)\s*$/.test(storedName) &&
-        !/\(.+\)\s*$/.test(parts.name)
-          ? storedName
-          : parts.name;
+      const parts = resolveOrderItemParts(item, menuItems, displayOpts);
+      const name = parts.displayName;
 
       const kotItem: KotTicketItem = {
         id: item.id,

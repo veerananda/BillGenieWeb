@@ -13,7 +13,7 @@ import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
 import { appendPaymentReceiptText, getPaymentReceiptRows } from '../../lib/receiptPaymentDetails';
-import { formatOrderLineDisplayName } from '../../lib/orderHelpers';
+import { resolveOrderItemParts } from '../../lib/orderHelpers';
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -90,13 +90,6 @@ function getOrderTitle(order: Order): string {
   return `Table ${order.table_number}`;
 }
 
-function getItemParts(item: NonNullable<Order['items']>[number]): { name: string; category: string } {
-  return {
-    name: item.menu_item?.name ?? 'Item',
-    category: item.menu_item?.category ?? '',
-  };
-}
-
 type ReceiptLineItem = {
   key: string;
   name: string;
@@ -115,14 +108,15 @@ function groupReceiptItems(
   const opts = { categoryBlocklist };
 
   items.forEach((item) => {
-    const parts = getItemParts(item);
+    const parts = resolveOrderItemParts(item, undefined, opts);
     const unitRate = Number(item.unit_rate || item.menu_item?.price || 0);
     const notes = item.notes?.trim();
-    const displayName = formatOrderLineDisplayName(parts.name, parts.category, opts);
+    const displayName = parts.displayName;
     const key = [
       item.menu_id || parts.name,
       displayName,
       parts.category,
+      item.variant_id || item.variant_label || '',
       unitRate,
       notes || '',
     ].join('::');

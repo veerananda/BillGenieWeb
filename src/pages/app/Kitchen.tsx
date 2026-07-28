@@ -380,8 +380,14 @@ export function Kitchen() {
   }, [fetchKitchenOrders]);
 
   const tickets = useMemo(
-    () => buildKotTickets(sourceOrders, tables, menuItems),
-    [sourceOrders, tables, menuItems]
+    () =>
+      buildKotTickets(
+        sourceOrders,
+        tables,
+        menuItems,
+        profile?.category_display_blocklist,
+      ),
+    [sourceOrders, tables, menuItems, profile?.category_display_blocklist]
   );
   const prepSummary = useMemo(() => buildPrepSummary(tickets), [tickets]);
 

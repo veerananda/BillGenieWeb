@@ -1,6 +1,6 @@
 import { Beef, Leaf, Minus, Plus } from 'lucide-react';
 import type { MenuItem, MenuItemVariant } from '../../services/api';
-import { availableMenuVariants } from '../../lib/orderHelpers';
+import { availableMenuVariants, formatOrderLineDisplayName } from '../../lib/orderHelpers';
 
 function variantUnitPrice(item: MenuItem, variant?: MenuItemVariant) {
   return variant?.price ?? item.price;
@@ -12,6 +12,8 @@ export interface MenuItemOrderCardProps {
   getPortionQty: (itemId: string, variantId?: string) => number;
   onAdd: (item: MenuItem, variant?: MenuItemVariant) => void;
   onChangeQty: (item: MenuItem, variant: MenuItemVariant | undefined, delta: number) => void;
+  /** Restaurant category_display_blocklist — section labels stay off the dish name. */
+  categoryBlocklist?: string[] | null;
 }
 
 /**
@@ -23,11 +25,15 @@ export function MenuItemOrderCard({
   getPortionQty,
   onAdd,
   onChangeQty,
+  categoryBlocklist,
 }: MenuItemOrderCardProps) {
   const variants = availableMenuVariants(item);
   const multiPortion = variants.length > 1;
   const singleVariant = multiPortion ? undefined : variants[0];
   const singleQty = getPortionQty(item.id, singleVariant?.id);
+  const displayName = formatOrderLineDisplayName(item.name, item.category, {
+    categoryBlocklist,
+  });
 
   const priceLabel = multiPortion
     ? variants
@@ -41,7 +47,7 @@ export function MenuItemOrderCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {item.is_veg ? <Leaf size={14} color="#22c55e" className="shrink-0" /> : <Beef size={14} color="#dc2626" className="shrink-0" />}
-            <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+            <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
           </div>
           <p className="mt-0.5 pl-6 text-xs font-semibold text-gray-700">{priceLabel}</p>
           {multiPortion ? (
