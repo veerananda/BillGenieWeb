@@ -499,6 +499,8 @@ function OrderDetailPanel({
   const cashInputRef = useRef<HTMLInputElement>(null);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountType, setDiscountType] = useState<'₹' | '%'>('₹');
+  const [discountApplying, setDiscountApplying] = useState(false);
+  const [discountAppliedValue, setDiscountAppliedValue] = useState<number | null>(null);
   const [upiTransactionId, setUpiTransactionId] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -712,12 +714,15 @@ function OrderDetailPanel({
     setPaymentError(null);
     setCheckoutConflictMsg(null);
     setCheckoutAcquired(false);
+    setDiscountAppliedValue(null);
     apiClient.startCheckout(order.id)
       .then(() => {
         setCheckoutAcquired(true);
-        void apiClient.createBillShare(order.id, discountValue).catch(() => {
-          // Non-blocking — bill preview can refresh when discount changes
+        // Publish bill without discount until staff clicks Apply.
+        void apiClient.createBillShare(order.id, 0).catch(() => {
+          // Non-blocking — bill preview can refresh when Apply is clicked
         });
+        setDiscountAppliedValue(0);
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message.toLowerCase() : '';
@@ -736,16 +741,19 @@ function OrderDetailPanel({
       });
   };
 
-  // Keep customer QR bill review in sync when discount changes during checkout.
-  useEffect(() => {
-    if (!paymentOpen || !checkoutAcquired) return;
-    const timer = window.setTimeout(() => {
-      void apiClient.createBillShare(order.id, discountValue).catch(() => {
-        // Non-blocking for checkout UI
-      });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [paymentOpen, checkoutAcquired, order.id, discountValue]);
+  const handleApplyDiscount = async () => {
+    if (!checkoutAcquired || discountApplying) return;
+    setDiscountApplying(true);
+    setPaymentError(null);
+    try {
+      await apiClient.createBillShare(order.id, discountValue);
+      setDiscountAppliedValue(discountValue);
+    } catch (err: unknown) {
+      setPaymentError(err instanceof Error ? err.message : 'Could not apply discount for customer bill');
+    } finally {
+      setDiscountApplying(false);
+    }
+  };
 
   const handleOpenAssistanceQr = async () => {
     setAssistanceOpen(true);
@@ -1259,12 +1267,16 @@ function OrderDetailPanel({
                   max={discountType === '%' ? 100 : gross}
                   step="0.01"
                   value={discountAmount}
-                  onChange={(e) => setDiscountAmount(e.target.value)}
+                  onChange={(e) => {
+                    setDiscountAmount(e.target.value);
+                    setDiscountAppliedValue(null);
+                  }}
                   placeholder="0"
                   className="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <button
-                  onClick={() => { setDiscountType('₹'); setDiscountAmount(''); }}
+                  type="button"
+                  onClick={() => { setDiscountType('₹'); setDiscountAmount(''); setDiscountAppliedValue(null); }}
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
                     discountType === '₹'
                       ? 'border-primary bg-primary text-white'
@@ -1274,7 +1286,8 @@ function OrderDetailPanel({
                   ₹
                 </button>
                 <button
-                  onClick={() => { setDiscountType('%'); setDiscountAmount(''); }}
+                  type="button"
+                  onClick={() => { setDiscountType('%'); setDiscountAmount(''); setDiscountAppliedValue(null); }}
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-semibold transition-colors ${
                     discountType === '%'
                       ? 'border-primary bg-primary text-white'
@@ -1283,7 +1296,24 @@ function OrderDetailPanel({
                 >
                   %
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void handleApplyDiscount()}
+                  disabled={!checkoutAcquired || discountApplying}
+                  className="h-10 shrink-0 rounded-xl bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {discountApplying ? 'Applying…' : 'Apply'}
+                </button>
               </div>
+              {discountAppliedValue !== null && Math.abs(discountAppliedValue - discountValue) < 0.001 ? (
+                <p className="text-xs font-medium text-emerald-700">
+                  Discount applied on customer bill{discountValue > 0 ? ` (−${fmt(discountValue)})` : ''}.
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  Click Apply to show this discount on the customer QR bill.
+                </p>
+              )}
               <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
                 <span className="text-sm font-semibold text-gray-700">Total Amount</span>
                 <span className="text-lg font-bold text-primary">{fmt(displayTotal)}</span>
