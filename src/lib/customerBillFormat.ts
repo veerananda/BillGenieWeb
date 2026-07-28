@@ -7,6 +7,7 @@ export interface CustomerBillLineItem {
   /** Unit price (rate). */
   unitRate?: number;
   total: number;
+  notes?: string;
 }
 
 export interface CustomerBillData {
@@ -28,25 +29,39 @@ export interface CustomerBillData {
   compositeScheme?: boolean;
   paymentMethod?: string;
   isPaid?: boolean;
+  /** 58mm → 32 cols (default), 80mm → 48 cols */
+  paperWidthMm?: 58 | 80;
 }
 
-const THERMAL_WIDTH = 32;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
-function formatCurrency(amount: number): string {
-  return `₹${Number(amount || 0).toFixed(2)}`;
+/** Fixed right block: Qty(3) + sp + Rate(7) + sp + Price(7) = 19 */
+const RIGHT_BLOCK = 19;
+
+export function thermalWidthForPaper(paperWidthMm: 58 | 80 = 58): number {
+  return paperWidthMm === 80 ? 48 : 32;
 }
 
-function formatDateTime(value?: string | number): string {
+/** ASCII-safe money for thermal printers (no ₹). */
+export function formatBillMoney(amount: number, withRs = false): string {
+  const n = Number(amount || 0).toFixed(2);
+  return withRs ? `Rs.${n}` : n;
+}
+
+/** ASCII 12h datetime — avoids locale narrow-space before AM/PM. */
+export function formatBillDateTime(value?: string | number): string {
   if (!value) return '';
   const date = typeof value === 'number' ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = MONTHS[date.getMonth()];
+  const year = date.getFullYear();
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  return `${day} ${month} ${year} ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
 }
 
 function escapeHtml(value: string): string {
@@ -57,7 +72,7 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function padThermalLine(left: string, right: string, width = THERMAL_WIDTH): string {
+export function padThermalLine(left: string, right: string, width: number): string {
   const r = right.length > width ? right.slice(right.length - width) : right;
   const maxLeft = Math.max(0, width - r.length - 1);
   let l = left;
@@ -66,6 +81,93 @@ function padThermalLine(left: string, right: string, width = THERMAL_WIDTH): str
   }
   const spaces = Math.max(1, width - l.length - r.length);
   return `${l}${' '.repeat(spaces)}${r}`;
+}
+
+function centerThermalLine(text: string, width: number): string {
+  const t = text.length > width ? text.slice(0, width) : text;
+  const pad = Math.max(0, width - t.length);
+  const left = Math.floor(pad / 2);
+  return `${' '.repeat(left)}${t}`;
+}
+
+function wrapWords(text: string, width: number): string[] {
+  const words = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [''];
+  if (width <= 0) return [text];
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      if (word.length <= width) {
+        current = word;
+      } else {
+        // Hard-split oversized tokens.
+        let rest = word;
+        while (rest.length > width) {
+          lines.push(rest.slice(0, width));
+          rest = rest.slice(width);
+        }
+        current = rest;
+      }
+      continue;
+    }
+    if (`${current} ${word}`.length <= width) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      if (word.length <= width) {
+        current = word;
+      } else {
+        let rest = word;
+        while (rest.length > width) {
+          lines.push(rest.slice(0, width));
+          rest = rest.slice(width);
+        }
+        current = rest;
+      }
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function formatQty(qty: number): string {
+  return String(Math.round(qty) === qty ? qty : Number(qty).toFixed(2)).slice(0, 3).padStart(3, ' ');
+}
+
+function formatAmountCol(amount: number): string {
+  return formatBillMoney(amount).slice(0, 7).padStart(7, ' ');
+}
+
+/** One header line + item lines with name wrap; Qty/Rate/Price stay on first line. */
+export function formatThermalItemBlock(
+  items: CustomerBillLineItem[],
+  width: number,
+): string[] {
+  const nameWidth = Math.max(8, width - RIGHT_BLOCK);
+  const lines: string[] = [
+    `${'Item'.padEnd(nameWidth)}${'Qty'.padStart(3)} ${'Rate'.padStart(7)} ${'Price'.padStart(7)}`,
+  ];
+
+  items.forEach((item) => {
+    const rate = lineUnitRate(item);
+    const right = `${formatQty(item.quantity)} ${formatAmountCol(rate)} ${formatAmountCol(item.total)}`;
+    const nameLines = wrapWords(item.name, nameWidth);
+    const first = (nameLines[0] || '').padEnd(nameWidth).slice(0, nameWidth);
+    lines.push(`${first}${right}`);
+    for (let i = 1; i < nameLines.length; i += 1) {
+      lines.push(nameLines[i].slice(0, nameWidth));
+    }
+    if (item.notes) {
+      lines.push(`  Notes: ${item.notes}`.slice(0, width));
+    }
+  });
+
+  return lines;
 }
 
 function lineUnitRate(item: CustomerBillLineItem): number {
@@ -80,7 +182,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
   if (data.orderNumber) metaParts.push(`Order #${escapeHtml(String(data.orderNumber))}`);
   if (data.tableNumber) metaParts.push(`Table ${escapeHtml(data.tableNumber)}`);
   const meta = metaParts.join(' · ');
-  const dateLine = formatDateTime(data.createdAt);
+  const dateLine = formatBillDateTime(data.createdAt);
   const customer =
     data.customerName &&
     data.customerName !== 'Guest' &&
@@ -101,23 +203,23 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
         <tr>
           <td class="item-name">${escapeHtml(item.name)}</td>
           <td class="qty">${item.quantity}</td>
-          <td class="rate">${formatCurrency(rate)}</td>
-          <td class="amount">${formatCurrency(item.total)}</td>
+          <td class="rate">${formatBillMoney(rate)}</td>
+          <td class="amount">${formatBillMoney(item.total)}</td>
         </tr>`;
     })
     .join('');
 
   const subtotalRow =
     data.subtotal > 0 && !data.compositeScheme
-      ? `<div class="row"><span>${subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme))}</span><span>${formatCurrency(data.subtotal)}</span></div>`
+      ? `<div class="row"><span>${subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme))}</span><span>${formatBillMoney(data.subtotal, true)}</span></div>`
       : '';
   const taxRow =
     data.taxAmount > 0 && !data.compositeScheme
-      ? `<div class="row"><span>${taxLabel()}</span><span>${formatCurrency(data.taxAmount)}</span></div>`
+      ? `<div class="row"><span>${taxLabel()}</span><span>${formatBillMoney(data.taxAmount, true)}</span></div>`
       : '';
   const discountRow =
     data.discountAmount > 0
-      ? `<div class="row discount"><span>Discount</span><span>-${formatCurrency(data.discountAmount)}</span></div>`
+      ? `<div class="row discount"><span>Discount</span><span>-${formatBillMoney(data.discountAmount, true)}</span></div>`
       : '';
   const paymentRow =
     data.isPaid && data.paymentMethod
@@ -134,107 +236,40 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 24px 16px;
-      background: #f8fafc;
-      color: #0f172a;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    .sheet {
-      max-width: 420px;
-      margin: 0 auto;
+      padding: 16px;
       background: #fff;
-      border-radius: 18px;
-      overflow: hidden;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      color: #111;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
-    .head {
-      padding: 24px 20px 18px;
-      text-align: center;
-      background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .brand {
-      font-size: 11px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: #64748b;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .head h1 {
-      margin: 0;
-      font-size: 1.35rem;
-      line-height: 1.3;
-    }
-    .meta, .date, .customer {
-      margin: 6px 0 0;
-      color: #64748b;
-      font-size: 0.92rem;
-    }
-    .body { padding: 18px 20px 24px; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.95rem;
-    }
+    .sheet { max-width: 420px; margin: 0 auto; }
+    .head { text-align: center; margin-bottom: 12px; }
+    .head h1 { margin: 0 0 6px; font-size: 1.15rem; }
+    .meta, .date, .customer { margin: 2px 0; color: #333; font-size: 0.85rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     th {
       text-align: left;
-      color: #94a3b8;
-      font-size: 0.72rem;
+      border-bottom: 1px solid #ccc;
+      padding: 6px 0;
+      font-size: 0.75rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding-bottom: 10px;
-      border-bottom: 1px solid #e2e8f0;
     }
-    th.qty, th.rate, th.amount, td.qty, td.rate, td.amount { text-align: right; }
-    th.qty, td.qty { width: 12%; white-space: nowrap; }
-    th.rate, td.rate { width: 18%; white-space: nowrap; padding-left: 8px; }
-    th.amount, td.amount { width: 22%; white-space: nowrap; padding-left: 8px; }
-    td {
-      padding: 12px 0;
-      border-bottom: 1px solid #f1f5f9;
-      vertical-align: top;
-    }
-    .item-name { padding-right: 10px; font-weight: 500; }
-    .totals {
-      margin-top: 16px;
-      padding-top: 14px;
-      border-top: 1px solid #e2e8f0;
-    }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 5px 0;
-      color: #475569;
-      font-size: 0.95rem;
-    }
-    .row.discount { color: #16a34a; }
-    .row.total {
-      margin-top: 10px;
-      padding-top: 12px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 1.2rem;
-      font-weight: 800;
-      color: #0f172a;
-    }
-    .footer {
-      margin-top: 18px;
-      text-align: center;
-      color: #94a3b8;
-      font-size: 0.85rem;
-    }
-    @media print {
-      body { background: #fff; padding: 0; }
-      .sheet { box-shadow: none; border: none; border-radius: 0; max-width: none; }
-    }
+    th.qty, th.rate, th.amount, td.qty, td.rate, td.amount { text-align: right; white-space: nowrap; }
+    th.qty, td.qty { width: 12%; }
+    th.rate, td.rate { width: 18%; padding-left: 8px; }
+    th.amount, td.amount { width: 22%; padding-left: 8px; }
+    td { padding: 8px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+    .item-name { padding-right: 8px; word-break: break-word; }
+    .totals { margin-top: 12px; border-top: 1px solid #ccc; padding-top: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.9rem; }
+    .row.discount { color: #15803d; }
+    .row.total { margin-top: 6px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 1.05rem; font-weight: 700; }
+    .footer { margin-top: 14px; text-align: center; color: #666; font-size: 0.85rem; }
+    @media print { body { padding: 0; } }
   </style>
 </head>
 <body>
   <div class="sheet">
     <div class="head">
-      <div class="brand">Bill Summary</div>
       <h1>${title}</h1>
       ${address ? `<p class="meta">${address}</p>` : ''}
       ${contact ? `<p class="meta">${contact}</p>` : ''}
@@ -244,27 +279,25 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       ${customer ? `<p class="customer">Customer: ${customer}</p>` : ''}
       ${attendedBy ? `<p class="customer">Attended by: ${attendedBy}</p>` : ''}
     </div>
-    <div class="body">
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th class="qty">Qty</th>
-            <th class="rate">Rate</th>
-            <th class="amount">Price</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-      <div class="totals">
-        ${subtotalRow}
-        ${taxRow}
-        ${discountRow}
-        <div class="row total"><span>Total</span><span>${formatCurrency(data.total)}</span></div>
-        ${paymentRow}
-      </div>
-      <p class="footer">Thank you for dining with us.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="qty">Qty</th>
+          <th class="rate">Rate</th>
+          <th class="amount">Price</th>
+        </tr>
+      </thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+    <div class="totals">
+      ${subtotalRow}
+      ${taxRow}
+      ${discountRow}
+      <div class="row total"><span>TOTAL</span><span>${formatBillMoney(data.total, true)}</span></div>
+      ${paymentRow}
     </div>
+    <p class="footer">Thank you!</p>
   </div>
 </body>
 </html>`;
@@ -341,18 +374,19 @@ function orderBillData(
 
 /** Plain-text bill for ESC/POS thermal printers (browser BT/serial or print agent). */
 export function buildCustomerBillText(data: CustomerBillData): string {
+  const width = thermalWidthForPaper(data.paperWidthMm ?? 58);
+  const divider = '-'.repeat(width);
   const lines: string[] = [];
-  const divider = '--------------------------------';
 
   if (data.restaurantName) {
-    lines.push(data.restaurantName);
-    if (data.address) lines.push(data.address);
-    if (data.contactNumber) lines.push(data.contactNumber);
-    if (data.gstNumber) lines.push(`GSTIN: ${data.gstNumber}`);
-    lines.push('');
+    lines.push(centerThermalLine(data.restaurantName, width));
+    if (data.address) {
+      wrapWords(data.address, width).forEach((line) => lines.push(centerThermalLine(line, width)));
+    }
+    if (data.contactNumber) lines.push(centerThermalLine(`Ph: ${data.contactNumber}`, width));
+    if (data.gstNumber) lines.push(centerThermalLine(`GSTIN: ${data.gstNumber}`, width));
   }
 
-  lines.push('BILL');
   lines.push(divider);
   if (data.orderNumber) lines.push(`Order: #${data.orderNumber}`);
   if (data.tableNumber) lines.push(`Table: ${data.tableNumber}`);
@@ -368,38 +402,36 @@ export function buildCustomerBillText(data: CustomerBillData): string {
   if (customer) lines.push(`Customer: ${customer}`);
   if (data.attendedByName) lines.push(`Attended by: ${data.attendedByName}`);
 
-  const dateLine = formatDateTime(data.createdAt);
+  const dateLine = formatBillDateTime(data.createdAt);
   if (dateLine) lines.push(`Date: ${dateLine}`);
 
   lines.push(divider);
-  lines.push(padThermalLine('Item', 'Qty'));
-  lines.push(padThermalLine('', 'Rate   Price'));
-  data.items.forEach((item) => {
-    const rate = lineUnitRate(item);
-    lines.push(padThermalLine(item.name, String(item.quantity)));
-    lines.push(padThermalLine('', `${formatCurrency(rate)}  ${formatCurrency(item.total)}`));
-  });
+  lines.push(...formatThermalItemBlock(data.items, width));
   lines.push(divider);
 
   if (data.subtotal > 0 && !data.compositeScheme) {
     lines.push(
-      `${subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme))}: ${formatCurrency(data.subtotal)}`
+      padThermalLine(
+        subtotalLabel(Boolean(data.pricesIncludeGst), Boolean(data.compositeScheme)),
+        formatBillMoney(data.subtotal),
+        width,
+      ),
     );
   }
   if (data.taxAmount > 0 && !data.compositeScheme) {
-    lines.push(`${taxLabel()}: ${formatCurrency(data.taxAmount)}`);
+    lines.push(padThermalLine(taxLabel(), formatBillMoney(data.taxAmount), width));
   }
   if (data.discountAmount > 0) {
-    lines.push(`Discount: -${formatCurrency(data.discountAmount)}`);
+    lines.push(padThermalLine('Discount', `-${formatBillMoney(data.discountAmount)}`, width));
   }
-  lines.push(`Total: ${formatCurrency(data.total)}`);
+  lines.push(padThermalLine('TOTAL', formatBillMoney(data.total, true), width));
 
   if (data.isPaid && data.paymentMethod) {
     lines.push(`Payment: ${data.paymentMethod.toUpperCase()}`);
   }
 
   lines.push(divider);
-  lines.push('Thank you!');
+  lines.push(centerThermalLine('Thank you!', width));
   return lines.join('\n');
 }
 

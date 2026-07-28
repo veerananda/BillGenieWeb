@@ -16,6 +16,11 @@ import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import { calculateOrderTotals } from '../../lib/orderCalculations';
 import { formatVariantLabelSuffix, formatOrderItemPrepProgress, formatOrderLineDisplayName } from '../../lib/orderHelpers';
+import {
+  buildCustomerBillHtml,
+  printBillHtml,
+  type CustomerBillLineItem,
+} from '../../lib/customerBillFormat';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -433,54 +438,34 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const attendantPayload = attendedByUserId ? { attended_by_user_id: attendedByUserId } : {};
 
   function handlePrintBill() {
-    const restaurantName = profile?.name || 'Counter Order';
-    const address = profile?.address || '';
-    const contact = profile?.contact_number || profile?.phone || '';
-    const gst = profile?.gst_number || '';
-    const itemRows = cart
-      .map((c) => {
-        const name = formatOrderLineDisplayName(
-          cartDisplayName(c.name, c.variantLabel),
-          c.category,
-          { categoryBlocklist: profile?.category_display_blocklist },
-        );
-        const rate = c.price;
-        const price = c.price * c.quantity;
-        return `<tr>
-          <td style="text-align:left;padding:4px 0">${name}</td>
-          <td style="text-align:right;padding:4px 0 4px 8px">${c.quantity}</td>
-          <td style="text-align:right;padding:4px 0 4px 8px">₹${rate.toFixed(2)}</td>
-          <td style="text-align:right;padding:4px 0 4px 8px">₹${price.toFixed(2)}</td>
-        </tr>`;
-      })
-      .join('');
-    const html = `<html><body style="font-family:system-ui,sans-serif;padding:20px;max-width:420px;margin:auto">
-      <h2 style="text-align:center;margin:0 0 8px">${restaurantName}</h2>
-      ${address ? `<p style="text-align:center;margin:0;color:#64748b;font-size:13px">${address}</p>` : ''}
-      ${contact ? `<p style="text-align:center;margin:4px 0 0;color:#64748b;font-size:13px">${contact}</p>` : ''}
-      ${gst ? `<p style="text-align:center;margin:4px 0 0;color:#64748b;font-size:13px">GSTIN: ${gst}</p>` : ''}
-      ${customerName.trim() ? `<p>Customer: ${customerName.trim()}</p>` : ''}
-      ${attendedByName ? `<p>Attended by: ${attendedByName}</p>` : ''}
-      <hr/>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <thead>
-          <tr>
-            <th style="text-align:left">Item</th>
-            <th style="text-align:right">Qty</th>
-            <th style="text-align:right">Rate</th>
-            <th style="text-align:right">Price</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-      <hr/>
-      <div style="display:flex;justify-content:space-between"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
-      ${showTax ? `<div style="display:flex;justify-content:space-between"><span>GST (5%)</span><span>₹${taxAmount.toFixed(2)}</span></div>` : ''}
-      ${discountAmt > 0 ? `<div style="display:flex;justify-content:space-between;color:green"><span>Discount</span><span>-₹${discountAmt.toFixed(2)}</span></div>` : ''}
-      <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:4px;border-top:1px solid #ccc;padding-top:4px"><span>Total</span><span>₹${finalAmount.toFixed(2)}</span></div>
-    </body></html>`;
-    const w = window.open('', '_blank');
-    if (w) { w.document.write(html); w.document.close(); w.print(); }
+    const billItems: CustomerBillLineItem[] = cart.map((c) => ({
+      name: formatOrderLineDisplayName(
+        cartDisplayName(c.name, c.variantLabel),
+        c.category,
+        { categoryBlocklist: profile?.category_display_blocklist },
+      ),
+      quantity: c.quantity,
+      unitRate: c.price,
+      total: c.price * c.quantity,
+    }));
+    const html = buildCustomerBillHtml({
+      restaurantName: profile?.name || 'Counter Order',
+      address: profile?.address || '',
+      contactNumber: profile?.contact_number || profile?.phone || '',
+      gstNumber: profile?.gst_number || '',
+      customerName: customerName.trim() || undefined,
+      attendedByName: attendedByName || undefined,
+      createdAt: Date.now(),
+      items: billItems,
+      subtotal,
+      taxAmount,
+      discountAmount: discountAmt,
+      total: finalAmount,
+      pricesIncludeGst,
+      compositeScheme,
+      isPaid: false,
+    });
+    printBillHtml(html);
   }
 
   async function handleConfirmPayment() {
