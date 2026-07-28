@@ -206,9 +206,9 @@ function buildReceiptText(
 
   lines.push(divider);
   if (order.sub_total > 0) lines.push(`Subtotal: ${formatBillMoney(order.sub_total)}`);
-  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${formatBillMoney(order.tax_amount)}`);
+  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${formatBillMoney(Number(order.tax_amount))}`);
   if (Number(order.discount_amount) > 0) {
-    lines.push(`Discount: -${formatBillMoney(order.discount_amount)}`);
+    lines.push(`Discount: -${formatBillMoney(Number(order.discount_amount))}`);
   }
   lines.push(`TOTAL: ${formatBillMoney(order.total, true)}`);
   appendPaymentReceiptText(lines, order, (n) => formatBillMoney(Number(n || 0), true));
