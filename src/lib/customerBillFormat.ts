@@ -18,6 +18,7 @@ export interface CustomerBillData {
   orderNumber?: number | string;
   tableNumber?: string;
   customerName?: string;
+  customerPhone?: string;
   attendedByName?: string;
   createdAt?: string | number;
   items: CustomerBillLineItem[];
@@ -194,6 +195,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     data.customerName !== 'Self Service'
       ? escapeHtml(data.customerName)
       : '';
+  const customerPhone = data.customerPhone ? escapeHtml(data.customerPhone.trim()) : '';
   const attendedBy = data.attendedByName ? escapeHtml(data.attendedByName) : '';
   const address = data.address ? escapeHtml(data.address) : '';
   const contact = data.contactNumber ? escapeHtml(data.contactNumber) : '';
@@ -283,6 +285,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       ${meta ? `<p class="meta">${meta}</p>` : ''}
       ${dateLine ? `<p class="date">${escapeHtml(dateLine)}</p>` : ''}
       ${customer ? `<p class="customer">Customer: ${customer}</p>` : ''}
+      ${customerPhone ? `<p class="customer">Phone: ${customerPhone}</p>` : ''}
       ${attendedBy ? `<p class="customer">Attended by: ${attendedBy}</p>` : ''}
     </div>
     <table>
@@ -368,6 +371,7 @@ function orderBillData(
     orderNumber: order.order_number,
     tableNumber: String(order.table_number),
     customerName: order.customer_name,
+    customerPhone: order.customer_phone,
     attendedByName: totals.attendedByName,
     createdAt: order.created_at,
     items,
@@ -410,6 +414,7 @@ export function buildCustomerBillText(data: CustomerBillData): string {
       ? data.customerName
       : '';
   if (customer) lines.push(`Customer: ${customer}`);
+  if (data.customerPhone?.trim()) lines.push(`Phone: ${data.customerPhone.trim()}`);
   if (data.attendedByName) lines.push(`Attended by: ${data.attendedByName}`);
 
   const dateLine = formatBillDateTime(data.createdAt);

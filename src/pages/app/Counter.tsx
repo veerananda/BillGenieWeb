@@ -420,6 +420,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       contactNumber: profile?.contact_number || profile?.phone || '',
       gstNumber: profile?.gst_number || '',
       customerName: customerName.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
       attendedByName: attendedByName || undefined,
       createdAt: Date.now(),
       items: billItems,
