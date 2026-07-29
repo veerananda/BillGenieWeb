@@ -969,44 +969,23 @@ function OrderDetailPanel({
       <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-gray-900">Table - {table.name}</h2>
-              <Badge variant={table.is_occupied ? 'occupied' : 'vacant'}>
-                {table.is_occupied ? 'In use' : 'Vacant'}
-              </Badge>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Customer details — editable */}
-        <div className="border-b border-gray-100 px-6 py-3">
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Customer</p>
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={customerNameDraft}
-              onChange={(e) => setCustomerNameDraft(e.target.value)}
-              onBlur={() => void handleSaveCustomer()}
-              disabled={savingCustomer}
-              placeholder="Customer name (optional)"
-              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
-            />
-            <input
-              type="tel"
-              value={customerPhoneDraft}
-              onChange={(e) => setCustomerPhoneDraft(e.target.value)}
-              onBlur={() => void handleSaveCustomer()}
-              disabled={savingCustomer}
-              placeholder="Phone number (optional)"
-              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
-            />
+          <h2 className="text-lg font-bold text-gray-900">Table - {table.name}</h2>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleOpenAssistanceQr}
+              title="Customer assistance QR"
+              aria-label="Customer assistance QR"
+              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary"
+            >
+              <QrCode className="h-5 w-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
         </div>
 
@@ -1242,59 +1221,54 @@ function OrderDetailPanel({
           )}
           {order.status !== 'completed' && order.status !== 'cancelled' && (
             <>
-              {onAddItems && (
-                <button
-                  onClick={onAddItems}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add items
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleOpenAssistanceQr}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 py-3 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-50"
-              >
-                <QrCode className="h-4 w-4" />
-                Customer assistance QR
-              </button>
-
               <div className="flex gap-3">
-                {canMakeVacant && (
+                {onAddItems && (
                   <button
-                    type="button"
-                    onClick={() => {
-                      setCancelError(null);
-                      setVacantConfirmOpen(true);
-                    }}
-                    disabled={cancelLoading}
-                    className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                    onClick={onAddItems}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-primary py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
                   >
-                    Make vacant
-                  </button>
-                )}
-                {showCancelOrder && (
-                  <button
-                    onClick={() => setCancelConfirmOpen(true)}
-                    disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
-                    className="flex-1 rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
-                  >
-                    Cancel order
+                    <Plus className="h-4 w-4" />
+                    Add items
                   </button>
                 )}
                 <button
                   onClick={() => { setCheckoutConflictMsg(null); handleCheckout(); }}
                   disabled={!canCheckout}
                   className={`flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
-                    showCancelOrder || canMakeVacant ? 'flex-1' : 'w-full'
+                    onAddItems ? 'flex-1' : 'w-full'
                   }`}
                 >
                   <CreditCard className="h-4 w-4" />
                   Checkout
                 </button>
               </div>
+
+              {(canMakeVacant || showCancelOrder) && (
+                <div className="flex gap-3">
+                  {canMakeVacant && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCancelError(null);
+                        setVacantConfirmOpen(true);
+                      }}
+                      disabled={cancelLoading}
+                      className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                    >
+                      Make vacant
+                    </button>
+                  )}
+                  {showCancelOrder && (
+                    <button
+                      onClick={() => setCancelConfirmOpen(true)}
+                      disabled={cancelLoading || order.status === 'completed' || order.status === 'cancelled'}
+                      className="flex-1 rounded-xl border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+                    >
+                      Cancel order
+                    </button>
+                  )}
+                </div>
+              )}
               {canMakeVacant && (
                 <p className="text-center text-xs text-gray-400">
                   No items on this table — you can remove in-use and make it vacant.
@@ -1426,6 +1400,29 @@ function OrderDetailPanel({
                 <span className="text-sm font-semibold text-gray-700">Total Amount</span>
                 <span className="text-lg font-bold text-primary">{fmt(displayTotal)}</span>
               </div>
+            </div>
+
+            {/* Customer details */}
+            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Customer (optional)</p>
+              <input
+                type="text"
+                value={customerNameDraft}
+                onChange={(e) => setCustomerNameDraft(e.target.value)}
+                onBlur={() => void handleSaveCustomer()}
+                disabled={savingCustomer}
+                placeholder="Customer name"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+              />
+              <input
+                type="tel"
+                value={customerPhoneDraft}
+                onChange={(e) => setCustomerPhoneDraft(e.target.value)}
+                onBlur={() => void handleSaveCustomer()}
+                disabled={savingCustomer}
+                placeholder="Phone number"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+              />
             </div>
 
             {/* Attended by */}
