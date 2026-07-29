@@ -2,7 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order, RestaurantProfile } from '../../services/api';
-import { formatBillMoney, formatBillDateTime, formatThermalItemBlock, thermalWidthForPaper, printBillHtml } from '../../lib/customerBillFormat';
+import {
+  formatBillMoney,
+  formatBillDateTime,
+  formatThermalItemBlock,
+  thermalWidthForPaper,
+  printBillHtml,
+  centerThermalLine,
+  padThermalLine,
+  wrapWords,
+} from '../../lib/customerBillFormat';
 import {
   getBrowserPrinter,
   getPaperWidthMm,
@@ -179,15 +188,20 @@ function buildReceiptText(
   const divider = '-'.repeat(width);
 
   if (restaurant?.name) {
-    lines.push(restaurant.name);
-    if (restaurant.address) lines.push(restaurant.address);
-    if (restaurantContact) lines.push(restaurantContact);
-    if (restaurant.gst_number) lines.push(`GSTIN: ${restaurant.gst_number}`);
-    lines.push('');
+    lines.push(centerThermalLine(restaurant.name, width));
+    if (restaurant.address) {
+      wrapWords(restaurant.address, width).forEach((line) =>
+        lines.push(centerThermalLine(line, width)),
+      );
+    }
+    if (restaurantContact) lines.push(centerThermalLine(`Ph: ${restaurantContact}`, width));
+    if (restaurant.gst_number) {
+      lines.push(centerThermalLine(`GSTIN: ${restaurant.gst_number}`, width));
+    }
   }
 
-  lines.push('RECEIPT');
   lines.push(divider);
+  lines.push(centerThermalLine('RECEIPT', width));
   lines.push(getOrderTitle(order));
   lines.push(counter ? getServiceModeLabel(order) : `Order #${order.order_number}`);
   if (completedAt) lines.push(formatDateTime(completedAt));
@@ -208,12 +222,16 @@ function buildReceiptText(
   );
 
   lines.push(divider);
-  if (order.sub_total > 0) lines.push(`Subtotal: ${formatBillMoney(order.sub_total)}`);
-  if (Number(order.tax_amount) > 0) lines.push(`Tax: ${formatBillMoney(Number(order.tax_amount))}`);
-  if (Number(order.discount_amount) > 0) {
-    lines.push(`Discount: -${formatBillMoney(Number(order.discount_amount))}`);
+  if (order.sub_total > 0) {
+    lines.push(padThermalLine('Subtotal', formatBillMoney(order.sub_total), width));
   }
-  lines.push(`TOTAL: ${formatBillMoney(order.total, true)}`);
+  if (Number(order.tax_amount) > 0) {
+    lines.push(padThermalLine('GST', formatBillMoney(Number(order.tax_amount)), width));
+  }
+  if (Number(order.discount_amount) > 0) {
+    lines.push(padThermalLine('Discount', `-${formatBillMoney(Number(order.discount_amount))}`, width));
+  }
+  lines.push(padThermalLine('TOTAL', formatBillMoney(order.total, true), width));
   appendPaymentReceiptText(lines, order, (n) => formatBillMoney(Number(n || 0), true));
   if (order.notes) {
     lines.push(divider);
@@ -221,7 +239,7 @@ function buildReceiptText(
   }
 
   lines.push(divider);
-  lines.push('Thank you!');
+  lines.push(centerThermalLine('Thank you!', width));
 
   return lines.join('\n');
 }
@@ -625,14 +643,18 @@ export function History() {
     setError(null);
     try {
       const paperWidthMm = getPaperWidthMm('bill');
-      const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
+      const browserRole = getBrowserPrinter('bill')
+        ? 'bill'
+        : getBrowserPrinter('kot')
+          ? 'kot'
+          : null;
 
       // Warm once — avoids N reconnects / re-pair prompts across a batch.
-      if (hasBrowserThermal) {
-        await warmBrowserPrinterSession('bill');
+      if (browserRole) {
+        await warmBrowserPrinterSession(browserRole);
       }
 
-      if (hasBrowserThermal) {
+      if (browserRole) {
         // One thermal job for the whole page (much lighter than connect/disconnect per slip).
         const combinedText = orders
           .map((historyOrder) => {
@@ -644,11 +666,23 @@ export function History() {
           })
           .join('\n\n');
 
-        const sent = await printTextToBrowserPrinter('bill', combinedText, {
+        const sent = await printTextToBrowserPrinter(browserRole, combinedText, {
           allowReconnectPicker: true,
         });
         if (!sent) {
-          printBillHtml(buildCombinedReceiptHtml(orders, profile, paperWidthMm));
+          // Prefer WiFi/LAN agent over the system PDF dialog.
+          let anyQueued = false;
+          for (const historyOrder of orders) {
+            try {
+              const r = await apiClient.enqueueBillPrint(historyOrder.id);
+              if (r.queued) anyQueued = true;
+            } catch {
+              // ignore per-order agent failures
+            }
+          }
+          if (!anyQueued) {
+            printBillHtml(buildCombinedReceiptHtml(orders, profile, paperWidthMm));
+          }
         }
         return;
       }

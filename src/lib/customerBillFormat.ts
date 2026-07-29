@@ -83,14 +83,14 @@ export function padThermalLine(left: string, right: string, width: number): stri
   return `${l}${' '.repeat(spaces)}${r}`;
 }
 
-function centerThermalLine(text: string, width: number): string {
+export function centerThermalLine(text: string, width: number): string {
   const t = text.length > width ? text.slice(0, width) : text;
   const pad = Math.max(0, width - t.length);
   const left = Math.floor(pad / 2);
   return `${' '.repeat(left)}${t}`;
 }
 
-function wrapWords(text: string, width: number): string[] {
+export function wrapWords(text: string, width: number): string[] {
   const words = String(text || '')
     .trim()
     .split(/\s+/)
