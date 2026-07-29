@@ -10,9 +10,7 @@ import {
   getBrowserPrinter,
   getPaperWidthMm,
   isWebBluetoothSupported,
-  isWebSerialSupported,
   pairBluetoothPrinter,
-  pairSerialPrinter,
   printTestToBrowserPrinter,
   setPaperWidthMm,
   warmBrowserPrinterSession,
@@ -41,6 +39,45 @@ function Field({
   );
 }
 
+function ToggleRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-800">{title}</p>
+        <p className="text-xs text-gray-400">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={onToggle}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+          checked ? 'bg-primary' : 'bg-gray-200'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-5' : ''
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 function isSerialHost(host: string | undefined | null): boolean {
   const h = (host || '').trim();
   if (!h) return false;
@@ -62,7 +99,6 @@ function BrowserPrinterCard({
   const [paperWidthMm, setPaperWidth] = useState<PaperWidthMm>(() => getPaperWidthMm(role));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const serialOk = isWebSerialSupported();
   const bleOk = isWebBluetoothSupported();
 
   useEffect(() => {
@@ -72,6 +108,16 @@ function BrowserPrinterCard({
     };
     window.addEventListener('billgenie-printers-changed', sync);
     return () => window.removeEventListener('billgenie-printers-changed', sync);
+  }, [role]);
+
+  // Drop unsupported Classic BT / serial browser pairs so users re-pair with BLE.
+  useEffect(() => {
+    const current = getBrowserPrinter(role);
+    if (current?.kind === 'serial') {
+      clearBrowserPrinter(role);
+      setConfig(null);
+      setMsg('Classic Bluetooth / serial pairing was removed. Pair again with Pair BLE.');
+    }
   }, [role]);
 
   async function run(action: () => Promise<void>) {
@@ -102,7 +148,7 @@ function BrowserPrinterCard({
         <p className="text-sm font-medium text-gray-800">{label}</p>
         <p className="text-xs text-gray-500">
           {config
-            ? `${config.name} · ${config.kind === 'serial' ? 'Serial / Classic Bluetooth' : 'BLE'} · ${paperWidthMm}mm`
+            ? `${config.name} · BLE · ${paperWidthMm}mm`
             : `Not paired in this browser · ${paperWidthMm}mm layout`}
         </p>
       </div>
@@ -132,21 +178,6 @@ function BrowserPrinterCard({
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={!canEdit || busy || !serialOk}
-          onClick={() =>
-            void run(async () => {
-              await pairSerialPrinter(role);
-              setMsg(
-                `${role === 'kot' ? 'KOT' : 'Bill'} serial / Classic Bluetooth printer paired. Stays after logout/refresh.`
-              );
-            })
-          }
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          Pair serial / Classic BT
-        </button>
         <button
           type="button"
           disabled={!canEdit || busy || !bleOk}
@@ -190,10 +221,10 @@ function BrowserPrinterCard({
           </button>
         ) : null}
       </div>
-      {!serialOk && !bleOk ? (
+      {!bleOk ? (
         <p className="text-xs text-amber-700">
-          This browser does not support Web Serial or Web Bluetooth. Use Chrome/Edge on
-          desktop, or configure a COM port for the print agent below.
+          This browser does not support Web Bluetooth. Use Chrome or Edge on desktop, or set
+          a Wi‑Fi / LAN printer for the print agent below.
         </p>
       ) : null}
       {msg ? <p className="text-xs text-gray-500">{msg}</p> : null}
@@ -202,9 +233,9 @@ function BrowserPrinterCard({
 }
 
 /**
- * Cloud print-agent hosts + this-browser Bluetooth/serial pairing.
+ * Shared print enables + Wi‑Fi/LAN agent hosts + this-browser BLE pairing.
  * Admin/manager can toggle enables and always edit.
- * Staff/chef can edit when the matching enable is on.
+ * Staff/chef can edit hosts/pairing when the matching enable is on.
  */
 export function Printers() {
   const role = useAppSelector(selectAuthRole);
@@ -306,7 +337,7 @@ export function Printers() {
       <div className="space-y-6">
         <PageHeader
           title="Printers"
-          subtitle="KOT and bill printers for LAN, Wi-Fi, and Bluetooth"
+          subtitle="KOT and bill printers for Wi‑Fi / LAN and Bluetooth"
         />
         <p className="text-sm text-red-600">{loadError || 'Printer settings unavailable.'}</p>
       </div>
@@ -317,18 +348,71 @@ export function Printers() {
     <div className="space-y-6">
       <PageHeader
         title="Printers"
-        subtitle="LAN/Wi-Fi via the print agent, Bluetooth via this browser (Chrome/Edge) or a COM port on the agent PC."
+        subtitle="Wi‑Fi / LAN via the print agent, Bluetooth (BLE) in this browser on Chrome/Edge."
       />
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-gray-900">This browser (Bluetooth)</h2>
+          <h2 className="text-lg font-bold text-gray-900">Print options</h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            Pair KOT and bill printers separately in this browser. You may choose the same
-            device for both. Survives refresh and logout. Classic Bluetooth: pair in Windows
-            first, turn the printer on, then “Pair serial / Classic BT” and pick the Bluetooth /
-            COM port (on Windows prefer the outgoing port). Do not leave Printers / Test open in
-            another tab.
+            These apply to all printer types — Wi‑Fi / LAN (print agent) and Bluetooth (this
+            browser).
+          </p>
+        </div>
+        <div className="space-y-4 px-6 py-5">
+          <ToggleRow
+            title="KOT printing"
+            description="Kitchen slips for dine-in saves and counter checkout."
+            checked={printSettings.kot_printing_enabled}
+            disabled={!canManageEnables || printSaving}
+            onToggle={() => {
+              if (!canManageEnables) return;
+              void savePrintSettings({
+                kot_printing_enabled: !printSettings.kot_printing_enabled,
+              });
+            }}
+          />
+          <ToggleRow
+            title="Bill printing"
+            description="Allow bill slips via Print bill (browser BLE or print agent)."
+            checked={printSettings.bill_printing_enabled}
+            disabled={!canManageEnables || printSaving}
+            onToggle={() => {
+              if (!canManageEnables) return;
+              void savePrintSettings({
+                bill_printing_enabled: !printSettings.bill_printing_enabled,
+              });
+            }}
+          />
+          <ToggleRow
+            title="Auto-print bill on checkout"
+            description="After dine-in or counter payment succeeds, print the customer bill."
+            checked={Boolean(printSettings.bill_auto_print_on_checkout)}
+            disabled={!canManageEnables || printSaving}
+            onToggle={() => {
+              if (!canManageEnables) return;
+              void savePrintSettings({
+                bill_auto_print_on_checkout: !printSettings.bill_auto_print_on_checkout,
+              });
+            }}
+          />
+          {!canManageEnables &&
+          !printSettings.kot_printing_enabled &&
+          !printSettings.bill_printing_enabled ? (
+            <p className="text-sm text-gray-500">
+              Printing is off. Ask an admin or manager to enable KOT and/or Bill printing.
+            </p>
+          ) : null}
+          {printMsg ? <p className="text-xs text-gray-500">{printMsg}</p> : null}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <h2 className="text-lg font-bold text-gray-900">Bluetooth (this browser)</h2>
+          <p className="mt-0.5 text-xs text-gray-400">
+            Pair BLE thermal printers with Chrome or Edge. Pair KOT and bill separately — you
+            may choose the same device for both. Stored on this PC across refresh and logout.
           </p>
         </div>
         <div className="space-y-3 px-6 py-5">
@@ -343,127 +427,27 @@ export function Printers() {
             canEdit={canEditKot}
           />
           <p className="text-xs text-gray-400">
-            Each slot is independent. Pair both if you want kitchen and bill slips; use the same
-            printer twice if you only have one device.
+            Pair both slots if you want kitchen and bill slips. Use the same printer twice if
+            you only have one BLE device.
           </p>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-gray-900">Print agent (LAN / Wi-Fi / COM)</h2>
+          <h2 className="text-lg font-bold text-gray-900">Wi‑Fi / LAN (print agent)</h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            For restaurant-wide printing: run the print agent on a PC. Use a printer IP for
-            network printers, or a Windows COM port (e.g. COM5) after pairing a Classic Bluetooth
-            printer to that PC.
+            For restaurant-wide network printers: run the print agent on a PC that can reach
+            the printer IP (usually port 9100).
           </p>
         </div>
         <div className="space-y-4 px-6 py-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-800">KOT printing</p>
-              <p className="text-xs text-gray-400">
-                Kitchen slips for dine-in saves and counter orders.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={printSettings.kot_printing_enabled}
-              disabled={!canManageEnables || printSaving}
-              onClick={() => {
-                if (!canManageEnables) return;
-                void savePrintSettings({
-                  kot_printing_enabled: !printSettings.kot_printing_enabled,
-                });
-              }}
-              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
-                printSettings.kot_printing_enabled ? 'bg-primary' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  printSettings.kot_printing_enabled ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-800">Bill printing</p>
-              <p className="text-xs text-gray-400">
-                When on, Print bill can queue a slip to the print agent bill printer.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={printSettings.bill_printing_enabled}
-              disabled={!canManageEnables || printSaving}
-              onClick={() => {
-                if (!canManageEnables) return;
-                void savePrintSettings({
-                  bill_printing_enabled: !printSettings.bill_printing_enabled,
-                });
-              }}
-              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
-                printSettings.bill_printing_enabled ? 'bg-primary' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  printSettings.bill_printing_enabled ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-800">Auto-print bill on checkout</p>
-              <p className="text-xs text-gray-400">
-                After dine-in or counter payment succeeds, print the bill from this browser’s
-                bill printer (or the print agent).
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={Boolean(printSettings.bill_auto_print_on_checkout)}
-              disabled={!canManageEnables || printSaving}
-              onClick={() => {
-                if (!canManageEnables) return;
-                void savePrintSettings({
-                  bill_auto_print_on_checkout: !printSettings.bill_auto_print_on_checkout,
-                });
-              }}
-              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
-                printSettings.bill_auto_print_on_checkout ? 'bg-primary' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  printSettings.bill_auto_print_on_checkout ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-          </div>
-
-          {!canManageEnables &&
-          !printSettings.kot_printing_enabled &&
-          !printSettings.bill_printing_enabled ? (
-            <p className="text-sm text-gray-500">
-              Printing is off. Ask an admin or manager to enable KOT and/or Bill printing.
-            </p>
-          ) : null}
-
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="KOT printer (IP or COM)">
+            <Field label="KOT printer IP">
               <input
                 className={inputClass}
                 value={printSettings.kot_printer_host || ''}
-                placeholder="192.168.1.50 or COM5"
+                placeholder="192.168.1.50"
                 disabled={!canEditKot}
                 onChange={(e) =>
                   setPrintSettings((s) =>
@@ -487,11 +471,11 @@ export function Printers() {
                 }
               />
             </Field>
-            <Field label="Bill printer (IP or COM)">
+            <Field label="Bill printer IP">
               <input
                 className={inputClass}
                 value={printSettings.bill_printer_host || ''}
-                placeholder="192.168.1.51 or COM6"
+                placeholder="192.168.1.51"
                 disabled={!canEditBill}
                 onChange={(e) =>
                   setPrintSettings((s) =>
@@ -674,7 +658,7 @@ export function Printers() {
           ) : canManageEnables ? (
             <p className="text-xs text-gray-400">
               Generate an agent key, then run the print agent on a PC that can reach your
-              printers (or has the Bluetooth printer paired as a COM port).
+              Wi‑Fi / LAN printers.
             </p>
           ) : null}
 
