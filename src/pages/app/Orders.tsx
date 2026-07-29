@@ -906,7 +906,7 @@ function OrderDetailPanel({
     setPaymentLoading(true);
     try {
       await apiClient.completeOrderWithPayment(order.id, payload);
-      if (await shouldAutoPrintBillOnCheckout()) {
+      if (await shouldAutoPrintBillOnCheckout('dine_in')) {
         handlePrintBill();
       }
       const updatedTable = await apiClient.setTableVacant(table.id);
