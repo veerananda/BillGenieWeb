@@ -845,8 +845,13 @@ function OrderDetailPanel({
       total: item.total,
     }));
     const paperWidthMm = getPaperWidthMm('bill');
-    const html = buildCustomerBillFromOrder(order, profile, billTotals, billItems, paperWidthMm);
-    const text = buildCustomerBillTextFromOrder(order, profile, billTotals, billItems, paperWidthMm);
+    const billOrder = {
+      ...order,
+      customer_name: customerNameDraft.trim() || order.customer_name,
+      customer_phone: customerPhoneDraft.trim() || order.customer_phone,
+    };
+    const html = buildCustomerBillFromOrder(billOrder, profile, billTotals, billItems, paperWidthMm);
+    const text = buildCustomerBillTextFromOrder(billOrder, profile, billTotals, billItems, paperWidthMm);
     void printBillSmart({ html, text, orderId: order.id });
   };
 
