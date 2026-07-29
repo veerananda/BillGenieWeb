@@ -326,7 +326,9 @@ export function Printers() {
           <p className="mt-0.5 text-xs text-gray-400">
             Pair KOT and bill printers separately in this browser. You may choose the same
             device for both. Survives refresh and logout. Classic Bluetooth: pair in Windows
-            first, then “Pair serial / Classic BT”. BLE: use “Pair BLE”.
+            first, turn the printer on, then “Pair serial / Classic BT” and pick the Bluetooth /
+            COM port (on Windows prefer the outgoing port). Do not leave Printers / Test open in
+            another tab.
           </p>
         </div>
         <div className="space-y-3 px-6 py-5">
