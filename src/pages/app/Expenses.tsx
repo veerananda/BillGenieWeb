@@ -47,8 +47,6 @@ export function Expenses() {
   const [expenses, setExpenses] = useState<
     Array<{ id: string; name: string; amount: number; created_at: string }>
   >([]);
-  const [manualTotal, setManualTotal] = useState(0);
-  const [stockTotal, setStockTotal] = useState(0);
   const [total, setTotal] = useState(0);
 
   const [name, setName] = useState('');
@@ -67,9 +65,7 @@ export function Expenses() {
     try {
       const data = await apiClient.listExpenses(year, month);
       setExpenses(data.expenses);
-      setManualTotal(data.manual_total);
-      setStockTotal(data.stock_total);
-      setTotal(data.total);
+      setTotal(data.manual_total ?? data.total);
       setPeriodLabel(data.period_label);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load expenses.');
@@ -189,7 +185,7 @@ export function Expenses() {
     <div className="space-y-5 pb-8">
       <PageHeader
         title="Expenses"
-        subtitle="Monthly costs and stock refill spend · each new month starts at ₹0"
+        subtitle="Monthly costs · each new month starts at ₹0"
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -234,20 +230,12 @@ export function Expenses() {
         </div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-1 max-w-sm">
             <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Total · {periodLabel || selected?.label}
               </p>
               <p className="mt-1 text-2xl font-bold text-gray-900">{formatMoney(total)}</p>
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Manual expenses</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{formatMoney(manualTotal)}</p>
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Stock refill</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{formatMoney(stockTotal)}</p>
             </div>
           </div>
 
