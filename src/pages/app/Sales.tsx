@@ -91,6 +91,22 @@ function periodLabel(period: SalesPeriod): string {
   return PERIOD_OPTIONS.find((p) => p.value === period)?.label ?? period;
 }
 
+/** Date span under period label — single day for Today, otherwise from → to. */
+function formatSalesDateSpan(
+  period: SalesPeriod,
+  from?: string | null,
+  to?: string | null
+): string {
+  const start = String(from || '').trim();
+  const end = String(to || '').trim();
+  if (!start && !end) return '';
+  if (period === 'today' || (start && end && start === end)) {
+    return start || end;
+  }
+  if (start && end) return `${start} → ${end}`;
+  return start || end;
+}
+
 function previousPeriodLabel(period: SalesPeriod): string {
   switch (period) {
     case 'today':
@@ -387,6 +403,7 @@ export function Sales() {
   );
 
   const selectedLabel = periodLabel(period);
+  const dateSpan = formatSalesDateSpan(period, analytics?.from, analytics?.to);
 
   return (
     <div className="space-y-8">
@@ -496,7 +513,7 @@ export function Sales() {
             Showing data for:{' '}
             <span className="font-medium text-gray-500">
               {selectedLabel}
-              {analytics?.from && analytics?.to ? ` (${analytics.from} → ${analytics.to})` : ''}
+              {dateSpan ? ` (${dateSpan})` : ''}
             </span>
           </p>
         )}

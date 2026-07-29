@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, X, Minus, Search, ShoppingCart, ChevronRight,
-  ArrowLeftRight, Banknote, CreditCard, Printer, Leaf, Beef,
+  ArrowLeftRight, Banknote, CreditCard, Leaf, Beef,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../../services/api';
 import type { Order, MenuItem, MenuItemVariant, CompletePaymentRequest } from '../../services/api';
@@ -437,11 +437,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       html: buildCustomerBillHtml(data),
       text: buildCustomerBillText(data),
     };
-  }
-
-  function handlePrintBill(orderId?: string) {
-    const { html, text } = buildCheckoutBillDocuments();
-    void printBillSmart({ html, text, orderId });
   }
 
   async function saveOrder(payment: CompletePaymentRequest, summary: string) {
@@ -892,19 +887,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
               </div>
             </div>
 
-            {/* Staff print */}
-            <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
-              <p className="text-sm font-semibold text-gray-800">Staff print</p>
-              <button
-                type="button"
-                onClick={() => handlePrintBill()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                <Printer className="h-4 w-4" />
-                Print bill
-              </button>
-            </div>
-
             {/* Payment Method */}
             <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-3 shadow-sm">
               <p className="text-sm font-semibold text-gray-800">Payment Method</p>
@@ -966,7 +948,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                     profile={profile}
                     amount={finalAmount}
                     transactionNote="Counter order"
-                    onPrintBill={() => handlePrintBill()}
                   />
                   <input
                     type="text"
@@ -1009,7 +990,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                     profile={profile}
                     amount={splitUpiAmount}
                     transactionNote="Counter order (UPI portion)"
-                    onPrintBill={() => handlePrintBill()}
                   />
                   <div className="flex justify-between rounded-xl bg-blue-50 px-4 py-2.5 text-sm">
                     <span className="text-blue-700">Cash paid</span>
