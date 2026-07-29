@@ -127,11 +127,22 @@ type StoredPrinters = {
 };
 
 type SerialPortLike = {
-  open: (options: { baudRate: number }) => Promise<void>;
+  open: (options: {
+    baudRate: number;
+    bufferSize?: number;
+    dataBits?: number;
+    stopBits?: number;
+    parity?: string;
+    flowControl?: string;
+  }) => Promise<void>;
   close: () => Promise<void>;
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
-  getInfo?: () => { usbVendorId?: number; usbProductId?: number };
+  getInfo?: () => {
+    usbVendorId?: number;
+    usbProductId?: number;
+    bluetoothServiceClassId?: number | string;
+  };
 };
 
 type BluetoothRemoteGATTCharacteristicLike = {
@@ -165,7 +176,11 @@ declare global {
   interface Navigator {
     serial?: {
       requestPort: (options?: {
-        filters?: Array<{ usbVendorId?: number }>;
+        filters?: Array<{
+          usbVendorId?: number;
+          bluetoothServiceClassId?: number | string;
+        }>;
+        allowedBluetoothServiceClassIds?: Array<number | string>;
       }) => Promise<SerialPortLike>;
       getPorts: () => Promise<SerialPortLike[]>;
     };
@@ -286,28 +301,81 @@ export function encodeEscPosText(
   return out;
 }
 
-async function writeSerial(port: SerialPortLike, bytes: Uint8Array): Promise<void> {
-  // Classic BT COM ports often stay "open" briefly; tolerate already-open.
+const SERIAL_BAUD_CANDIDATES = [9600, 115200, 38400, 19200] as const;
+
+function isSerialPortOpen(port: SerialPortLike): boolean {
+  return Boolean(port.readable || port.writable);
+}
+
+async function closeSerialPort(port: SerialPortLike): Promise<void> {
   try {
-    await port.open({ baudRate: 9600 });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/already open/i.test(msg)) throw err;
+    if (port.readable) {
+      try {
+        const reader = port.readable.getReader();
+        try {
+          await reader.cancel();
+        } finally {
+          reader.releaseLock();
+        }
+      } catch {
+        // ignore — stream may already be locked/closed
+      }
+    }
+  } catch {
+    // ignore
   }
+  try {
+    if (isSerialPortOpen(port)) {
+      await port.close();
+    }
+  } catch {
+    // ignore close races on Classic BT COM ports
+  }
+}
+
+async function openSerialPort(port: SerialPortLike): Promise<number> {
+  if (isSerialPortOpen(port)) {
+    // Already open from a previous incomplete print — reuse it.
+    return 9600;
+  }
+
+  let lastErr: unknown;
+  for (const baudRate of SERIAL_BAUD_CANDIDATES) {
+    try {
+      await port.open({ baudRate, bufferSize: 255 });
+      return baudRate;
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/already open/i.test(msg)) return baudRate;
+      // Try next baud; Classic BT often rejects one rate but accepts another.
+      await closeSerialPort(port);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown error');
+  throw new Error(
+    `Could not open the serial / Classic Bluetooth printer (${detail}). ` +
+      'Make sure the printer is on and paired in Windows, close any other app using the COM port ' +
+      '(including another BillGenie tab), then Remove and Pair again.'
+  );
+}
+
+async function writeSerial(port: SerialPortLike, bytes: Uint8Array): Promise<void> {
+  await openSerialPort(port);
   try {
     if (!port.writable) throw new Error('Serial port is not writable');
     const writer = port.writable.getWriter();
     try {
       await writer.write(bytes);
+      // Let the BT stack flush before we tear the port down.
+      await new Promise((r) => setTimeout(r, 150));
     } finally {
       writer.releaseLock();
     }
   } finally {
-    try {
-      await port.close();
-    } catch {
-      // ignore close errors
-    }
+    await closeSerialPort(port);
   }
 }
 
@@ -384,20 +452,18 @@ export async function pairSerialPrinter(
     throw new Error('Web Serial is not supported in this browser. Use Chrome or Edge on desktop.');
   }
   const shareBoth = options?.shareBoth === true;
-  const port = await navigator.serial.requestPort();
+  // Prefer Bluetooth SPP when available (Chrome 117+). No smoke-open — opening then
+  // closing Classic BT COM ports on Windows often leaves them unable to reopen.
+  const port = await navigator.serial.requestPort({
+    allowedBluetoothServiceClassIds: [0x1101],
+  });
   const info = port.getInfo?.() ?? {};
   const name =
-    info.usbVendorId != null
-      ? `Serial printer (${info.usbVendorId.toString(16)}:${(info.usbProductId ?? 0).toString(16)})`
-      : 'Bluetooth / serial printer';
-
-  // Smoke-open then close so permission is granted.
-  try {
-    await port.open({ baudRate: 9600 });
-    await port.close();
-  } catch {
-    // Some COM devices error on smoke open; permission is still granted.
-  }
+    info.bluetoothServiceClassId != null
+      ? 'Bluetooth serial printer'
+      : info.usbVendorId != null
+        ? `Serial printer (${info.usbVendorId.toString(16)}:${(info.usbProductId ?? 0).toString(16)})`
+        : 'Bluetooth / serial printer';
 
   const paperWidthMm = getPaperWidthMm(role);
   const config: BrowserPrinterConfig = {
@@ -621,7 +687,9 @@ async function resolveSerialPort(
       'Serial printer session expired after refresh. Re-pair once in Printers (permission is then remembered).'
     );
   }
-  const port = await navigator.serial.requestPort();
+  const port = await navigator.serial.requestPort({
+    allowedBluetoothServiceClassIds: [0x1101],
+  });
   const info = port.getInfo?.() ?? {};
   sessionSerialPorts.set(role, port);
   const next: BrowserPrinterConfig = {
@@ -647,14 +715,22 @@ export async function printTextToBrowserPrinter(
   if (!config) return false;
 
   const allowReconnectPicker = options?.allowReconnectPicker !== false;
-  const settleMs = options?.settleMs ?? (config.kind === 'bluetooth' ? 900 : 700);
+  const settleMs = options?.settleMs ?? (config.kind === 'bluetooth' ? 900 : 1000);
   const bytes = encodeEscPosText(text);
 
   return enqueuePrint(async () => {
+    const attemptSerial = async (freshPort: boolean) => {
+      if (freshPort) {
+        sessionSerialPorts.delete(role);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const port = await resolveSerialPort(role, config, allowReconnectPicker);
+      await writeSerial(port, bytes);
+    };
+
     const attempt = async () => {
       if (config.kind === 'serial') {
-        const port = await resolveSerialPort(role, config, allowReconnectPicker);
-        await writeSerial(port, bytes);
+        await attemptSerial(false);
         return;
       }
       const device = await resolveBluetoothDevice(role, config, allowReconnectPicker);
@@ -664,12 +740,18 @@ export async function printTextToBrowserPrinter(
     try {
       await attempt();
     } catch (firstErr) {
-      // Same Bluetooth printer often needs a moment after a prior slip/cut.
-      await new Promise((r) => setTimeout(r, 1000));
+      // Classic BT COM often needs a settle + fresh handle after a failed open/close.
+      await new Promise((r) => setTimeout(r, 1200));
       try {
-        await attempt();
+        if (config.kind === 'serial') {
+          await attemptSerial(true);
+        } else {
+          await attempt();
+        }
       } catch {
-        throw firstErr;
+        throw firstErr instanceof Error
+          ? firstErr
+          : new Error(String(firstErr));
       }
     }
 
