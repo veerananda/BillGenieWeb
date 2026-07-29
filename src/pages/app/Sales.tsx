@@ -10,6 +10,8 @@ import {
   Receipt,
   Banknote,
   Smartphone,
+  BarChart2,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import { PageHeader } from '../../components/app/PageHeader';
@@ -392,25 +394,26 @@ export function Sales() {
 
       <section>
         {showChannelToggle ? (
-          <div className="mb-4 flex w-full rounded-xl border border-gray-200 bg-gray-50 p-1">
+          <div className="mb-4 flex gap-1.5 rounded-2xl border border-gray-100 bg-gray-100/70 p-1.5">
             {(
               [
-                { value: 'all' as const, label: 'Overview' },
-                { value: 'dine_in' as const, label: 'Dine-in' },
-                { value: 'counter' as const, label: 'Counter' },
+                { value: 'all' as const, label: 'Overview', icon: BarChart2 },
+                { value: 'dine_in' as const, label: 'Dine-in', icon: UtensilsCrossed },
+                { value: 'counter' as const, label: 'Counter', icon: ShoppingBag },
               ] as const
-            ).map((opt) => (
+            ).map(({ value, label, icon: Icon }) => (
               <button
-                key={opt.value}
+                key={value}
                 type="button"
-                onClick={() => setChannel(opt.value)}
-                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                  channel === opt.value
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                onClick={() => setChannel(value)}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                  channel === value
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-gray-500 hover:bg-white hover:text-gray-700 hover:shadow-sm'
                 }`}
               >
-                {opt.label}
+                <Icon className="h-4 w-4" />
+                {label}
               </button>
             ))}
           </div>
