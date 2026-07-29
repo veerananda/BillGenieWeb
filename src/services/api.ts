@@ -974,7 +974,7 @@ class APIClient {
     return this.makeRequest('/restaurants/print-settings/rotate-agent-key', 'POST', {});
   }
 
-  async enqueueBillPrint(orderId: string): Promise<{ message: string }> {
+  async enqueueBillPrint(orderId: string): Promise<{ message: string; queued?: boolean }> {
     return this.makeRequest(`/orders/${orderId}/print-bill`, 'POST', {});
   }
 

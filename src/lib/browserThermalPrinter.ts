@@ -20,6 +20,9 @@ export type BrowserPrinterConfig = {
   name: string;
   /** Web Bluetooth device id (for reconnect). */
   bluetoothDeviceId?: string;
+  /** Web Serial USB ids so we can pick the same port after refresh. */
+  usbVendorId?: number;
+  usbProductId?: number;
   /** Last connected label for UI. */
   connectedAt?: string;
   /** Thermal paper width used for column layout (32 vs 48 cols). */
@@ -124,11 +127,22 @@ type StoredPrinters = {
 };
 
 type SerialPortLike = {
-  open: (options: { baudRate: number }) => Promise<void>;
+  open: (options: {
+    baudRate: number;
+    bufferSize?: number;
+    dataBits?: number;
+    stopBits?: number;
+    parity?: string;
+    flowControl?: string;
+  }) => Promise<void>;
   close: () => Promise<void>;
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
-  getInfo?: () => { usbVendorId?: number; usbProductId?: number };
+  getInfo?: () => {
+    usbVendorId?: number;
+    usbProductId?: number;
+    bluetoothServiceClassId?: number | string;
+  };
 };
 
 type BluetoothRemoteGATTCharacteristicLike = {
@@ -162,7 +176,11 @@ declare global {
   interface Navigator {
     serial?: {
       requestPort: (options?: {
-        filters?: Array<{ usbVendorId?: number }>;
+        filters?: Array<{
+          usbVendorId?: number;
+          bluetoothServiceClassId?: number | string;
+        }>;
+        allowedBluetoothServiceClassIds?: Array<number | string>;
       }) => Promise<SerialPortLike>;
       getPorts: () => Promise<SerialPortLike[]>;
     };
@@ -202,6 +220,9 @@ function readStore(): StoredPrinters {
 
 function writeStore(next: StoredPrinters) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('billgenie-printers-changed'));
+  }
 }
 
 export function getBrowserPrinter(role: BrowserPrinterRole): BrowserPrinterConfig | null {
@@ -209,9 +230,42 @@ export function getBrowserPrinter(role: BrowserPrinterRole): BrowserPrinterConfi
   return store[role] ?? null;
 }
 
+/**
+ * Printer paired for this role only (no silent fall back to the other role).
+ */
+export function getResolvedBrowserPrinter(role: BrowserPrinterRole): BrowserPrinterConfig | null {
+  return getBrowserPrinter(role);
+}
+
+export function hasAnyBrowserPrinter(): boolean {
+  return Boolean(getBrowserPrinter('bill') || getBrowserPrinter('kot'));
+}
+
 export function clearBrowserPrinter(role: BrowserPrinterRole) {
   const store = readStore();
   store[role] = null;
+  writeStore(store);
+  sessionSerialPorts.delete(role);
+}
+
+/** Clear both KOT and bill browser pairings. */
+export function clearAllBrowserPrinters() {
+  writeStore({ bill: null, kot: null });
+  sessionSerialPorts.clear();
+}
+
+function savePrinterConfig(
+  config: BrowserPrinterConfig,
+  role: BrowserPrinterRole,
+  shareBoth: boolean
+) {
+  const store = readStore();
+  if (shareBoth) {
+    store.bill = { ...config };
+    store.kot = { ...config };
+  } else {
+    store[role] = config;
+  }
   writeStore(store);
 }
 
@@ -247,22 +301,81 @@ export function encodeEscPosText(
   return out;
 }
 
+const SERIAL_BAUD_CANDIDATES = [9600, 115200, 38400, 19200] as const;
+
+function isSerialPortOpen(port: SerialPortLike): boolean {
+  return Boolean(port.readable || port.writable);
+}
+
+async function closeSerialPort(port: SerialPortLike): Promise<void> {
+  try {
+    if (port.readable) {
+      try {
+        const reader = port.readable.getReader();
+        try {
+          await reader.cancel();
+        } finally {
+          reader.releaseLock();
+        }
+      } catch {
+        // ignore — stream may already be locked/closed
+      }
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (isSerialPortOpen(port)) {
+      await port.close();
+    }
+  } catch {
+    // ignore close races on Classic BT COM ports
+  }
+}
+
+async function openSerialPort(port: SerialPortLike): Promise<number> {
+  if (isSerialPortOpen(port)) {
+    // Already open from a previous incomplete print — reuse it.
+    return 9600;
+  }
+
+  let lastErr: unknown;
+  for (const baudRate of SERIAL_BAUD_CANDIDATES) {
+    try {
+      await port.open({ baudRate, bufferSize: 255 });
+      return baudRate;
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/already open/i.test(msg)) return baudRate;
+      // Try next baud; Classic BT often rejects one rate but accepts another.
+      await closeSerialPort(port);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown error');
+  throw new Error(
+    `Could not open the serial / Classic Bluetooth printer (${detail}). ` +
+      'Make sure the printer is on and paired in Windows, close any other app using the COM port ' +
+      '(including another BillGenie tab), then Remove and Pair again.'
+  );
+}
+
 async function writeSerial(port: SerialPortLike, bytes: Uint8Array): Promise<void> {
-  await port.open({ baudRate: 9600 });
+  await openSerialPort(port);
   try {
     if (!port.writable) throw new Error('Serial port is not writable');
     const writer = port.writable.getWriter();
     try {
       await writer.write(bytes);
+      // Let the BT stack flush before we tear the port down.
+      await new Promise((r) => setTimeout(r, 150));
     } finally {
       writer.releaseLock();
     }
   } finally {
-    try {
-      await port.close();
-    } catch {
-      // ignore close errors
-    }
+    await closeSerialPort(port);
   }
 }
 
@@ -331,39 +444,54 @@ async function printViaBluetoothDevice(device: BluetoothDeviceLike, bytes: Uint8
 }
 
 /** Pair a Classic Bluetooth (serial/COM) printer via Chrome Web Serial picker. */
-export async function pairSerialPrinter(role: BrowserPrinterRole): Promise<BrowserPrinterConfig> {
+export async function pairSerialPrinter(
+  role: BrowserPrinterRole,
+  options?: { shareBoth?: boolean }
+): Promise<BrowserPrinterConfig> {
   if (!navigator.serial) {
     throw new Error('Web Serial is not supported in this browser. Use Chrome or Edge on desktop.');
   }
-  const port = await navigator.serial.requestPort();
+  const shareBoth = options?.shareBoth === true;
+  // Prefer Bluetooth SPP when available (Chrome 117+). No smoke-open — opening then
+  // closing Classic BT COM ports on Windows often leaves them unable to reopen.
+  const port = await navigator.serial.requestPort({
+    allowedBluetoothServiceClassIds: [0x1101],
+  });
   const info = port.getInfo?.() ?? {};
   const name =
-    info.usbVendorId != null
-      ? `Serial printer (${info.usbVendorId.toString(16)}:${(info.usbProductId ?? 0).toString(16)})`
-      : 'Bluetooth / serial printer';
-
-  // Smoke-open then close so permission is granted.
-  await port.open({ baudRate: 9600 });
-  await port.close();
+    info.bluetoothServiceClassId != null
+      ? 'Bluetooth serial printer'
+      : info.usbVendorId != null
+        ? `Serial printer (${info.usbVendorId.toString(16)}:${(info.usbProductId ?? 0).toString(16)})`
+        : 'Bluetooth / serial printer';
 
   const paperWidthMm = getPaperWidthMm(role);
   const config: BrowserPrinterConfig = {
     kind: 'serial',
     name,
+    usbVendorId: info.usbVendorId,
+    usbProductId: info.usbProductId,
     connectedAt: new Date().toISOString(),
     paperWidthMm,
   };
-  const store = readStore();
-  store[role] = config;
-  writeStore(store);
+  savePrinterConfig(config, role, shareBoth);
+  sessionSerialPorts.set(role, port);
+  if (shareBoth) {
+    const other: BrowserPrinterRole = role === 'bill' ? 'kot' : 'bill';
+    sessionSerialPorts.set(other, port);
+  }
   return config;
 }
 
 /** Pair a BLE thermal printer via Web Bluetooth. */
-export async function pairBluetoothPrinter(role: BrowserPrinterRole): Promise<BrowserPrinterConfig> {
+export async function pairBluetoothPrinter(
+  role: BrowserPrinterRole,
+  options?: { shareBoth?: boolean }
+): Promise<BrowserPrinterConfig> {
   if (!navigator.bluetooth) {
     throw new Error('Web Bluetooth is not supported in this browser. Use Chrome or Edge.');
   }
+  const shareBoth = options?.shareBoth === true;
   const device = await navigator.bluetooth.requestDevice({
     acceptAllDevices: true,
     optionalServices: BLE_PRINT_SERVICES,
@@ -376,17 +504,121 @@ export async function pairBluetoothPrinter(role: BrowserPrinterRole): Promise<Br
     connectedAt: new Date().toISOString(),
     paperWidthMm,
   };
-  const store = readStore();
-  store[role] = config;
-  writeStore(store);
+  savePrinterConfig(config, role, shareBoth);
   // Keep a live reference for immediate reconnect in this session.
   sessionBluetoothDevices.set(device.id, device);
   return config;
 }
 
 const sessionBluetoothDevices = new Map<string, BluetoothDeviceLike>();
+const sessionSerialPorts = new Map<BrowserPrinterRole, SerialPortLike>();
 
-async function resolveBluetoothDevice(config: BrowserPrinterConfig): Promise<BluetoothDeviceLike> {
+/**
+ * Rebuild in-memory handles from Chrome's permitted devices/ports after a refresh.
+ * Does not open a pair picker. Call on History / Printers mount and before print.
+ */
+export async function warmBrowserPrinterSession(
+  role?: BrowserPrinterRole
+): Promise<{ ok: boolean; needUserGesture: boolean }> {
+  const roles: BrowserPrinterRole[] = role ? [role] : ['bill', 'kot'];
+  let ok = true;
+  let needUserGesture = false;
+
+  // Warm each configured role independently (bill and KOT may be different printers).
+  for (const r of roles) {
+    const config = getBrowserPrinter(r);
+    if (!config) continue;
+
+    if (config.kind === 'bluetooth') {
+      if (config.bluetoothDeviceId && sessionBluetoothDevices.has(config.bluetoothDeviceId)) {
+        continue;
+      }
+      if (!navigator.bluetooth?.getDevices) {
+        ok = false;
+        needUserGesture = true;
+        continue;
+      }
+      try {
+        const devices = await navigator.bluetooth.getDevices();
+        const found =
+          (config.bluetoothDeviceId
+            ? devices.find((d) => d.id === config.bluetoothDeviceId)
+            : undefined) ?? (devices.length === 1 ? devices[0] : undefined);
+        if (found) {
+          sessionBluetoothDevices.set(found.id, found);
+        } else {
+          ok = false;
+          needUserGesture = true;
+        }
+      } catch {
+        ok = false;
+        needUserGesture = true;
+      }
+      continue;
+    }
+
+    if (sessionSerialPorts.has(r)) continue;
+    if (!navigator.serial?.getPorts) {
+      ok = false;
+      needUserGesture = true;
+      continue;
+    }
+    try {
+      const ports = await navigator.serial.getPorts();
+      const matched = matchSerialPort(ports, config);
+      if (matched) {
+        sessionSerialPorts.set(r, matched);
+      } else {
+        ok = false;
+        needUserGesture = true;
+      }
+    } catch {
+      ok = false;
+      needUserGesture = true;
+    }
+  }
+
+  return { ok, needUserGesture };
+}
+
+function matchSerialPort(
+  ports: SerialPortLike[],
+  config: BrowserPrinterConfig
+): SerialPortLike | null {
+  if (!ports.length) return null;
+  // getPorts() only returns ports this origin already authorized — safe to reuse.
+  if (config.usbVendorId != null) {
+    const exact =
+      ports.find((p) => {
+        const info = p.getInfo?.() ?? {};
+        return (
+          info.usbVendorId === config.usbVendorId &&
+          (config.usbProductId == null || info.usbProductId === config.usbProductId)
+        );
+      }) ?? null;
+    if (exact) return exact;
+  }
+  // Classic Bluetooth COM ports often expose empty USB ids — reuse the permitted port.
+  return ports[0] ?? null;
+}
+
+/** Serialize all browser prints so one Bluetooth printer never gets overlapping connects. */
+let printChain: Promise<unknown> = Promise.resolve();
+
+function enqueuePrint<T>(job: () => Promise<T>): Promise<T> {
+  const run = printChain.then(job, job);
+  printChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function resolveBluetoothDevice(
+  role: BrowserPrinterRole,
+  config: BrowserPrinterConfig,
+  allowReconnectPicker: boolean
+): Promise<BluetoothDeviceLike> {
   if (config.bluetoothDeviceId && sessionBluetoothDevices.has(config.bluetoothDeviceId)) {
     return sessionBluetoothDevices.get(config.bluetoothDeviceId)!;
   }
@@ -401,49 +633,136 @@ async function resolveBluetoothDevice(config: BrowserPrinterConfig): Promise<Blu
       sessionBluetoothDevices.set(found.id, found);
       return found;
     }
+    // Also accept the only permitted device (id can change across Chrome profiles rarely).
+    if (devices.length === 1) {
+      sessionBluetoothDevices.set(devices[0].id, devices[0]);
+      const store = readStore();
+      const next = { ...config, bluetoothDeviceId: devices[0].id, name: devices[0].name || config.name };
+      store[role] = next;
+      if (getBrowserPrinter(role === 'bill' ? 'kot' : 'bill')?.bluetoothDeviceId === config.bluetoothDeviceId) {
+        store[role === 'bill' ? 'kot' : 'bill'] = { ...next };
+      }
+      writeStore(store);
+      return devices[0];
+    }
   }
-  // Fall back to a new picker (user gesture required).
+  if (!allowReconnectPicker) {
+    throw new Error(
+      'Bluetooth printer session expired after refresh. Tap Print once and approve the printer, or re-pair in Printers.'
+    );
+  }
+  // User-gesture reconnect: restore permission without clearing Printers settings.
   const device = await navigator.bluetooth.requestDevice({
     acceptAllDevices: true,
     optionalServices: BLE_PRINT_SERVICES,
   });
   sessionBluetoothDevices.set(device.id, device);
+  const next = {
+    ...config,
+    name: device.name || config.name,
+    bluetoothDeviceId: device.id,
+    connectedAt: new Date().toISOString(),
+  };
+  savePrinterConfig(next, role, false);
   return device;
 }
 
-async function resolveSerialPort(): Promise<SerialPortLike> {
+async function resolveSerialPort(
+  role: BrowserPrinterRole,
+  config: BrowserPrinterConfig,
+  allowReconnectPicker: boolean
+): Promise<SerialPortLike> {
+  const cached = sessionSerialPorts.get(role);
+  if (cached) return cached;
+
   if (!navigator.serial) throw new Error('Web Serial is not available');
   const ports = await navigator.serial.getPorts();
-  if (ports.length === 1) return ports[0];
-  if (ports.length > 1) {
-    // Prefer previously authorized port; if multiple, ask again.
-    return navigator.serial.requestPort();
+  const matched = matchSerialPort(ports, config);
+  if (matched) {
+    sessionSerialPorts.set(role, matched);
+    return matched;
   }
-  return navigator.serial.requestPort();
+  if (!allowReconnectPicker) {
+    throw new Error(
+      'Serial printer session expired after refresh. Re-pair once in Printers (permission is then remembered).'
+    );
+  }
+  const port = await navigator.serial.requestPort({
+    allowedBluetoothServiceClassIds: [0x1101],
+  });
+  const info = port.getInfo?.() ?? {};
+  sessionSerialPorts.set(role, port);
+  const next: BrowserPrinterConfig = {
+    ...config,
+    usbVendorId: info.usbVendorId ?? config.usbVendorId,
+    usbProductId: info.usbProductId ?? config.usbProductId,
+    connectedAt: new Date().toISOString(),
+  };
+  savePrinterConfig(next, role, false);
+  return port;
 }
 
 /**
- * Print plain text to the browser-paired printer for this role.
- * Returns false if no browser printer is configured (caller may fall back to agent).
+ * Print plain text to the browser-paired printer for this role only.
+ * Returns false if that role has no printer configured.
  */
 export async function printTextToBrowserPrinter(
   role: BrowserPrinterRole,
-  text: string
+  text: string,
+  options?: { allowReconnectPicker?: boolean; settleMs?: number }
 ): Promise<boolean> {
-  const config = getBrowserPrinter(role);
+  const config = getResolvedBrowserPrinter(role);
   if (!config) return false;
 
+  const allowReconnectPicker = options?.allowReconnectPicker !== false;
+  const settleMs = options?.settleMs ?? (config.kind === 'bluetooth' ? 900 : 1000);
   const bytes = encodeEscPosText(text);
 
-  if (config.kind === 'serial') {
-    const port = await resolveSerialPort();
-    await writeSerial(port, bytes);
-    return true;
-  }
+  return enqueuePrint(async () => {
+    const attemptSerial = async (freshPort: boolean) => {
+      if (freshPort) {
+        sessionSerialPorts.delete(role);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const port = await resolveSerialPort(role, config, allowReconnectPicker);
+      await writeSerial(port, bytes);
+    };
 
-  const device = await resolveBluetoothDevice(config);
-  await printViaBluetoothDevice(device, bytes);
-  return true;
+    const attempt = async () => {
+      if (config.kind === 'serial') {
+        await attemptSerial(false);
+        return;
+      }
+      const device = await resolveBluetoothDevice(role, config, allowReconnectPicker);
+      await printViaBluetoothDevice(device, bytes);
+    };
+
+    try {
+      await attempt();
+    } catch (firstErr) {
+      // Classic BT COM often needs a settle + fresh handle after a failed open/close.
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        if (config.kind === 'serial') {
+          await attemptSerial(true);
+        } else {
+          await attempt();
+        }
+      } catch {
+        throw firstErr instanceof Error
+          ? firstErr
+          : new Error(String(firstErr));
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, settleMs));
+    return true;
+  });
+}
+
+/** Gap between KOT and bill on one shared Bluetooth/serial printer. */
+export function printerSettleDelay(ms = 1200): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function printTestToBrowserPrinter(role: BrowserPrinterRole): Promise<void> {

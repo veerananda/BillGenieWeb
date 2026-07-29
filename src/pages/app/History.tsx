@@ -3,7 +3,12 @@ import { History as HistoryIcon, Printer, Share2 } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import type { Order, RestaurantProfile } from '../../services/api';
 import { formatBillMoney, formatBillDateTime, formatThermalItemBlock, thermalWidthForPaper, printBillHtml } from '../../lib/customerBillFormat';
-import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
+import {
+  getBrowserPrinter,
+  getPaperWidthMm,
+  printTextToBrowserPrinter,
+  warmBrowserPrinterSession,
+} from '../../lib/browserThermalPrinter';
 import { printBillSmart } from '../../lib/printBillSmart';
 import { useAppSelector } from '../../store/hooks';
 import { selectProfile } from '../../store/profileSlice';
@@ -583,6 +588,11 @@ export function History() {
   }, [fetchOrders]);
 
   useEffect(() => {
+    // Restore previously permitted Bluetooth/serial handles after refresh.
+    void warmBrowserPrinterSession('bill');
+  }, []);
+
+  useEffect(() => {
     if (!hasExtendedHistory && period === 'range') {
       setPeriod('today');
     }
@@ -596,62 +606,65 @@ export function History() {
     : periods.find((p) => p.key === period)?.label ?? '';
 
   const handlePrintAll = async () => {
+    // Only the orders currently loaded for this period/page — not the full history range.
     if (!orders.length || printingAll) return;
 
-    const count = Math.max(total, orders.length);
+    const count = orders.length;
     const confirmed = window.confirm(
-      `Print ${count} receipt${count === 1 ? '' : 's'} for ${periodLabel} (${
+      `Print ${count} receipt${count === 1 ? '' : 's'} shown for ${periodLabel} (${
         orderType === 'counter' ? 'Counter' : 'Dine-in'
-      })?`
+      })?${
+        orders.length < total
+          ? `\n\nOnly loaded rows will print (${orders.length} of ${total}). Load more first if you need the rest.`
+          : ''
+      }`
     );
     if (!confirmed) return;
 
     setPrintingAll(true);
+    setError(null);
     try {
-      const range =
-        period === 'range'
-          ? { from: customFrom, to: customTo }
-          : getDateRange(period);
-
-      let all = [...orders];
-      let knownTotal = total;
-      while (all.length < knownTotal) {
-        const result = await apiClient.listOrderHistory({
-          from: range.from,
-          to: range.to,
-          order_type: orderType,
-          limit: PAGE_SIZE,
-          offset: all.length,
-        });
-        const next = result.orders ?? [];
-        knownTotal = result.total ?? knownTotal;
-        if (!next.length) break;
-        all = [...all, ...next];
-      }
-
-      setTotal(knownTotal);
-      setOrders(all);
-
-      if (!all.length) return;
-
       const paperWidthMm = getPaperWidthMm('bill');
-      let anySent = false;
-      for (const historyOrder of all) {
-        const receiptItems = groupReceiptItems(
-          historyOrder.items ?? [],
-          profile?.category_display_blocklist ?? [],
-        );
-        const text = buildReceiptText(historyOrder, profile, receiptItems, paperWidthMm);
-        const result = await printBillSmart({
-          html: buildReceiptHtml(text, historyOrder, paperWidthMm),
-          text,
-          orderId: historyOrder.id,
-          allowSystemPrint: false,
-        });
-        if (result !== 'none') anySent = true;
+      const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
+
+      // Warm once — avoids N reconnects / re-pair prompts across a batch.
+      if (hasBrowserThermal) {
+        await warmBrowserPrinterSession('bill');
       }
-      if (!anySent) {
-        printBillHtml(buildCombinedReceiptHtml(all, profile, paperWidthMm));
+
+      if (hasBrowserThermal) {
+        // One thermal job for the whole page (much lighter than connect/disconnect per slip).
+        const combinedText = orders
+          .map((historyOrder) => {
+            const receiptItems = groupReceiptItems(
+              historyOrder.items ?? [],
+              profile?.category_display_blocklist ?? [],
+            );
+            return buildReceiptText(historyOrder, profile, receiptItems, paperWidthMm);
+          })
+          .join('\n\n');
+
+        const sent = await printTextToBrowserPrinter('bill', combinedText, {
+          allowReconnectPicker: true,
+        });
+        if (!sent) {
+          printBillHtml(buildCombinedReceiptHtml(orders, profile, paperWidthMm));
+        }
+        return;
+      }
+
+      // No browser printer: try agent enqueue for page rows, then fall back to one system dialog.
+      let anyQueued = false;
+      for (const historyOrder of orders) {
+        try {
+          const r = await apiClient.enqueueBillPrint(historyOrder.id);
+          if (r.queued) anyQueued = true;
+        } catch {
+          // ignore per-order agent failures
+        }
+      }
+      if (!anyQueued) {
+        printBillHtml(buildCombinedReceiptHtml(orders, profile, paperWidthMm));
       }
     } catch (err) {
       console.error('Print all failed:', err);
@@ -802,7 +815,7 @@ export function History() {
               className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
             >
               {printingAll ? <Spinner size="sm" className="text-white" /> : <Printer className="h-4 w-4" />}
-              {printingAll ? 'Preparing print…' : `Print all (${Math.max(total, orders.length)})`}
+              {printingAll ? 'Preparing print…' : `Print all (${orders.length})`}
             </button>
           </div>
         </>

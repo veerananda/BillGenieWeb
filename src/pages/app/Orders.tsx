@@ -24,8 +24,10 @@ import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder } from '../.
 import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
 import {
   printBillSmart,
-  resolveBillAutoPrintOnCheckout,
+  shouldAutoPrintBillOnCheckout,
 } from '../../lib/printBillSmart';
+import { buildKotSlipText } from '../../lib/kotSlipFormat';
+import { tryAutoPrintKot } from '../../lib/printKotSmart';
 import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
@@ -212,17 +214,17 @@ function TableCard({
         : 'bg-white/60 text-amber-900';
 
   return (
-    <div className="relative h-[168px]">
+    <div className="relative h-[128px]">
       {needsAssistance && [0, 0.55, 1.1].map((delay) => (
         <span
           key={delay}
-          className="ring-pulse pointer-events-none absolute inset-0 rounded-2xl border-2 border-blue-300"
+          className="ring-pulse pointer-events-none absolute inset-0 rounded-xl border-2 border-blue-300"
           style={{ animationDelay: `${delay}s` }}
         />
       ))}
     <button
       onClick={onClick}
-      className={`group flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`group flex h-full w-full flex-col gap-1.5 overflow-hidden rounded-xl border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         fill === 'blue'
           ? 'border-[#3419e2] bg-[#3419e2]'
           : fill === 'yellow'
@@ -237,7 +239,7 @@ function TableCard({
       {/* Badge row */}
       <div className="flex shrink-0 items-start justify-between gap-2">
         {fill ? (
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${chipClass}`}>
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${chipClass}`}>
             <span className="flex items-center gap-1">
               {fill === 'blue' ? (
                 <>Needs attention</>
@@ -259,7 +261,7 @@ function TableCard({
       </div>
 
       {/* Table name */}
-      <span className={`shrink-0 truncate text-base font-bold ${nameClass}`}>
+      <span className={`shrink-0 truncate text-sm font-bold ${nameClass}`}>
         {table.name}{table.capacity ? ` (${table.capacity})` : ''}
       </span>
 
@@ -608,24 +610,37 @@ function OrderDetailPanel({
   const categoryBlocklist = profile?.category_display_blocklist ?? [];
   const displayNameOpts = { categoryBlocklist };
 
-  // ── Group duplicate menu items by menu_id (exclude kitchen-cancelled lines) ─
-  const STATUS_RANK: Record<string, number> = { pending: 0, cooking: 1, ready: 2, served: 3 };
+  // ── Group duplicate menu items by name; keep status variants separate (like app) ─
+  // e.g. 2 served + 1 pending Chicken Biryani stay visible as two qty lines
+  const STATUS_SORT: Record<string, number> = { served: 0, ready: 1, cooking: 2, pending: 3 };
   const cancelledLines = (order.items ?? []).filter((i) => i.status === 'cancelled');
-  const groupedItems = Object.values(
-    billableItems(order).reduce<
-      Record<string, {
-        groupKey: string;
-        menuId: string;
-        name: string;
-        category: string;
-        displayName: string;
-        isVeg: boolean;
-        quantity: number;
-        total: number;
-        status: string;
-        ids: string[];
-      }>
-    >((acc, item) => {
+  type GroupedVariant = {
+    status: string;
+    quantity: number;
+    total: number;
+    ids: string[];
+  };
+  type GroupedItem = {
+    groupKey: string;
+    menuId: string;
+    name: string;
+    category: string;
+    displayName: string;
+    isVeg: boolean;
+    quantity: number;
+    total: number;
+    ids: string[];
+    variants: GroupedVariant[];
+  };
+  const groupedItems: GroupedItem[] = (() => {
+    const acc: Record<
+      string,
+      Omit<GroupedItem, 'quantity' | 'total' | 'ids' | 'variants'> & {
+        variants: Record<string, GroupedVariant>;
+      }
+    > = {};
+    const seenKeys: string[] = [];
+    for (const item of billableItems(order)) {
       const parts = resolveOrderItemParts(item, menuItems, displayNameOpts);
       const groupKey = getOrderItemGroupKey({
         menuId: item.menu_id,
@@ -637,14 +652,8 @@ function OrderDetailPanel({
       const menuEntry = menuMap.get(item.menu_id);
       const isVeg = menuEntry?.is_veg ?? true;
       const itemTotal = resolveItemTotal(item, menuMap);
-      if (acc[groupKey]) {
-        acc[groupKey].quantity += item.quantity;
-        acc[groupKey].total += itemTotal;
-        acc[groupKey].ids.push(item.id);
-        if ((STATUS_RANK[item.status] ?? 0) < (STATUS_RANK[acc[groupKey].status] ?? 0)) {
-          acc[groupKey].status = item.status;
-        }
-      } else {
+      const status = item.status || 'pending';
+      if (!acc[groupKey]) {
         acc[groupKey] = {
           groupKey,
           menuId: item.menu_id,
@@ -652,15 +661,43 @@ function OrderDetailPanel({
           category: parts.category,
           displayName: parts.displayName,
           isVeg,
+          variants: {},
+        };
+        seenKeys.push(groupKey);
+      }
+      const existing = acc[groupKey].variants[status];
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.total += itemTotal;
+        existing.ids.push(item.id);
+      } else {
+        acc[groupKey].variants[status] = {
+          status,
           quantity: item.quantity,
           total: itemTotal,
-          status: item.status,
           ids: [item.id],
         };
       }
-      return acc;
-    }, {})
-  );
+    }
+    return seenKeys.map((key) => {
+      const group = acc[key];
+      const variants = Object.values(group.variants).sort(
+        (a, b) => (STATUS_SORT[a.status] ?? 99) - (STATUS_SORT[b.status] ?? 99)
+      );
+      return {
+        groupKey: group.groupKey,
+        menuId: group.menuId,
+        name: group.name,
+        category: group.category,
+        displayName: group.displayName,
+        isVeg: group.isVeg,
+        variants,
+        quantity: variants.reduce((sum, v) => sum + v.quantity, 0),
+        total: variants.reduce((sum, v) => sum + v.total, 0),
+        ids: variants.flatMap((v) => v.ids),
+      };
+    });
+  })();
   const canCheckout = groupedItems.length > 0;
   const hasBillableItems = billableItems(order).length > 0;
   const hasServedItems = orderHasServedItems(order, kitchenEnabled);
@@ -864,7 +901,7 @@ function OrderDetailPanel({
     setPaymentLoading(true);
     try {
       await apiClient.completeOrderWithPayment(order.id, payload);
-      if (await resolveBillAutoPrintOnCheckout()) {
+      if (await shouldAutoPrintBillOnCheckout()) {
         handlePrintBill();
       }
       const updatedTable = await apiClient.setTableVacant(table.id);
@@ -1016,43 +1053,67 @@ function OrderDetailPanel({
           </p>
           <div className="space-y-3">
             {groupedItems.map((item) => {
-              const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
-              const isReady = kitchenEnabled && item.status === 'ready';
-              const isCooking = kitchenEnabled && item.status === 'cooking';
-              const isServed = kitchenEnabled && item.status === 'served';
-              const hasAdjustableLines = item.ids.some((id) => {
-                const line = (order.items ?? []).find((i) => i.id === id);
-                return isAdjustableOrderItem(line, kitchenEnabled);
-              });
-              const isServing = item.ids.some((id) => servingId === id);
-              return (
-                <div key={item.groupKey} className="flex items-center gap-3">
-                  {/* Status icons only when kitchen dine-in/counter KOT is enabled */}
-                  {kitchenEnabled && (
-                    isReady ? (
-                      <button
-                        onClick={() => item.ids.forEach((id) => handleServe(id))}
-                        disabled={isServing}
-                        title="Tap to mark as served"
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-all hover:bg-primary/20 disabled:opacity-50 active:scale-95"
-                      >
-                        {isServing
-                          ? <CheckCircle className="h-5 w-5 text-primary" />
-                          : <Utensils className="h-5 w-5 text-primary" />}
-                      </button>
-                    ) : isServed ? (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                        <CheckCircle className="h-5 w-5 text-primary" />
+              // Without kitchen status, keep the prior single-line layout
+              if (!kitchenEnabled) {
+                const unitPrice = item.quantity > 0 ? item.total / item.quantity : 0;
+                const hasAdjustableLines = item.ids.some((id) => {
+                  const line = (order.items ?? []).find((i) => i.id === id);
+                  return isAdjustableOrderItem(line, kitchenEnabled);
+                });
+                return (
+                  <div key={item.groupKey} className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-gray-900">{item.displayName}</p>
+                        <VegBadge isVeg={item.isVeg} />
                       </div>
-                    ) : (
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isCooking ? 'bg-amber-50' : 'bg-gray-100'}`}>
-                        <Clock className={`h-5 w-5 ${isCooking ? 'text-amber-500' : 'text-gray-400'}`} />
-                      </div>
-                    )
-                  )}
+                      {item.category &&
+                      isBlockedDisplayCategory(item.category, categoryBlocklist) ? (
+                        <p className="truncate text-xs text-gray-400">{item.category}</p>
+                      ) : null}
+                      <p className="text-xs text-gray-500">{item.quantity}× {fmt(unitPrice)}</p>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1">
+                      <span className="text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
+                      {canAdjustItems && hasAdjustableLines ? (
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            title="Reduce quantity by 1"
+                            disabled={Boolean(adjustingId)}
+                            onClick={() => reduceGroupByOne(item.ids, item.displayName)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            {adjustingId && item.ids.includes(adjustingId) ? (
+                              <Spinner size="sm" />
+                            ) : (
+                              <>
+                                <Minus className="h-3.5 w-3.5" />
+                                Qty
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            title="Remove item"
+                            disabled={Boolean(adjustingId)}
+                            onClick={() => removeGroup(item.ids, item.displayName)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              }
 
-                  {/* Name + qty */}
-                  <div className="flex-1 min-w-0">
+              // Kitchen on: one name, separate qty rows per status (served / pending / …)
+              return (
+                <div key={item.groupKey} className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0 pt-1">
                     <div className="flex items-center gap-1.5">
                       <p className="truncate text-sm font-medium text-gray-900">{item.displayName}</p>
                       <VegBadge isVeg={item.isVeg} />
@@ -1061,49 +1122,90 @@ function OrderDetailPanel({
                     isBlockedDisplayCategory(item.category, categoryBlocklist) ? (
                       <p className="truncate text-xs text-gray-400">{item.category}</p>
                     ) : null}
-                    <p className="text-xs text-gray-500">{item.quantity}× {fmt(unitPrice)}</p>
                   </div>
 
-                  {/* Total + status label */}
-                  <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className="text-sm font-semibold text-gray-900">{fmt(item.total)}</span>
-                    {kitchenEnabled && isReady ? (
-                      <span className="text-xs font-medium text-primary">Tap to serve</span>
-                    ) : kitchenEnabled && isCooking ? (
-                      <Badge variant="cooking">Cooking</Badge>
-                    ) : kitchenEnabled && isServed ? (
-                      <Badge variant="served">Served</Badge>
-                    ) : null}
-                    {canAdjustItems && hasAdjustableLines ? (
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="Reduce quantity by 1"
-                          disabled={Boolean(adjustingId)}
-                          onClick={() => reduceGroupByOne(item.ids, item.displayName)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  <div className="shrink-0 flex flex-col items-end gap-2">
+                    {item.variants.map((variant) => {
+                      const unitPrice = variant.quantity > 0 ? variant.total / variant.quantity : 0;
+                      const isReady = variant.status === 'ready';
+                      const isCooking = variant.status === 'cooking';
+                      const isServed = variant.status === 'served';
+                      const hasAdjustableLines = variant.ids.some((id) => {
+                        const line = (order.items ?? []).find((i) => i.id === id);
+                        return isAdjustableOrderItem(line, kitchenEnabled);
+                      });
+                      const isServing = variant.ids.some((id) => servingId === id);
+                      return (
+                        <div
+                          key={`${item.groupKey}-${variant.status}`}
+                          className="flex flex-col items-end gap-1"
                         >
-                          {adjustingId && item.ids.includes(adjustingId) ? (
-                            <Spinner size="sm" />
-                          ) : (
-                            <>
-                              <Minus className="h-3.5 w-3.5" />
-                              Qty
-                            </>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          title="Remove item"
-                          disabled={Boolean(adjustingId)}
-                          onClick={() => removeGroup(item.ids, item.displayName)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Remove
-                        </button>
-                      </div>
-                    ) : null}
+                          <div className="flex items-center gap-2">
+                            {isReady ? (
+                              <button
+                                onClick={() => variant.ids.forEach((id) => handleServe(id))}
+                                disabled={isServing}
+                                title="Tap to mark as served"
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 transition-all hover:bg-primary/20 disabled:opacity-50 active:scale-95"
+                              >
+                                {isServing
+                                  ? <CheckCircle className="h-4 w-4 text-primary" />
+                                  : <Utensils className="h-4 w-4 text-primary" />}
+                              </button>
+                            ) : isServed ? (
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                                <CheckCircle className="h-4 w-4 text-primary" />
+                              </div>
+                            ) : (
+                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isCooking ? 'bg-amber-50' : 'bg-gray-100'}`}>
+                                <Clock className={`h-4 w-4 ${isCooking ? 'text-amber-500' : 'text-gray-400'}`} />
+                              </div>
+                            )}
+                            <span className="text-xs text-gray-500 tabular-nums">
+                              {variant.quantity}× {fmt(unitPrice)}
+                            </span>
+                            <span className="text-sm font-semibold text-gray-900 tabular-nums min-w-[3.5rem] text-right">
+                              {fmt(variant.total)}
+                            </span>
+                          </div>
+                          {isReady ? (
+                            <span className="text-xs font-medium text-primary">Tap to serve</span>
+                          ) : isCooking ? (
+                            <Badge variant="cooking">Cooking</Badge>
+                          ) : null}
+                          {canAdjustItems && hasAdjustableLines ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                title="Reduce quantity by 1"
+                                disabled={Boolean(adjustingId)}
+                                onClick={() => reduceGroupByOne(variant.ids, item.displayName)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                {adjustingId && variant.ids.includes(adjustingId) ? (
+                                  <Spinner size="sm" />
+                                ) : (
+                                  <>
+                                    <Minus className="h-3.5 w-3.5" />
+                                    Qty
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                title="Remove item"
+                                disabled={Boolean(adjustingId)}
+                                onClick={() => removeGroup(variant.ids, item.displayName)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Remove
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1749,7 +1851,34 @@ function TakeOrderPanel({
     setPlaceError(null);
     setPlacing(true);
     try {
+      const kotItems = cart.map((c) => ({
+        name: c.menuItem.name,
+        quantity: c.quantity,
+        notes: c.notes?.trim() || undefined,
+        variantLabel: c.variantLabel,
+        category: c.menuItem.category,
+      }));
+      const queueBrowserKot = async (
+        ticketOrOrderNumber?: string | number | null,
+        isAddOn?: boolean
+      ) => {
+        await tryAutoPrintKot(
+          buildKotSlipText({
+            restaurantName: profile?.name || undefined,
+            tableOrChannel: `Table: ${table.name}`,
+            ticketOrOrderNumber,
+            isAddOn,
+            items: kotItems,
+            createdAt: Date.now(),
+            categoryBlocklist: profile?.category_display_blocklist,
+          })
+        );
+      };
+
       if (existingOrder) {
+        const hadPriorKitchenItems = (existingOrder.items ?? []).some(
+          (i) => i.status !== 'cancelled' && Number(i.quantity) > 0
+        );
         const updatedOrder = await apiClient.addItemsToOrder(
           existingOrder.id,
           cart.map((c) => ({
@@ -1760,6 +1889,10 @@ function TakeOrderPanel({
           }))
         );
         dispatch(upsertActiveOrder(updatedOrder));
+        await queueBrowserKot(
+          updatedOrder.ticket_number ?? updatedOrder.order_number ?? existingOrder.order_number,
+          hadPriorKitchenItems
+        );
         onOrderPlaced(updatedOrder, table);
       } else {
         const orderData: CreateOrderRequest = {
@@ -1779,6 +1912,7 @@ function TakeOrderPanel({
         const updatedTable = await apiClient.setTableOccupied(table.id, newOrder.id);
         dispatch(upsertActiveOrder(newOrder));
         dispatch(upsertTable(updatedTable));
+        await queueBrowserKot(newOrder.ticket_number ?? newOrder.order_number, false);
         onOrderPlaced(newOrder, updatedTable);
       }
     } catch (err: unknown) {
@@ -2229,7 +2363,7 @@ export function Orders() {
               description="Try a different filter."
             />
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredTables.map((table) => (
                 <TableCard
                   key={table.id}
