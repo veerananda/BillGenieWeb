@@ -1,8 +1,9 @@
 import { apiClient } from '../services/api';
 import { printBillHtml } from './customerBillFormat';
 import {
-  getBrowserPrinter,
+  getResolvedBrowserPrinter,
   printTextToBrowserPrinter,
+  warmBrowserPrinterSession,
 } from './browserThermalPrinter';
 
 const AUTO_PRINT_KEY = 'billgenie_bill_auto_print_on_checkout_v1';
@@ -27,11 +28,19 @@ export async function resolveBillAutoPrintOnCheckout(): Promise<boolean> {
   }
 }
 
+/**
+ * Auto-print bill on checkout when the restaurant toggle is on, OR when this
+ * browser has a paired bill thermal printer.
+ */
+export async function shouldAutoPrintBillOnCheckout(): Promise<boolean> {
+  if (getResolvedBrowserPrinter('bill')) return true;
+  return resolveBillAutoPrintOnCheckout();
+}
+
 export type PrintBillSmartResult = 'browser' | 'agent' | 'system' | 'none';
 
 /**
- * Prefer paired browser bill printer, then print-agent queue, then system dialog.
- * Skips the system dialog when a browser thermal printer is already paired.
+ * Prefer paired browser bill printer (or shared KOT printer), then print-agent, then system dialog.
  */
 export async function printBillSmart(options: {
   html: string;
@@ -41,33 +50,42 @@ export async function printBillSmart(options: {
   allowSystemPrint?: boolean;
 }): Promise<PrintBillSmartResult> {
   const { html, text, orderId, allowSystemPrint = true } = options;
-  const hasBrowserThermal = Boolean(getBrowserPrinter('bill'));
+  const hasBrowserThermal = Boolean(getResolvedBrowserPrinter('bill'));
 
   if (!hasBrowserThermal && allowSystemPrint) {
     printBillHtml(html);
   }
 
   try {
-    const sentToBrowser = await printTextToBrowserPrinter('bill', text);
-    if (sentToBrowser) return 'browser';
-  } catch {
-    // Fall through to agent queue / system.
+    if (hasBrowserThermal) {
+      await warmBrowserPrinterSession('bill');
+      const sentToBrowser = await printTextToBrowserPrinter('bill', text, {
+        allowReconnectPicker: true,
+        settleMs: 500,
+      });
+      if (sentToBrowser) return 'browser';
+    }
+  } catch (err) {
+    console.warn('Browser bill print failed:', err);
   }
 
   if (orderId) {
     try {
-      await apiClient.enqueueBillPrint(orderId);
-      return 'agent';
+      const r = await apiClient.enqueueBillPrint(orderId);
+      if (r.queued) return 'agent';
     } catch {
       // Agent queue is optional when browser/system print already ran.
     }
   }
 
   if (hasBrowserThermal && allowSystemPrint) {
-    // Browser path failed; offer system print as last resort.
     printBillHtml(html);
     return 'system';
   }
 
-  return hasBrowserThermal || !allowSystemPrint ? 'none' : 'system';
+  if (!hasBrowserThermal && allowSystemPrint) {
+    return 'system';
+  }
+
+  return 'none';
 }

@@ -8,6 +8,7 @@ import { useAppDispatch } from '../../store/hooks';
 import { setProfile } from '../../store/profileSlice';
 import apiClient from '../../services/api';
 import wsService from '../../services/websocket';
+import { warmBrowserPrinterSession } from '../../lib/browserThermalPrinter';
 import { store } from '../../store';
 import {
   upsertActiveOrder, removeActiveOrder,
@@ -126,6 +127,9 @@ export function AppShell() {
     apiClient.getRestaurantProfile().then((profile) => {
       dispatch(setProfile(profile));
     }).catch(() => {});
+
+    // Re-attach previously permitted Bluetooth/serial printers after refresh/login.
+    void warmBrowserPrinterSession();
 
     wsService.connect();
 

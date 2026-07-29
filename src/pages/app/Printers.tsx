@@ -15,11 +15,13 @@ import {
   pairSerialPrinter,
   printTestToBrowserPrinter,
   setPaperWidthMm,
+  warmBrowserPrinterSession,
   type BrowserPrinterConfig,
   type BrowserPrinterRole,
   type PaperWidthMm,
 } from '../../lib/browserThermalPrinter';
 import { cacheBillAutoPrintOnCheckout } from '../../lib/printBillSmart';
+import { cacheKotPrintingEnabled } from '../../lib/printKotSmart';
 
 const inputClass =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-gray-50 disabled:text-gray-400';
@@ -62,6 +64,15 @@ function BrowserPrinterCard({
   const [msg, setMsg] = useState<string | null>(null);
   const serialOk = isWebSerialSupported();
   const bleOk = isWebBluetoothSupported();
+
+  useEffect(() => {
+    const sync = () => {
+      setConfig(getBrowserPrinter(role));
+      setPaperWidth(getPaperWidthMm(role));
+    };
+    window.addEventListener('billgenie-printers-changed', sync);
+    return () => window.removeEventListener('billgenie-printers-changed', sync);
+  }, [role]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -127,7 +138,9 @@ function BrowserPrinterCard({
           onClick={() =>
             void run(async () => {
               await pairSerialPrinter(role);
-              setMsg('Serial / Classic Bluetooth printer paired for this browser.');
+              setMsg(
+                `${role === 'kot' ? 'KOT' : 'Bill'} serial / Classic Bluetooth printer paired. Stays after logout/refresh.`
+              );
             })
           }
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -140,7 +153,9 @@ function BrowserPrinterCard({
           onClick={() =>
             void run(async () => {
               await pairBluetoothPrinter(role);
-              setMsg('BLE printer paired for this browser.');
+              setMsg(
+                `${role === 'kot' ? 'KOT' : 'Bill'} BLE printer paired. Stays after logout/refresh.`
+              );
             })
           }
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -167,7 +182,7 @@ function BrowserPrinterCard({
             onClick={() => {
               clearBrowserPrinter(role);
               setConfig(null);
-              setMsg('Cleared browser printer.');
+              setMsg(`Cleared ${role === 'kot' ? 'KOT' : 'bill'} browser printer.`);
             }}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
@@ -218,6 +233,8 @@ export function Printers() {
           r.settings.bottom_feed_lines ?? 3
         );
         cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
+        cacheKotPrintingEnabled(Boolean(r.settings.kot_printing_enabled));
+        void warmBrowserPrinterSession();
       } catch (err: unknown) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load printer settings.');
@@ -251,6 +268,7 @@ export function Printers() {
         r.settings.bottom_feed_lines ?? 3
       );
       cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
+      cacheKotPrintingEnabled(Boolean(r.settings.kot_printing_enabled));
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
       setPrintMsg(err instanceof Error ? err.message : 'Failed to save printer settings');
@@ -306,9 +324,9 @@ export function Printers() {
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="text-lg font-bold text-gray-900">This browser (Bluetooth)</h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            Pair a printer to print bills directly from Chrome/Edge. Classic Bluetooth: pair in
-            Windows first, then use “Pair serial / Classic BT”. BLE printers can use “Pair BLE”.
-            Stored only in this browser — not shared with other PCs.
+            Pair KOT and bill printers separately in this browser. You may choose the same
+            device for both. Survives refresh and logout. Classic Bluetooth: pair in Windows
+            first, then “Pair serial / Classic BT”. BLE: use “Pair BLE”.
           </p>
         </div>
         <div className="space-y-3 px-6 py-5">
@@ -323,8 +341,8 @@ export function Printers() {
             canEdit={canEditKot}
           />
           <p className="text-xs text-gray-400">
-            Note: automatic KOT from order save still uses the print agent below. Browser KOT
-            pairing is for test prints and future browser-triggered kitchen slips.
+            Each slot is independent. Pair both if you want kitchen and bill slips; use the same
+            printer twice if you only have one device.
           </p>
         </div>
       </div>
