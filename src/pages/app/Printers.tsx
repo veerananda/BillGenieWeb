@@ -474,16 +474,18 @@ export function Printers() {
           </p>
         </div>
         <div className="space-y-3 px-6 py-5">
-          <BrowserPrinterCard
-            role="bill"
-            label="Bill printer (this browser)"
-            canEdit={canEditBill}
-          />
-          <BrowserPrinterCard
-            role="kot"
-            label="KOT printer (this browser)"
-            canEdit={canEditKot}
-          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <BrowserPrinterCard
+              role="bill"
+              label="Bill printer (this browser)"
+              canEdit={canEditBill}
+            />
+            <BrowserPrinterCard
+              role="kot"
+              label="KOT printer (this browser)"
+              canEdit={canEditKot}
+            />
+          </div>
           <p className="text-xs text-gray-400">
             Pair both slots if you want kitchen and bill slips. Use the same printer twice if
             you only have one BLE device.
@@ -500,6 +502,7 @@ export function Printers() {
           </p>
         </div>
         <div className="space-y-4 px-6 py-5">
+          <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
             <div>
               <p className="text-sm font-medium text-gray-800">KOT printer (Wi‑Fi / LAN)</p>
@@ -509,57 +512,61 @@ export function Printers() {
                   : 'Not configured'}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="KOT printer IP">
-                <input
-                  className={inputClass}
-                  value={printSettings.kot_printer_host || ''}
-                  placeholder="192.168.1.50"
-                  disabled={!canEditKot}
-                  onChange={(e) =>
-                    setPrintSettings((s) =>
-                      s ? { ...s, kot_printer_host: e.target.value } : s
-                    )
-                  }
-                />
-              </Field>
-              <Field label={kotIsSerial ? 'KOT port (ignored for COM)' : 'KOT TCP port'}>
-                <input
-                  className={inputClass}
-                  type="number"
-                  value={printSettings.kot_printer_port || 9100}
-                  disabled={!canEditKot || kotIsSerial}
-                  onChange={(e) =>
-                    setPrintSettings((s) =>
-                      s
-                        ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
-                        : s
-                    )
-                  }
-                />
-              </Field>
-              <Field label="KOT paper width">
-                <div className="flex gap-2">
-                  {([58, 80] as const).map((w) => (
-                    <button
-                      key={`kot-paper-${w}`}
-                      type="button"
-                      disabled={!canEditKot || printSaving}
-                      onClick={() =>
-                        setPrintSettings((s) => (s ? { ...s, kot_paper_width_mm: w } : s))
-                      }
-                      className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
-                        (printSettings.kot_paper_width_mm ?? 58) === w
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {w}mm
-                    </button>
-                  ))}
-                </div>
-              </Field>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-[10.5rem] max-w-full shrink-0">
+                <Field label="IP">
+                  <input
+                    className={inputClass}
+                    value={printSettings.kot_printer_host || ''}
+                    placeholder="192.168.1.50"
+                    disabled={!canEditKot}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s ? { ...s, kot_printer_host: e.target.value } : s
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="w-[4.75rem] shrink-0">
+                <Field label="Port">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    value={printSettings.kot_printer_port || 9100}
+                    disabled={!canEditKot || kotIsSerial}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s
+                          ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
+                          : s
+                      )
+                    }
+                  />
+                </Field>
+              </div>
             </div>
+            <Field label="Paper width">
+              <div className="flex gap-2">
+                {([58, 80] as const).map((w) => (
+                  <button
+                    key={`kot-paper-${w}`}
+                    type="button"
+                    disabled={!canEditKot || printSaving}
+                    onClick={() =>
+                      setPrintSettings((s) => (s ? { ...s, kot_paper_width_mm: w } : s))
+                    }
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                      (printSettings.kot_paper_width_mm ?? 58) === w
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {w}mm
+                  </button>
+                ))}
+              </div>
+            </Field>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -591,57 +598,61 @@ export function Printers() {
                   : 'Not configured'}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Bill printer IP">
-                <input
-                  className={inputClass}
-                  value={printSettings.bill_printer_host || ''}
-                  placeholder="192.168.1.51"
-                  disabled={!canEditBill}
-                  onChange={(e) =>
-                    setPrintSettings((s) =>
-                      s ? { ...s, bill_printer_host: e.target.value } : s
-                    )
-                  }
-                />
-              </Field>
-              <Field label={billIsSerial ? 'Bill port (ignored for COM)' : 'Bill TCP port'}>
-                <input
-                  className={inputClass}
-                  type="number"
-                  value={printSettings.bill_printer_port || 9100}
-                  disabled={!canEditBill || billIsSerial}
-                  onChange={(e) =>
-                    setPrintSettings((s) =>
-                      s
-                        ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
-                        : s
-                    )
-                  }
-                />
-              </Field>
-              <Field label="Bill paper width">
-                <div className="flex gap-2">
-                  {([58, 80] as const).map((w) => (
-                    <button
-                      key={`bill-paper-${w}`}
-                      type="button"
-                      disabled={!canEditBill || printSaving}
-                      onClick={() =>
-                        setPrintSettings((s) => (s ? { ...s, bill_paper_width_mm: w } : s))
-                      }
-                      className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
-                        (printSettings.bill_paper_width_mm ?? 58) === w
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {w}mm
-                    </button>
-                  ))}
-                </div>
-              </Field>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-[10.5rem] max-w-full shrink-0">
+                <Field label="IP">
+                  <input
+                    className={inputClass}
+                    value={printSettings.bill_printer_host || ''}
+                    placeholder="192.168.1.51"
+                    disabled={!canEditBill}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s ? { ...s, bill_printer_host: e.target.value } : s
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="w-[4.75rem] shrink-0">
+                <Field label="Port">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    value={printSettings.bill_printer_port || 9100}
+                    disabled={!canEditBill || billIsSerial}
+                    onChange={(e) =>
+                      setPrintSettings((s) =>
+                        s
+                          ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
+                          : s
+                      )
+                    }
+                  />
+                </Field>
+              </div>
             </div>
+            <Field label="Paper width">
+              <div className="flex gap-2">
+                {([58, 80] as const).map((w) => (
+                  <button
+                    key={`bill-paper-${w}`}
+                    type="button"
+                    disabled={!canEditBill || printSaving}
+                    onClick={() =>
+                      setPrintSettings((s) => (s ? { ...s, bill_paper_width_mm: w } : s))
+                    }
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                      (printSettings.bill_paper_width_mm ?? 58) === w
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {w}mm
+                  </button>
+                ))}
+              </div>
+            </Field>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -673,6 +684,7 @@ export function Printers() {
                 </button>
               ) : null}
             </div>
+          </div>
           </div>
 
           {canManageEnables ? (
