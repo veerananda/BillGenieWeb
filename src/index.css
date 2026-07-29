@@ -39,6 +39,16 @@
   animation: ring-pulse 1.65s ease-out infinite;
 }
 
+button,
+a,
+[role="button"],
+label[for],
+select,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
 html {
   scroll-behavior: smooth;
 }
