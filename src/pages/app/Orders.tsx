@@ -1876,6 +1876,9 @@ function TakeOrderPanel({
       };
 
       if (existingOrder) {
+        const hadPriorKitchenItems = (existingOrder.items ?? []).some(
+          (i) => i.status !== 'cancelled' && Number(i.quantity) > 0
+        );
         const updatedOrder = await apiClient.addItemsToOrder(
           existingOrder.id,
           cart.map((c) => ({
@@ -1888,7 +1891,7 @@ function TakeOrderPanel({
         dispatch(upsertActiveOrder(updatedOrder));
         await queueBrowserKot(
           updatedOrder.ticket_number ?? updatedOrder.order_number ?? existingOrder.order_number,
-          true
+          hadPriorKitchenItems
         );
         onOrderPlaced(updatedOrder, table);
       } else {
