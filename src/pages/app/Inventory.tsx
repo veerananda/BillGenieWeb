@@ -25,7 +25,6 @@ import {
   type MenuItemIngredient,
   type RecipeIngredientInput,
 } from '../../services/api';
-import { formatInr } from '../../data/pricing';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanRestockInventory } from '../../store/authSlice';
 import {
@@ -546,13 +545,9 @@ export function StockRefill() {
   const [search, setSearch] = useState('');
   const [refillAmounts, setRefillAmounts] = useState<Record<string, string>>({});
   const [refillUnits, setRefillUnits] = useState<Record<string, string>>({});
-  const [refillPrices, setRefillPrices] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  const [monthSpend, setMonthSpend] = useState<number | null>(null);
-  const [spendMonthLabel, setSpendMonthLabel] = useState('');
 
   const [deductIngredientId, setDeductIngredientId] = useState('');
   const [deductQty, setDeductQty] = useState('');
@@ -561,34 +556,18 @@ export function StockRefill() {
   const [deductError, setDeductError] = useState<string | null>(null);
   const [deductSuccess, setDeductSuccess] = useState<string | null>(null);
 
-  const fetchMonthlySpend = useCallback(async () => {
-    if (!canManageStock) return;
-    try {
-      const data = await apiClient.getMonthlyStockExpenditure();
-      setMonthSpend(data.total);
-      const label = new Date(data.year, data.month - 1, 1).toLocaleString('en-IN', {
-        month: 'long',
-        year: 'numeric',
-      });
-      setSpendMonthLabel(label);
-    } catch {
-      // Non-blocking — refill still works without the banner
-    }
-  }, [canManageStock]);
-
   const fetchIngredients = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await apiClient.listIngredients();
       dispatch(setInventoryIngredients(data.map(toInventoryIngredient)));
-      await fetchMonthlySpend();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ingredients.');
     } finally {
       setLoading(false);
     }
-  }, [dispatch, fetchMonthlySpend]);
+  }, [dispatch]);
 
   useEffect(() => { fetchIngredients(); }, [fetchIngredients]);
 
@@ -605,31 +584,20 @@ export function StockRefill() {
   }, [ingredients, search]);
 
   const pendingItems = useMemo(() => {
-    const items: Array<{ ingredient_id: string; quantity: number; unit: string; price?: number }> = [];
+    const items: Array<{ ingredient_id: string; quantity: number; unit: string }> = [];
     for (const [id, raw] of Object.entries(refillAmounts)) {
       const qty = parseFloat((raw ?? '').trim());
       if (!raw?.trim() || Number.isNaN(qty) || qty <= 0) continue;
       const ingredient = ingredients.find((i) => i.id === id);
       const unit = refillUnits[id] || defaultEntryUnit(ingredient?.unit ?? '');
-      const priceRaw = (refillPrices[id] ?? '').trim();
-      const price = parseFloat(priceRaw);
-      const item: { ingredient_id: string; quantity: number; unit: string; price?: number } = {
+      items.push({
         ingredient_id: id,
         quantity: qty,
         unit,
-      };
-      if (priceRaw && !Number.isNaN(price) && price > 0) {
-        item.price = price;
-      }
-      items.push(item);
+      });
     }
     return items;
-  }, [refillAmounts, refillUnits, refillPrices, ingredients]);
-
-  const pendingSpend = useMemo(
-    () => pendingItems.reduce((sum, i) => sum + (i.price ?? 0), 0),
-    [pendingItems]
-  );
+  }, [refillAmounts, refillUnits, ingredients]);
 
   const selectedDeductIngredient = useMemo(
     () => ingredients.find((i) => i.id === deductIngredientId) ?? null,
@@ -662,21 +630,16 @@ export function StockRefill() {
     setSubmitError(null);
     setSuccessMsg(null);
     try {
-      const { ingredients: updated, expenditure_added } =
-        await apiClient.restockIngredients(pendingItems);
+      const { ingredients: updated } = await apiClient.restockIngredients(pendingItems);
       for (const ing of updated) {
         dispatch(upsertInventoryIngredient(toInventoryIngredient(ing)));
       }
       setRefillAmounts({});
       setRefillUnits({});
-      setRefillPrices({});
-      const spendNote =
-        expenditure_added > 0 ? ` · ${formatInr(expenditure_added)} added to this month’s spend` : '';
       setSuccessMsg(
-        `Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.${spendNote}`
+        `Restocked ${updated.length} ingredient${updated.length === 1 ? '' : 's'}.`
       );
       setTimeout(() => setSuccessMsg(null), 4000);
-      await fetchMonthlySpend();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to restock.');
     } finally {
@@ -766,21 +729,11 @@ export function StockRefill() {
     );
   }
 
-  const gridCols = '1fr 100px 120px 80px 110px';
+  const gridCols = '1fr 100px 120px 80px';
 
   return (
     <div className="space-y-4 pb-24">
-      <PageHeader title="Stock Refill" subtitle="Enter quantities and price to add, then refill all at once" />
-
-      {canManageStock && monthSpend != null && (
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Stock spend · {spendMonthLabel || 'This month'}
-          </p>
-          <p className="mt-0.5 text-xl font-bold text-gray-900">{formatInr(monthSpend)}</p>
-          <p className="text-xs text-gray-400">Total purchase cost recorded from stock refills this month.</p>
-        </div>
-      )}
+      <PageHeader title="Stock Refill" subtitle="Enter quantities to add, then refill all at once" />
 
       {canManageStock && (
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -864,7 +817,7 @@ export function StockRefill() {
         />
       </div>
       <p className="text-xs text-gray-500">
-        Enter add qty, optional purchase price (₹), and choose g/kg or ml/L when available. Prices are added to this month’s stock spend.
+        Enter add qty and choose g/kg or ml/L when available.
       </p>
 
       {successMsg && (
@@ -891,13 +844,11 @@ export function StockRefill() {
             <span className="text-right">Current</span>
             <span className="text-right">Add qty</span>
             <span className="text-center">Unit</span>
-            <span className="text-right">Price (₹)</span>
           </div>
           <div className="divide-y divide-gray-50">
             {filtered.map((item) => {
               const color = stockColor(item.currentStock, item.alertQuantity);
               const addRaw = refillAmounts[item.id] ?? '';
-              const priceRaw = refillPrices[item.id] ?? '';
               const entryChoices = entryUnitsFor(item.unit);
               const selectedUnit = refillUnits[item.id] || defaultEntryUnit(item.unit);
               return (
@@ -943,19 +894,6 @@ export function StockRefill() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    value={priceRaw}
-                    onChange={(e) => {
-                      setSubmitError(null);
-                      setRefillPrices((prev) => ({ ...prev, [item.id]: e.target.value }));
-                    }}
-                    placeholder="0"
-                    className="w-full rounded-lg border border-gray-200 px-2 py-2 text-right text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  />
                 </div>
               );
             })}
@@ -964,11 +902,6 @@ export function StockRefill() {
       )}
 
       <div className="sticky bottom-0 z-10 -mx-1 border-t border-gray-100 bg-white/95 px-1 py-3 backdrop-blur">
-        {pendingSpend > 0 && (
-          <p className="mb-2 text-center text-xs text-gray-500">
-            This refill cost: <span className="font-semibold text-gray-800">{formatInr(pendingSpend)}</span>
-          </p>
-        )}
         <button
           type="button"
           onClick={() => void handleBulkRefill()}
