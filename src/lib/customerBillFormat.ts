@@ -1,5 +1,6 @@
 import type { Order, RestaurantProfile } from '../services/api';
 import { subtotalLabel, taxLabel } from './orderTax';
+import { wrapTrackingUrlAsQrMarker } from './escposQr';
 
 export interface CustomerBillLineItem {
   name: string;
@@ -32,6 +33,10 @@ export interface CustomerBillData {
   isPaid?: boolean;
   /** 58mm → 32 cols (default), 80mm → 48 cols */
   paperWidthMm?: 58 | 80;
+  /** Counter order tracking URL — printed as QR on thermal + HTML when markup provided. */
+  trackingUrl?: string;
+  /** Pre-rendered QR SVG (from qrCodeSvgMarkup) for HTML bills. */
+  trackingQrSvg?: string;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
@@ -230,6 +235,13 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     data.isPaid && data.paymentMethod
       ? `<div class="row"><span>Payment</span><span>${escapeHtml(data.paymentMethod.toUpperCase())}</span></div>`
       : '';
+  const trackingQrBlock =
+    data.trackingQrSvg && data.trackingUrl
+      ? `<div class="qr">
+          <p class="qr-label">Scan to track order</p>
+          <div class="qr-img">${data.trackingQrSvg}</div>
+        </div>`
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -272,6 +284,10 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
     .row.discount { color: #15803d; }
     .row.total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 1.05em; font-weight: 700; }
     .footer { margin-top: 10px; text-align: center; color: #666; font-size: 0.9em; }
+    .qr { margin-top: 10px; text-align: center; }
+    .qr-label { margin: 0 0 6px; font-size: 0.9em; color: #333; }
+    .qr-img { display: flex; justify-content: center; }
+    .qr-img svg { width: ${paperWidthMm === 80 ? 36 : 32}mm; height: auto; }
     @media print { body { padding: 0; } .sheet { width: ${sheetMm}mm; } }
   </style>
 </head>
@@ -307,6 +323,7 @@ export function buildCustomerBillHtml(data: CustomerBillData): string {
       ${paymentRow}
     </div>
     <p class="footer">Thank you!</p>
+    ${trackingQrBlock}
   </div>
 </body>
 </html>`;
@@ -447,6 +464,13 @@ export function buildCustomerBillText(data: CustomerBillData): string {
 
   lines.push(divider);
   lines.push(centerThermalLine('Thank you!', width));
+  if (data.trackingUrl?.trim()) {
+    const url = data.trackingUrl.trim();
+    lines.push(divider);
+    lines.push(centerThermalLine('Scan to track order', width));
+    lines.push(wrapTrackingUrlAsQrMarker(url));
+    wrapWords(url, width).forEach((line) => lines.push(centerThermalLine(line, width)));
+  }
   return lines.join('\n');
 }
 
