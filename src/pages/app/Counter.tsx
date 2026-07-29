@@ -451,7 +451,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       category: c.category,
     }));
     const kotChannel =
-      serviceMode === 'takeaway' ? 'Counter · takeaway' : 'Counter · eat_here';
+      serviceMode === 'takeaway' ? 'Counter - takeaway' : 'Counter - eat_here';
     try {
       const createdOrder = await apiClient.createOrder({
         order_type: 'counter',
