@@ -24,7 +24,7 @@ import {
   formatSubscriptionPlanName,
   type SubscriptionSelection,
 } from '../../data/pricing';
-import { INDIA_LOCATION_OPTIONS, citiesForState, formatCityTier } from '../../data/indiaLocations';
+import { citiesForState, formatCityTier } from '../../data/indiaLocations';
 
 // ??? Types ????????????????????????????????????????????????????????????????????
 
@@ -168,7 +168,7 @@ function Field({ label, optional, children }: FieldProps) {
 }
 
 const inputClass =
-  'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
+  'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-600';
 
 // ??? Toggle ???????????????????????????????????????????????????????????????????
 
@@ -598,8 +598,7 @@ export function Profile() {
       const payload = {
         name: form.name.trim() || undefined,
         address: form.address.trim() || undefined,
-        city: form.city.trim() || undefined,
-        state: form.state.trim() || undefined,
+        // State/city are set at signup and are not editable on profile.
         contact_number: form.contact_number.trim() || undefined,
         upi_id: form.upi_id.trim() || undefined,
         upi_qr_code: form.upi_qr_code || undefined,
@@ -797,31 +796,27 @@ export function Profile() {
           </Field>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="State">
-              <select
-                value={form.state}
-                onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, city: '' }))}
+              <input
+                type="text"
+                value={form.state || '—'}
+                disabled
+                readOnly
                 className={inputClass}
-              >
-                <option value="">Select state</option>
-                {INDIA_LOCATION_OPTIONS.map((item) => (
-                  <option key={item.state} value={item.state}>{item.state}</option>
-                ))}
-              </select>
+              />
             </Field>
             <Field label="City">
-              <select
-                value={form.city}
-                onChange={(e) => set('city', e.target.value)}
+              <input
+                type="text"
+                value={form.city || '—'}
+                disabled
+                readOnly
                 className={inputClass}
-                disabled={!form.state}
-              >
-                <option value="">{form.state ? 'Select city' : 'Select state first'}</option>
-                {cityOptions.map((item) => (
-                  <option key={item.name} value={item.name}>{item.name}</option>
-                ))}
-              </select>
+              />
             </Field>
           </div>
+          <p className="text-xs text-gray-500">
+            State and city are set during signup and cannot be changed here.
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Cuisine type" optional>
               <input
@@ -835,7 +830,7 @@ export function Profile() {
           </div>
           {form.city ? (
             <p className="text-xs text-gray-500">
-              Detected pricing tier: {formatCityTier((cityOptions.find((item) => item.name === form.city)?.tier) ?? 'tier_3')}
+              Pricing tier: {formatCityTier((cityOptions.find((item) => item.name === form.city)?.tier) ?? 'tier_3')}
             </p>
           ) : null}
         </SectionCard>
