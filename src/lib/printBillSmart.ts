@@ -7,35 +7,77 @@ import {
   type BrowserPrinterRole,
 } from './browserThermalPrinter';
 
-const AUTO_PRINT_KEY = 'billgenie_bill_auto_print_on_checkout_v1';
+export type BillAutoPrintChannel = 'dine_in' | 'counter';
 
-export function cacheBillAutoPrintOnCheckout(enabled: boolean): void {
-  localStorage.setItem(AUTO_PRINT_KEY, enabled ? '1' : '0');
+const AUTO_PRINT_DINE_IN_KEY = 'billgenie_bill_auto_print_dine_in_v1';
+const AUTO_PRINT_COUNTER_KEY = 'billgenie_bill_auto_print_counter_v1';
+/** Legacy single toggle (migrated / OR of both channels). */
+const AUTO_PRINT_LEGACY_KEY = 'billgenie_bill_auto_print_on_checkout_v1';
+
+export function cacheBillAutoPrintChannels(options: {
+  dineIn: boolean;
+  counter: boolean;
+}): void {
+  localStorage.setItem(AUTO_PRINT_DINE_IN_KEY, options.dineIn ? '1' : '0');
+  localStorage.setItem(AUTO_PRINT_COUNTER_KEY, options.counter ? '1' : '0');
+  localStorage.setItem(
+    AUTO_PRINT_LEGACY_KEY,
+    options.dineIn || options.counter ? '1' : '0'
+  );
 }
 
-export function getCachedBillAutoPrintOnCheckout(): boolean {
-  return localStorage.getItem(AUTO_PRINT_KEY) === '1';
+/** @deprecated Prefer cacheBillAutoPrintChannels */
+export function cacheBillAutoPrintOnCheckout(enabled: boolean): void {
+  cacheBillAutoPrintChannels({ dineIn: enabled, counter: enabled });
+}
+
+function getCachedChannel(channel: BillAutoPrintChannel): boolean {
+  const key = channel === 'dine_in' ? AUTO_PRINT_DINE_IN_KEY : AUTO_PRINT_COUNTER_KEY;
+  const raw = localStorage.getItem(key);
+  if (raw === '1' || raw === '0') return raw === '1';
+  // Fall back to legacy single toggle for browsers that have not refreshed settings yet.
+  return localStorage.getItem(AUTO_PRINT_LEGACY_KEY) === '1';
+}
+
+function channelsFromSettings(settings: {
+  bill_auto_print_dine_in?: boolean;
+  bill_auto_print_counter?: boolean;
+  bill_auto_print_on_checkout?: boolean;
+}): { dineIn: boolean; counter: boolean } {
+  const hasSplit =
+    settings.bill_auto_print_dine_in != null || settings.bill_auto_print_counter != null;
+  if (hasSplit) {
+    return {
+      dineIn: Boolean(settings.bill_auto_print_dine_in),
+      counter: Boolean(settings.bill_auto_print_counter),
+    };
+  }
+  const legacy = Boolean(settings.bill_auto_print_on_checkout);
+  return { dineIn: legacy, counter: legacy };
 }
 
 /** Prefer live print settings; fall back to cache if the request fails. */
-export async function resolveBillAutoPrintOnCheckout(): Promise<boolean> {
+export async function resolveBillAutoPrintOnCheckout(
+  channel: BillAutoPrintChannel = 'dine_in'
+): Promise<boolean> {
   try {
     const r = await apiClient.getPrintSettings();
-    const enabled = Boolean(r.settings.bill_auto_print_on_checkout);
-    cacheBillAutoPrintOnCheckout(enabled);
-    return enabled;
+    const channels = channelsFromSettings(r.settings);
+    cacheBillAutoPrintChannels(channels);
+    return channel === 'dine_in' ? channels.dineIn : channels.counter;
   } catch {
-    return getCachedBillAutoPrintOnCheckout();
+    return getCachedChannel(channel);
   }
 }
 
 /**
- * Auto-print bill on checkout when the restaurant toggle is on, OR when this
- * browser has a paired bill (or shared KOT) thermal printer.
+ * Auto-print only when the restaurant Printers toggle is on for this channel.
+ * Manual Print bill still works regardless.
  */
-export async function shouldAutoPrintBillOnCheckout(): Promise<boolean> {
-  if (getResolvedBrowserPrinter('bill') || getResolvedBrowserPrinter('kot')) return true;
-  return resolveBillAutoPrintOnCheckout();
+export async function shouldAutoPrintBillOnCheckout(
+  channel: BillAutoPrintChannel = 'dine_in'
+): Promise<boolean> {
+  return resolveBillAutoPrintOnCheckout(channel);
 }
 
 export type PrintBillSmartResult = 'browser' | 'agent' | 'system' | 'none';

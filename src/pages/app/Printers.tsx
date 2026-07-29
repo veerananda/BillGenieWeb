@@ -18,7 +18,7 @@ import {
   type BrowserPrinterRole,
   type PaperWidthMm,
 } from '../../lib/browserThermalPrinter';
-import { cacheBillAutoPrintOnCheckout } from '../../lib/printBillSmart';
+import { cacheBillAutoPrintChannels } from '../../lib/printBillSmart';
 import { cacheKotPrintingEnabled } from '../../lib/printKotSmart';
 
 const inputClass =
@@ -263,7 +263,12 @@ export function Printers() {
           r.settings.top_feed_lines ?? 0,
           r.settings.bottom_feed_lines ?? 3
         );
-        cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
+        cacheBillAutoPrintChannels({
+          dineIn: Boolean(r.settings.bill_auto_print_dine_in ?? r.settings.bill_auto_print_on_checkout),
+          counter: Boolean(
+            r.settings.bill_auto_print_counter ?? r.settings.bill_auto_print_on_checkout
+          ),
+        });
         cacheKotPrintingEnabled(Boolean(r.settings.kot_printing_enabled));
         void warmBrowserPrinterSession();
       } catch (err: unknown) {
@@ -298,7 +303,12 @@ export function Printers() {
         r.settings.top_feed_lines ?? 0,
         r.settings.bottom_feed_lines ?? 3
       );
-      cacheBillAutoPrintOnCheckout(Boolean(r.settings.bill_auto_print_on_checkout));
+      cacheBillAutoPrintChannels({
+        dineIn: Boolean(r.settings.bill_auto_print_dine_in ?? r.settings.bill_auto_print_on_checkout),
+        counter: Boolean(
+          r.settings.bill_auto_print_counter ?? r.settings.bill_auto_print_on_checkout
+        ),
+      });
       cacheKotPrintingEnabled(Boolean(r.settings.kot_printing_enabled));
       setPrintMsg('Printer settings saved.');
     } catch (err: unknown) {
@@ -443,15 +453,33 @@ export function Printers() {
             }}
           />
           <ToggleRow
-            title="Auto-print bill on checkout"
-            description="After dine-in or counter payment succeeds, print the customer bill."
-            checked={Boolean(printSettings.bill_auto_print_on_checkout)}
+            title="Auto-print bill on dine-in checkout"
+            description="After dine-in payment succeeds, print the customer bill automatically. Manual Print bill on the checkout page still works when this is off."
+            checked={Boolean(
+              printSettings.bill_auto_print_dine_in ?? printSettings.bill_auto_print_on_checkout
+            )}
             disabled={!canManageEnables || printSaving}
             onToggle={() => {
               if (!canManageEnables) return;
-              void savePrintSettings({
-                bill_auto_print_on_checkout: !printSettings.bill_auto_print_on_checkout,
-              });
+              const next = !(
+                printSettings.bill_auto_print_dine_in ?? printSettings.bill_auto_print_on_checkout
+              );
+              void savePrintSettings({ bill_auto_print_dine_in: next });
+            }}
+          />
+          <ToggleRow
+            title="Auto-print bill on counter checkout"
+            description="After counter payment succeeds, print the customer bill (with tracking QR) automatically. Manual Print bill under the post-payment QR still works when this is off."
+            checked={Boolean(
+              printSettings.bill_auto_print_counter ?? printSettings.bill_auto_print_on_checkout
+            )}
+            disabled={!canManageEnables || printSaving}
+            onToggle={() => {
+              if (!canManageEnables) return;
+              const next = !(
+                printSettings.bill_auto_print_counter ?? printSettings.bill_auto_print_on_checkout
+              );
+              void savePrintSettings({ bill_auto_print_counter: next });
             }}
           />
           {!canManageEnables &&

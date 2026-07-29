@@ -21,7 +21,20 @@ export async function resolveKotPrintingEnabled(): Promise<boolean> {
     const r = await apiClient.getPrintSettings();
     const enabled = Boolean(r.settings.kot_printing_enabled);
     cacheKotPrintingEnabled(enabled);
-    if (r.settings.bill_auto_print_on_checkout != null) {
+    if (r.settings.bill_auto_print_dine_in != null || r.settings.bill_auto_print_counter != null) {
+      localStorage.setItem(
+        'billgenie_bill_auto_print_dine_in_v1',
+        r.settings.bill_auto_print_dine_in ? '1' : '0'
+      );
+      localStorage.setItem(
+        'billgenie_bill_auto_print_counter_v1',
+        r.settings.bill_auto_print_counter ? '1' : '0'
+      );
+      localStorage.setItem(
+        'billgenie_bill_auto_print_on_checkout_v1',
+        r.settings.bill_auto_print_dine_in || r.settings.bill_auto_print_counter ? '1' : '0'
+      );
+    } else if (r.settings.bill_auto_print_on_checkout != null) {
       localStorage.setItem(
         'billgenie_bill_auto_print_on_checkout_v1',
         r.settings.bill_auto_print_on_checkout ? '1' : '0'

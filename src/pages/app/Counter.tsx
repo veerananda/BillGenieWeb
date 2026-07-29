@@ -25,6 +25,7 @@ import {
   buildCustomerBillText,
   type CustomerBillLineItem,
 } from '../../lib/customerBillFormat';
+import { qrCodeSvgMarkup } from '../../lib/qrCodeMarkup';
 import { getPaperWidthMm, printerSettleDelay } from '../../lib/browserThermalPrinter';
 import {
   printBillSmart,
@@ -406,7 +407,10 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   const paymentFlowActive = processing || showCheckout;
   const attendantPayload = attendedByUserId ? { attended_by_user_id: attendedByUserId } : {};
 
-  function buildCheckoutBillDocuments() {
+  async function buildCheckoutBillDocuments(options?: {
+    trackingUrl?: string | null;
+    orderNumber?: number | string | null;
+  }) {
     const billItems: CustomerBillLineItem[] = cart.map((c) => ({
       name: cartDisplayName(c.name, c.category, c.variantLabel, categoryBlocklist),
       quantity: c.quantity,
@@ -414,11 +418,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       total: c.price * c.quantity,
     }));
     const paperWidthMm = getPaperWidthMm('bill');
+    const trackingUrl = options?.trackingUrl?.trim() || undefined;
+    const trackingQrSvg = trackingUrl ? await qrCodeSvgMarkup(trackingUrl) : undefined;
     const data = {
       restaurantName: profile?.name || 'Counter Order',
       address: profile?.address || '',
       contactNumber: profile?.contact_number || profile?.phone || '',
       gstNumber: profile?.gst_number || '',
+      orderNumber: options?.orderNumber ?? undefined,
       customerName: customerName.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
       attendedByName: attendedByName || undefined,
@@ -430,8 +437,10 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
       total: finalAmount,
       pricesIncludeGst,
       compositeScheme,
-      isPaid: false,
+      isPaid: true,
       paperWidthMm,
+      trackingUrl,
+      trackingQrSvg,
     };
     return {
       html: buildCustomerBillHtml(data),
@@ -442,7 +451,6 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   async function saveOrder(payment: CompletePaymentRequest, summary: string) {
     setProcessing(true);
     setError(null);
-    const { html: billHtml, text: billText } = buildCheckoutBillDocuments();
     const kotItems = cart.map((c) => ({
       name: c.name,
       quantity: c.quantity,
@@ -488,6 +496,11 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         createdOrder.order_number ??
         null;
 
+      const { html: billHtml, text: billText } = await buildCheckoutBillDocuments({
+        trackingUrl: url,
+        orderNumber: ticket,
+      });
+
       // After payment: KOT first, pause for Bluetooth, then bill — same printer.
       await tryAutoPrintKot(
         buildKotSlipText({
@@ -502,7 +515,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         })
       );
 
-      if (await shouldAutoPrintBillOnCheckout()) {
+      if (await shouldAutoPrintBillOnCheckout('counter')) {
         await printerSettleDelay(1500);
         let billResult = await printBillSmart({
           html: billHtml,

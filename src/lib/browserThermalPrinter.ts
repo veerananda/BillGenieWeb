@@ -7,6 +7,8 @@
  * remain separate (LAN or COM via the print agent).
  */
 
+import { expandBillGenieQrMarkers } from './escposQr';
+
 const STORAGE_KEY = 'billgenie_browser_thermal_printers_v1';
 const FEED_STORAGE_KEY = 'billgenie_print_feed_lines_v1';
 const PAPER_STORAGE_KEY = 'billgenie_paper_width_mm_v1';
@@ -288,8 +290,7 @@ export function encodeEscPosText(
   const bottomFeed = bottom > 0 ? '\n'.repeat(bottom) : '';
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const withNewline = normalized.endsWith('\n') ? normalized : `${normalized}\n`;
-  const encoder = new TextEncoder();
-  const body = encoder.encode(topFeed + withNewline + bottomFeed);
+  const body = expandBillGenieQrMarkers(topFeed + withNewline + bottomFeed);
   const out = new Uint8Array(2 + body.length + 3);
   out[0] = 0x1b;
   out[1] = 0x40; // ESC @
