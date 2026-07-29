@@ -24,8 +24,10 @@ import { buildCustomerBillFromOrder, buildCustomerBillTextFromOrder } from '../.
 import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
 import {
   printBillSmart,
-  resolveBillAutoPrintOnCheckout,
+  shouldAutoPrintBillOnCheckout,
 } from '../../lib/printBillSmart';
+import { buildKotSlipText } from '../../lib/kotSlipFormat';
+import { tryAutoPrintKot } from '../../lib/printKotSmart';
 import {
   resolveOrderItemParts,
   getOrderItemGroupKey,
@@ -212,17 +214,17 @@ function TableCard({
         : 'bg-white/60 text-amber-900';
 
   return (
-    <div className="relative h-[168px]">
+    <div className="relative h-[128px]">
       {needsAssistance && [0, 0.55, 1.1].map((delay) => (
         <span
           key={delay}
-          className="ring-pulse pointer-events-none absolute inset-0 rounded-2xl border-2 border-blue-300"
+          className="ring-pulse pointer-events-none absolute inset-0 rounded-xl border-2 border-blue-300"
           style={{ animationDelay: `${delay}s` }}
         />
       ))}
     <button
       onClick={onClick}
-      className={`group flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`group flex h-full w-full flex-col gap-1.5 overflow-hidden rounded-xl border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         fill === 'blue'
           ? 'border-[#3419e2] bg-[#3419e2]'
           : fill === 'yellow'
@@ -237,7 +239,7 @@ function TableCard({
       {/* Badge row */}
       <div className="flex shrink-0 items-start justify-between gap-2">
         {fill ? (
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${chipClass}`}>
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${chipClass}`}>
             <span className="flex items-center gap-1">
               {fill === 'blue' ? (
                 <>Needs attention</>
@@ -259,7 +261,7 @@ function TableCard({
       </div>
 
       {/* Table name */}
-      <span className={`shrink-0 truncate text-base font-bold ${nameClass}`}>
+      <span className={`shrink-0 truncate text-sm font-bold ${nameClass}`}>
         {table.name}{table.capacity ? ` (${table.capacity})` : ''}
       </span>
 
@@ -864,7 +866,7 @@ function OrderDetailPanel({
     setPaymentLoading(true);
     try {
       await apiClient.completeOrderWithPayment(order.id, payload);
-      if (await resolveBillAutoPrintOnCheckout()) {
+      if (await shouldAutoPrintBillOnCheckout()) {
         handlePrintBill();
       }
       const updatedTable = await apiClient.setTableVacant(table.id);
@@ -1749,6 +1751,30 @@ function TakeOrderPanel({
     setPlaceError(null);
     setPlacing(true);
     try {
+      const kotItems = cart.map((c) => ({
+        name: c.menuItem.name,
+        quantity: c.quantity,
+        notes: c.notes?.trim() || undefined,
+        variantLabel: c.variantLabel,
+        category: c.menuItem.category,
+      }));
+      const queueBrowserKot = async (
+        ticketOrOrderNumber?: string | number | null,
+        isAddOn?: boolean
+      ) => {
+        await tryAutoPrintKot(
+          buildKotSlipText({
+            restaurantName: profile?.name || undefined,
+            tableOrChannel: `Table: ${table.name}`,
+            ticketOrOrderNumber,
+            isAddOn,
+            items: kotItems,
+            createdAt: Date.now(),
+            categoryBlocklist: profile?.category_display_blocklist,
+          })
+        );
+      };
+
       if (existingOrder) {
         const updatedOrder = await apiClient.addItemsToOrder(
           existingOrder.id,
@@ -1760,6 +1786,10 @@ function TakeOrderPanel({
           }))
         );
         dispatch(upsertActiveOrder(updatedOrder));
+        await queueBrowserKot(
+          updatedOrder.ticket_number ?? updatedOrder.order_number ?? existingOrder.order_number,
+          true
+        );
         onOrderPlaced(updatedOrder, table);
       } else {
         const orderData: CreateOrderRequest = {
@@ -1779,6 +1809,7 @@ function TakeOrderPanel({
         const updatedTable = await apiClient.setTableOccupied(table.id, newOrder.id);
         dispatch(upsertActiveOrder(newOrder));
         dispatch(upsertTable(updatedTable));
+        await queueBrowserKot(newOrder.ticket_number ?? newOrder.order_number, false);
         onOrderPlaced(newOrder, updatedTable);
       }
     } catch (err: unknown) {
@@ -2229,7 +2260,7 @@ export function Orders() {
               description="Try a different filter."
             />
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredTables.map((table) => (
                 <TableCard
                   key={table.id}

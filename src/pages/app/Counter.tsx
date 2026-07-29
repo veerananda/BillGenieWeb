@@ -25,11 +25,13 @@ import {
   buildCustomerBillText,
   type CustomerBillLineItem,
 } from '../../lib/customerBillFormat';
-import { getPaperWidthMm } from '../../lib/browserThermalPrinter';
+import { getPaperWidthMm, printerSettleDelay } from '../../lib/browserThermalPrinter';
 import {
   printBillSmart,
-  resolveBillAutoPrintOnCheckout,
+  shouldAutoPrintBillOnCheckout,
 } from '../../lib/printBillSmart';
+import { buildKotSlipText } from '../../lib/kotSlipFormat';
+import { tryAutoPrintKot } from '../../lib/printKotSmart';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
@@ -445,6 +447,15 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     setProcessing(true);
     setError(null);
     const { html: billHtml, text: billText } = buildCheckoutBillDocuments();
+    const kotItems = cart.map((c) => ({
+      name: c.name,
+      quantity: c.quantity,
+      notes: c.notes?.trim() || undefined,
+      variantLabel: c.variantLabel,
+      category: c.category,
+    }));
+    const kotChannel =
+      serviceMode === 'takeaway' ? 'Counter · takeaway' : 'Counter · eat_here';
     try {
       const createdOrder = await apiClient.createOrder({
         order_type: 'counter',
@@ -481,8 +492,40 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
         createdOrder.order_number ??
         null;
 
-      if (await resolveBillAutoPrintOnCheckout()) {
-        void printBillSmart({ html: billHtml, text: billText, orderId: createdOrder.id });
+      // After payment: KOT first, pause for Bluetooth, then bill — same printer.
+      await tryAutoPrintKot(
+        buildKotSlipText({
+          restaurantName: profile?.name || undefined,
+          tableOrChannel: kotChannel,
+          ticketOrOrderNumber:
+            ticket ?? createdOrder.ticket_number ?? createdOrder.order_number ?? null,
+          isAddOn: false,
+          items: kotItems,
+          createdAt: Date.now(),
+          categoryBlocklist: profile?.category_display_blocklist,
+        })
+      );
+
+      if (await shouldAutoPrintBillOnCheckout()) {
+        await printerSettleDelay(1500);
+        let billResult = await printBillSmart({
+          html: billHtml,
+          text: billText,
+          orderId: createdOrder.id,
+          allowSystemPrint: false,
+        });
+        if (billResult === 'none') {
+          await printerSettleDelay(1200);
+          billResult = await printBillSmart({
+            html: billHtml,
+            text: billText,
+            orderId: createdOrder.id,
+            allowSystemPrint: false,
+          });
+        }
+        if (billResult === 'none') {
+          console.warn('Counter checkout: bill did not print after KOT');
+        }
       }
 
       setShowCheckout(false);
