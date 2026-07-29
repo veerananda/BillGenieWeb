@@ -65,7 +65,7 @@ export function buildKotSlipText(data: KotSlipData): string {
   lines.push(divider);
 
   if (data.ticketOrOrderNumber != null && data.ticketOrOrderNumber !== '') {
-    lines.push(`#${data.ticketOrOrderNumber}`);
+    lines.push(`Order #${data.ticketOrOrderNumber}`);
   }
   lines.push(data.tableOrChannel);
   const when = formatTime(data.createdAt);
