@@ -45,7 +45,6 @@ import {
   entryUnitsFor,
   formatInventoryQty,
   shortUnitLabel,
-  convertQuantity,
   unitFamily,
   canonicalUnit,
   normalizeUnit,
@@ -205,33 +204,21 @@ export function IngredientManagement() {
           sameRecipeIngredient(ing.name, ing.unit, name, unit)
         );
         if (existing) {
-          const addInExistingUnit = convertQuantity(qty, unit, existing.unit);
-          newList = selectedItem.ingredients.map((ing) =>
-            ing.id === existing.id
-              ? {
-                  ingredient_id: ing.ingredient_id,
-                  name: ing.name,
-                  unit: ing.unit,
-                  quantity_used: (ing.quantity_used || 0) + addInExistingUnit,
-                }
-              : {
-                  ingredient_id: ing.ingredient_id,
-                  name: ing.name,
-                  unit: ing.unit,
-                  quantity_used: ing.quantity_used,
-                }
+          setModalError(
+            `${name} is already on this recipe. Edit the existing line to change quantity.`
           );
-        } else {
-          newList = [
-            ...(selectedItem.ingredients).map((ing) => ({
-              ingredient_id: ing.ingredient_id,
-              name: ing.name,
-              unit: ing.unit,
-              quantity_used: ing.quantity_used,
-            })),
-            { name, unit, quantity_used: qty },
-          ];
+          setSaving(false);
+          return;
         }
+        newList = [
+          ...(selectedItem.ingredients).map((ing) => ({
+            ingredient_id: ing.ingredient_id,
+            name: ing.name,
+            unit: ing.unit,
+            quantity_used: ing.quantity_used,
+          })),
+          { name, unit, quantity_used: qty },
+        ];
       }
       await apiClient.setMenuItemIngredients(selectedItem.id, newList);
       await loadData();
