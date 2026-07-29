@@ -324,6 +324,64 @@ export function Printers() {
     }
   }
 
+  async function removeWifiPrinter(target: 'kot' | 'bill') {
+    if (!printSettings) return;
+    const label = target === 'kot' ? 'KOT' : 'bill';
+    if (!window.confirm(`Remove the Wi‑Fi / LAN ${label} printer IP?`)) return;
+    const patch =
+      target === 'kot'
+        ? { kot_printer_host: '', kot_printer_port: 9100 }
+        : { bill_printer_host: '', bill_printer_port: 9100 };
+    setPrintSaving(true);
+    setPrintMsg(null);
+    try {
+      const r = await apiClient.updatePrintSettings(patch);
+      setPrintSettings(r.settings);
+      setHasAgentKey(r.has_agent_key);
+      setPrintMsg(`Cleared ${label} Wi‑Fi / LAN printer.`);
+    } catch (err: unknown) {
+      setPrintMsg(err instanceof Error ? err.message : `Failed to remove ${label} printer`);
+    } finally {
+      setPrintSaving(false);
+    }
+  }
+
+  async function testWifiPrinter(target: 'kot' | 'bill') {
+    if (!printSettings) return;
+    const label = target === 'kot' ? 'KOT' : 'bill';
+    setPrintSaving(true);
+    setPrintMsg(null);
+    try {
+      // Persist hosts first so the agent uses the IP shown in the form.
+      const hostPatch =
+        target === 'kot'
+          ? {
+              kot_printer_host: printSettings.kot_printer_host,
+              kot_printer_port: printSettings.kot_printer_port,
+              kot_paper_width_mm: printSettings.kot_paper_width_mm ?? 58,
+            }
+          : {
+              bill_printer_host: printSettings.bill_printer_host,
+              bill_printer_port: printSettings.bill_printer_port,
+              bill_paper_width_mm: printSettings.bill_paper_width_mm ?? 58,
+            };
+      const saved = await apiClient.updatePrintSettings(hostPatch);
+      setPrintSettings(saved.settings);
+      setHasAgentKey(saved.has_agent_key);
+
+      const r = await apiClient.enqueueWifiPrinterTest(target);
+      setPrintMsg(
+        r.queued
+          ? `${label} test print queued. Keep the print agent running.`
+          : r.message || `${label} test print was not queued.`
+      );
+    } catch (err: unknown) {
+      setPrintMsg(err instanceof Error ? err.message : `Failed to send ${label} test print`);
+    } finally {
+      setPrintSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
@@ -442,105 +500,179 @@ export function Printers() {
           </p>
         </div>
         <div className="space-y-4 px-6 py-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="KOT printer IP">
-              <input
-                className={inputClass}
-                value={printSettings.kot_printer_host || ''}
-                placeholder="192.168.1.50"
-                disabled={!canEditKot}
-                onChange={(e) =>
-                  setPrintSettings((s) =>
-                    s ? { ...s, kot_printer_host: e.target.value } : s
-                  )
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-800">KOT printer (Wi‑Fi / LAN)</p>
+              <p className="text-xs text-gray-500">
+                {printSettings.kot_printer_host
+                  ? `${printSettings.kot_printer_host}:${printSettings.kot_printer_port || 9100}`
+                  : 'Not configured'}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="KOT printer IP">
+                <input
+                  className={inputClass}
+                  value={printSettings.kot_printer_host || ''}
+                  placeholder="192.168.1.50"
+                  disabled={!canEditKot}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s ? { ...s, kot_printer_host: e.target.value } : s
+                    )
+                  }
+                />
+              </Field>
+              <Field label={kotIsSerial ? 'KOT port (ignored for COM)' : 'KOT TCP port'}>
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={printSettings.kot_printer_port || 9100}
+                  disabled={!canEditKot || kotIsSerial}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s
+                        ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
+                        : s
+                    )
+                  }
+                />
+              </Field>
+              <Field label="KOT paper width">
+                <div className="flex gap-2">
+                  {([58, 80] as const).map((w) => (
+                    <button
+                      key={`kot-paper-${w}`}
+                      type="button"
+                      disabled={!canEditKot || printSaving}
+                      onClick={() =>
+                        setPrintSettings((s) => (s ? { ...s, kot_paper_width_mm: w } : s))
+                      }
+                      className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                        (printSettings.kot_paper_width_mm ?? 58) === w
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {w}mm
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!canEditKot || printSaving || !String(printSettings.kot_printer_host || '').trim()}
+                onClick={() => void testWifiPrinter('kot')}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Test
+              </button>
+              {String(printSettings.kot_printer_host || '').trim() ? (
+                <button
+                  type="button"
+                  disabled={!canEditKot || printSaving}
+                  onClick={() => void removeWifiPrinter('kot')}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Bill printer (Wi‑Fi / LAN)</p>
+              <p className="text-xs text-gray-500">
+                {printSettings.bill_printer_host
+                  ? `${printSettings.bill_printer_host}:${printSettings.bill_printer_port || 9100}`
+                  : 'Not configured'}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Bill printer IP">
+                <input
+                  className={inputClass}
+                  value={printSettings.bill_printer_host || ''}
+                  placeholder="192.168.1.51"
+                  disabled={!canEditBill}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s ? { ...s, bill_printer_host: e.target.value } : s
+                    )
+                  }
+                />
+              </Field>
+              <Field label={billIsSerial ? 'Bill port (ignored for COM)' : 'Bill TCP port'}>
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={printSettings.bill_printer_port || 9100}
+                  disabled={!canEditBill || billIsSerial}
+                  onChange={(e) =>
+                    setPrintSettings((s) =>
+                      s
+                        ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
+                        : s
+                    )
+                  }
+                />
+              </Field>
+              <Field label="Bill paper width">
+                <div className="flex gap-2">
+                  {([58, 80] as const).map((w) => (
+                    <button
+                      key={`bill-paper-${w}`}
+                      type="button"
+                      disabled={!canEditBill || printSaving}
+                      onClick={() =>
+                        setPrintSettings((s) => (s ? { ...s, bill_paper_width_mm: w } : s))
+                      }
+                      className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                        (printSettings.bill_paper_width_mm ?? 58) === w
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {w}mm
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={
+                  !canEditBill ||
+                  printSaving ||
+                  (!String(printSettings.bill_printer_host || '').trim() &&
+                    !String(printSettings.kot_printer_host || '').trim())
                 }
-              />
-            </Field>
-            <Field label={kotIsSerial ? 'KOT port (ignored for COM)' : 'KOT TCP port'}>
-              <input
-                className={inputClass}
-                type="number"
-                value={printSettings.kot_printer_port || 9100}
-                disabled={!canEditKot || kotIsSerial}
-                onChange={(e) =>
-                  setPrintSettings((s) =>
-                    s
-                      ? { ...s, kot_printer_port: Number(e.target.value) || 9100 }
-                      : s
-                  )
+                onClick={() => void testWifiPrinter('bill')}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                title={
+                  !String(printSettings.bill_printer_host || '').trim() &&
+                  String(printSettings.kot_printer_host || '').trim()
+                    ? 'Uses the KOT printer IP when bill IP is empty'
+                    : undefined
                 }
-              />
-            </Field>
-            <Field label="Bill printer IP">
-              <input
-                className={inputClass}
-                value={printSettings.bill_printer_host || ''}
-                placeholder="192.168.1.51"
-                disabled={!canEditBill}
-                onChange={(e) =>
-                  setPrintSettings((s) =>
-                    s ? { ...s, bill_printer_host: e.target.value } : s
-                  )
-                }
-              />
-            </Field>
-            <Field label={billIsSerial ? 'Bill port (ignored for COM)' : 'Bill TCP port'}>
-              <input
-                className={inputClass}
-                type="number"
-                value={printSettings.bill_printer_port || 9100}
-                disabled={!canEditBill || billIsSerial}
-                onChange={(e) =>
-                  setPrintSettings((s) =>
-                    s
-                      ? { ...s, bill_printer_port: Number(e.target.value) || 9100 }
-                      : s
-                  )
-                }
-              />
-            </Field>
-            <Field label="KOT paper width">
-              <div className="flex gap-2">
-                {([58, 80] as const).map((w) => (
-                  <button
-                    key={`kot-paper-${w}`}
-                    type="button"
-                    disabled={!canEditKot || printSaving}
-                    onClick={() =>
-                      setPrintSettings((s) => (s ? { ...s, kot_paper_width_mm: w } : s))
-                    }
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
-                      (printSettings.kot_paper_width_mm ?? 58) === w
-                        ? 'border-primary bg-primary text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {w}mm
-                  </button>
-                ))}
-              </div>
-            </Field>
-            <Field label="Bill paper width">
-              <div className="flex gap-2">
-                {([58, 80] as const).map((w) => (
-                  <button
-                    key={`bill-paper-${w}`}
-                    type="button"
-                    disabled={!canEditBill || printSaving}
-                    onClick={() =>
-                      setPrintSettings((s) => (s ? { ...s, bill_paper_width_mm: w } : s))
-                    }
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
-                      (printSettings.bill_paper_width_mm ?? 58) === w
-                        ? 'border-primary bg-primary text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {w}mm
-                  </button>
-                ))}
-              </div>
-            </Field>
+              >
+                Test
+              </button>
+              {String(printSettings.bill_printer_host || '').trim() ? (
+                <button
+                  type="button"
+                  disabled={!canEditBill || printSaving}
+                  onClick={() => void removeWifiPrinter('bill')}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {canManageEnables ? (

@@ -974,6 +974,13 @@ class APIClient {
     return this.makeRequest('/restaurants/print-settings/rotate-agent-key', 'POST', {});
   }
 
+  async enqueueWifiPrinterTest(target: 'kot' | 'bill'): Promise<{
+    message: string;
+    queued?: boolean;
+  }> {
+    return this.makeRequest('/restaurants/print-settings/test', 'POST', { target });
+  }
+
   async enqueueBillPrint(orderId: string): Promise<{ message: string; queued?: boolean }> {
     return this.makeRequest(`/orders/${orderId}/print-bill`, 'POST', {});
   }
