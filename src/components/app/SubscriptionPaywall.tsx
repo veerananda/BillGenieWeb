@@ -385,32 +385,9 @@ export function PlanPicker({
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Billing cycle</p>
-        {lockBillingCycle ? (
-          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold capitalize text-gray-700">
-            {value.billing_cycle}
-            <span className="ml-2 text-xs font-normal text-gray-500">(locked mid-cycle)</span>
-          </p>
-        ) : (
-          <div className="flex gap-2">
-            {(['monthly', 'annual'] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => set({ billing_cycle: c })}
-                className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
-              >
-                {c === 'monthly' ? 'Monthly' : 'Annual (1 month free)'}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Plan size</p>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Choose your plan</p>
         <p className="mb-2 text-xs text-gray-500">
-          Need more than 25 tables? Contact us for a custom commercial plan.
+          Pick a size band by table capacity. Need more than 25 tables? Contact us for a custom plan.
         </p>
         <div className="space-y-2">
           {PLAN_BANDS.map((band) => {
@@ -422,21 +399,19 @@ export function PlanPicker({
                 type="button"
                 onClick={() => setBand(band.id)}
                 className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                  active ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'
+                  active ? 'border-primary bg-primary text-white' : 'border-gray-200 hover:bg-gray-50'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {band.title} · up to {band.tables} tables
-                  </p>
-                  <span className="text-sm font-bold text-primary">₹{price}/mo</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">{band.blurb}</p>
+                <p className={`text-sm font-semibold ${active ? 'text-white' : 'text-gray-900'}`}>
+                  {band.title} — up to {band.tables} tables · ₹{price}/mo
+                </p>
+                <p className={`mt-1 text-xs ${active ? 'text-white/85' : 'text-gray-500'}`}>{band.blurb}</p>
               </button>
             );
           })}
         </div>
-        <ul className="mt-3 space-y-1 text-xs text-gray-600">
+        <p className="mt-3 text-xs font-semibold text-gray-500">Every plan includes:</p>
+        <ul className="mt-1.5 space-y-1 text-xs text-gray-600">
           {SHARED_PLAN_FEATURES.filter((f) => !f.includes('trial')).map((f) => (
             <li key={f}>• {f}</li>
           ))}
@@ -448,7 +423,8 @@ export function PlanPicker({
           Extra team (optional)
         </p>
         <p className="mb-2 text-xs text-gray-500">
-          Included: 2 staff, 1 chef, 1 manager. Caps: +5 staff, +3 chefs, +2 managers.
+          Base includes 1 manager, 2 staff, and 1 chef. Add more seats if you need them (max +5 staff,
+          +3 chefs, +2 managers).
         </p>
         <div className="rounded-lg border border-gray-200 px-3">
           <SeatStepper
@@ -476,7 +452,7 @@ export function PlanPicker({
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Add-ons</p>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Optional add-ons</p>
         <div className="space-y-2">
           {ADDON_OPTIONS.map((addon) => {
             const active = Boolean(value[addon.key]);
@@ -500,6 +476,29 @@ export function PlanPicker({
             );
           })}
         </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Billing</p>
+        {lockBillingCycle ? (
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold capitalize text-gray-700">
+            {value.billing_cycle}
+            <span className="ml-2 text-xs font-normal text-gray-500">(locked mid-cycle)</span>
+          </p>
+        ) : (
+          <div className="flex gap-2">
+            {(['monthly', 'annual'] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ billing_cycle: c })}
+                className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+              >
+                {c === 'monthly' ? 'Monthly' : 'Annual (1 month free)'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

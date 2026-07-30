@@ -5,6 +5,7 @@ import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard }
 import { apiClient } from '../../services/api';
 import {
   TRIAL_DURATION_DAYS,
+  TRIAL_INCLUDES,
   formatInr,
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
@@ -27,16 +28,6 @@ type StartMode = 'trial' | 'paid';
 
 interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
-
-const TRIAL_INCLUDES = [
-  `${TRIAL_DURATION_DAYS}-day free trial — full access, no credit card needed`,
-  'Dine-in + counter + kitchen',
-  'Starter limits — up to 10 dine-in tables',
-  'Menu management (unlimited items)',
-  'Order management & checkout',
-  'Sales reports & 90-day order history',
-  '1 admin · 1 manager · 2 staff · 1 chef',
-] as const;
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
 
