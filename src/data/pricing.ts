@@ -57,7 +57,7 @@ export const PLAN_BANDS: Array<{
   tables: number;
   blurb: string;
 }> = [
-  { id: 'starter', title: 'Starter', tables: PLAN_STARTER_TABLES, blurb: 'Up to 10 tables — small cafés & compact dine-in' },
+  { id: 'starter', title: 'Starter', tables: PLAN_STARTER_TABLES, blurb: 'Up to 10 tables — small cafes & compact dine-in' },
   { id: 'growth', title: 'Growth', tables: PLAN_GROWTH_TABLES, blurb: 'Up to 18 tables — typical single-location restaurants' },
   { id: 'scale', title: 'Scale', tables: PLAN_SCALE_TABLES, blurb: 'Up to 25 tables — busy outlets' },
 ];
@@ -89,6 +89,15 @@ export const DEFAULT_SUBSCRIPTION_SELECTION: SubscriptionSelection = {
   kitchen_dine_in: true,
   kitchen_counter: true,
 };
+
+export const TRIAL_INCLUDES = [
+  '15 days — no payment at signup',
+  'Dine-in + Counter (eat-here/takeaway) + Kitchen',
+  'Starter plan limits — 10 tables · 1 admin · 1 manager · 2 staff · 1 chef',
+  'Menu management (unlimited items)',
+  'Orders, billing, sales info',
+  '90-day order history',
+] as const;
 
 export interface SubscriptionLineItem {
   id: string;
@@ -140,10 +149,11 @@ export const ADDON_OPTIONS: AddonOption[] = [
 ];
 
 export const SHARED_PLAN_FEATURES = [
-  'Dine-in + counter (eat-here / takeaway)',
+  'Dine-in + Counter (eat-here/takeaway)',
   'Kitchen screens included',
+  'Menu management (unlimited items)',
   '1 admin + 1 manager + 2 staff + 1 chef',
-  'Menu, billing & sales summary',
+  'Billing & sales summary',
   'Order history — last 90 days',
   `${TRIAL_DURATION_DAYS}-day free trial`,
 ] as const;
