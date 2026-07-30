@@ -26,9 +26,15 @@ export const SUBSCRIPTION_INCLUDED = {
 export const INCLUDED_TABLES_BASIC = PLAN_STARTER_TABLES;
 export const MIN_TABLES_DINE_IN = 5;
 export const MAX_TABLES = PLAN_SCALE_TABLES;
-export const MAX_EXTRA_STAFF = 5;
-export const MAX_EXTRA_CHEFS = 3;
-export const MAX_EXTRA_MANAGERS = 2;
+export const MAX_EXTRA_STAFF = 0;
+export const MAX_EXTRA_CHEFS = 0;
+export const MAX_EXTRA_MANAGERS = 0;
+
+export const BAND_SEATS: Record<PlanBand, { staff: number; chefs: number; managers: number }> = {
+  starter: { staff: 2, chefs: 1, managers: 1 },
+  growth: { staff: 4, chefs: 2, managers: 1 },
+  scale: { staff: 5, chefs: 3, managers: 1 },
+};
 
 export const PLAN_MONTHLY_BY_TIER: Record<PlanBand, Record<CityTier, number>> = {
   starter: { tier_1: 1199, tier_2: 999, tier_3: 799 },
@@ -57,9 +63,24 @@ export const PLAN_BANDS: Array<{
   tables: number;
   blurb: string;
 }> = [
-  { id: 'starter', title: 'Starter', tables: PLAN_STARTER_TABLES, blurb: 'Up to 10 tables — small cafes & compact dine-in' },
-  { id: 'growth', title: 'Growth', tables: PLAN_GROWTH_TABLES, blurb: 'Up to 18 tables — typical single-location restaurants' },
-  { id: 'scale', title: 'Scale', tables: PLAN_SCALE_TABLES, blurb: 'Up to 25 tables — busy outlets' },
+  {
+    id: 'starter',
+    title: 'Starter',
+    tables: PLAN_STARTER_TABLES,
+    blurb: 'Up to 10 tables · 2 staff · 1 chef · 1 manager',
+  },
+  {
+    id: 'growth',
+    title: 'Growth',
+    tables: PLAN_GROWTH_TABLES,
+    blurb: 'Up to 18 tables · 4 staff · 2 chefs · 1 manager',
+  },
+  {
+    id: 'scale',
+    title: 'Scale',
+    tables: PLAN_SCALE_TABLES,
+    blurb: 'Up to 25 tables · 5 staff · 3 chefs · 1 manager',
+  },
 ];
 
 export interface SubscriptionSelection {
@@ -152,7 +173,7 @@ export const SHARED_PLAN_FEATURES = [
   'Dine-in + Counter (eat-here/takeaway)',
   'Kitchen screens included',
   'Menu management (unlimited items)',
-  '1 admin + 1 manager + 2 staff + 1 chef',
+  '1 admin included — staff/chef/manager seats grow with plan size',
   'Billing & sales summary',
   'Order history — last 90 days',
   `${TRIAL_DURATION_DAYS}-day free trial`,
@@ -164,14 +185,18 @@ export const BASIC_FEATURES = [
   ...SHARED_PLAN_FEATURES.slice(2),
 ] as const;
 
-function clampCount(value: number, max = 50): number {
-  return Math.max(0, Math.min(max, Math.floor(value)));
-}
-
 export function planBandFromTables(maxTables: number): PlanBand {
   if (maxTables <= PLAN_STARTER_TABLES) return 'starter';
   if (maxTables <= PLAN_GROWTH_TABLES) return 'growth';
   return 'scale';
+}
+
+export function bandSeatBundle(maxTables: number): {
+  staff: number;
+  chefs: number;
+  managers: number;
+} {
+  return BAND_SEATS[planBandFromTables(maxTables)];
 }
 
 export function tablesForPlanBand(band: PlanBand): number {
@@ -202,9 +227,9 @@ export function normalizeSubscriptionSelection(
     max_tables: normalizeMaxTables(selection.max_tables),
     kitchen_dine_in: true,
     kitchen_counter: true,
-    extra_staff: clampCount(selection.extra_staff, MAX_EXTRA_STAFF),
-    extra_chefs: clampCount(selection.extra_chefs ?? 0, MAX_EXTRA_CHEFS),
-    extra_managers: clampCount(selection.extra_managers, MAX_EXTRA_MANAGERS),
+    extra_staff: 0,
+    extra_chefs: 0,
+    extra_managers: 0,
     history_extended: Boolean(selection.history_extended),
     inventory: Boolean(selection.inventory),
     expenses: Boolean(selection.expenses),
@@ -231,30 +256,16 @@ export function calculateSubscriptionQuote(
   const band = planBandFromTables(sel.max_tables);
   const planPrice = bandMonthlyForTier(band, cityTier);
   const bandTitle = band.charAt(0).toUpperCase() + band.slice(1);
+  const seats = bandSeatBundle(sel.max_tables);
   const line_items: SubscriptionLineItem[] = [
     {
       id: `plan_${band}`,
-      label: `${bandTitle} — up to ${sel.max_tables} tables, dine-in + counter, kitchen, 1 admin + 1 manager + 2 staff + 1 chef, 90-day history`,
+      label: `${bandTitle} — up to ${sel.max_tables} tables, dine-in + counter, kitchen, 1 admin + ${seats.managers} manager + ${seats.staff} staff + ${seats.chefs} chef, 90-day history`,
       amount: planPrice,
     },
   ];
   let monthly = planPrice;
 
-  if (sel.extra_staff > 0) {
-    const amount = sel.extra_staff * PRICING.extra_staff;
-    line_items.push({ id: 'extra_staff', label: `Extra staff ×${sel.extra_staff}`, amount });
-    monthly += amount;
-  }
-  if (sel.extra_chefs > 0) {
-    const amount = sel.extra_chefs * PRICING.extra_chef;
-    line_items.push({ id: 'extra_chefs', label: `Extra chefs ×${sel.extra_chefs}`, amount });
-    monthly += amount;
-  }
-  if (sel.extra_managers > 0) {
-    const amount = sel.extra_managers * PRICING.extra_manager;
-    line_items.push({ id: 'extra_managers', label: `Extra managers ×${sel.extra_managers}`, amount });
-    monthly += amount;
-  }
   if (sel.history_extended) {
     line_items.push({
       id: 'history_extended',
@@ -284,9 +295,9 @@ export function calculateSubscriptionQuote(
     annual_savings: monthly,
     line_items,
     selection: sel,
-    bundled_staff: SUBSCRIPTION_INCLUDED.staff + sel.extra_staff,
-    bundled_chefs: SUBSCRIPTION_INCLUDED.chefs + sel.extra_chefs,
-    bundled_managers: SUBSCRIPTION_INCLUDED.managers + sel.extra_managers,
+    bundled_staff: seats.staff,
+    bundled_chefs: seats.chefs,
+    bundled_managers: seats.managers,
     table_bundles: 0,
     city_tier: cityTier,
     plan_band: band,
