@@ -110,7 +110,15 @@ function getPlanDisplayName(profile: RestaurantProfile | null): string {
   if (plan === 'trial') {
     return 'BillGenie Trial';
   }
-  if (plan === 'customised' || plan === 'customized') {
+  if (plan === 'custom') {
+    return 'BillGenie Custom';
+  }
+  if (plan === 'starter' || plan === 'growth' || plan === 'scale') {
+    return `BillGenie ${plan.charAt(0).toUpperCase()}${plan.slice(1)}`;
+  }
+  if (plan === 'customised' || plan === 'customized' || plan === 'basic') {
+    // legacy labels
+    if (plan === 'basic') return 'BillGenie Starter';
     return 'BillGenie Customised';
   }
 
@@ -119,7 +127,7 @@ function getPlanDisplayName(profile: RestaurantProfile | null): string {
     return formatSubscriptionPlanName(selection, { phase: profile?.subscription_phase });
   }
 
-  return `BillGenie ${capitalize(profile?.subscription_plan ?? 'Basic')}`;
+  return `BillGenie ${capitalize(profile?.subscription_plan ?? 'Starter')}`;
 }
 
 // ??? Section Card ?????????????????????????????????????????????????????????????
@@ -264,7 +272,7 @@ function SubscriptionInfoCard({
   const planName = getPlanDisplayName(profile);
   const subEnd = profile?.subscription_end;
   const daysLeft = subEnd ? getDaysRemaining(subEnd) : null;
-  const monthlyPrice = profile?.subscription_monthly_price?.toLocaleString('en-IN') ?? '799';
+  const monthlyPrice = profile?.subscription_monthly_price?.toLocaleString('en-IN') ?? '999';
   const [planMode, setPlanMode] = useState<'upgrade' | 'downgrade' | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -307,7 +315,7 @@ function SubscriptionInfoCard({
             ? `${usage.managers} / ${limits.max_managers}`
             : String(limits.max_managers),
         },
-        { label: 'History', value: limits.history_days === 730 ? '2 years' : '30 days' },
+        { label: 'History', value: limits.history_days === 730 ? '2 years' : `${limits.history_days || 90} days` },
       ]
     : [];
 
@@ -316,6 +324,7 @@ function SubscriptionInfoCard({
         { label: 'Kitchen (dine-in)', enabled: limits.kitchen_dine_in },
         { label: 'Kitchen (counter)', enabled: limits.kitchen_counter },
         { label: 'Inventory', enabled: limits.inventory },
+        { label: 'Expenses', enabled: Boolean((limits as { expenses?: boolean }).expenses) },
         { label: 'Extended history', enabled: limits.history_days === 730 },
       ]
     : [];
@@ -458,6 +467,14 @@ function SubscriptionInfoCard({
               </button>
             </div>
           )}
+
+          {!showChange &&
+            String(profile?.subscription_plan || '').toLowerCase() === 'custom' &&
+            canManagePlan && (
+              <p className="border-t border-gray-100 pt-4 text-sm text-gray-500">
+                Custom commercial plan — contact BillGenie support to change pricing or capacity.
+              </p>
+            )}
         </div>
       )}
 

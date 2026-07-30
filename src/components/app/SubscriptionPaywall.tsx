@@ -308,39 +308,86 @@ export function SubscriptionPaywall({
 // ── Inline plan picker ─────────────────────────────────────────────────────
 
 import {
-  BASIC_MONTHLY_PRICE, PRICING, MIN_TABLES_DINE_IN, INCLUDED_TABLES_BASIC,
-  MAX_TABLES, TABLE_STAFF_BUNDLE_SIZE,
-  ADDON_OPTIONS, type OperationMode,
+  ADDON_OPTIONS,
+  MAX_EXTRA_CHEFS,
+  MAX_EXTRA_MANAGERS,
+  MAX_EXTRA_STAFF,
+  PLAN_BANDS,
+  PRICING,
+  SHARED_PLAN_FEATURES,
+  bandMonthlyForTier,
+  planBandFromTables,
+  tablesForPlanBand,
+  type CityTier,
+  type PlanBand,
 } from '../../data/pricing';
 
-const TABLE_STAFF_BUNDLE_PRICE = PRICING.table_staff_bundle;
+function SeatStepper({
+  label,
+  unitPrice,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  unitPrice: number;
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2 last:border-0">
+      <div>
+        <p className="text-sm font-semibold text-gray-800">{label}</p>
+        <p className="text-xs text-gray-500">₹{unitPrice}/mo each</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="h-8 w-8 rounded-full border border-gray-200 text-sm font-bold"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          disabled={value <= 0}
+        >
+          −
+        </button>
+        <span className="w-6 text-center text-sm font-bold">{value}</span>
+        <button
+          type="button"
+          className="h-8 w-8 rounded-full border border-gray-200 text-sm font-bold"
+          onClick={() => onChange(Math.min(max, value + 1))}
+          disabled={value >= max}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
 
-export function PlanPicker({ value, onChange, lockBillingCycle = false }: { value: SubscriptionSelection; onChange: (s: SubscriptionSelection) => void; lockBillingCycle?: boolean }) {
+export function PlanPicker({
+  value,
+  onChange,
+  lockBillingCycle = false,
+  cityTier = 'tier_2',
+}: {
+  value: SubscriptionSelection;
+  onChange: (s: SubscriptionSelection) => void;
+  lockBillingCycle?: boolean;
+  cityTier?: CityTier;
+}) {
   function set(patch: Partial<SubscriptionSelection>) {
     onChange({ ...value, ...patch });
   }
 
-  const modes: { key: OperationMode; label: string }[] = [
-    { key: 'dine_in', label: 'Dine-in only' },
-    { key: 'counter', label: 'Counter only' },
-    { key: 'both', label: 'Dine-in + Counter' },
-  ];
-
-  const visibleAddons = ADDON_OPTIONS.filter(
-    (a) => !a.onlyFor || a.onlyFor.includes(value.operation_mode)
-  );
-
-  const tableBundles = value.operation_mode !== 'counter'
-    ? Math.max(0, Math.ceil((value.max_tables - INCLUDED_TABLES_BASIC) / TABLE_STAFF_BUNDLE_SIZE))
-    : 0;
+  const activeBand = planBandFromTables(value.max_tables);
+  const setBand = (band: PlanBand) => set({ max_tables: tablesForPlanBand(band) });
 
   return (
     <div className="space-y-4">
-      {/* Billing cycle */}
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Billing cycle</p>
         {lockBillingCycle ? (
-          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 capitalize">
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold capitalize text-gray-700">
             {value.billing_cycle}
             <span className="ml-2 text-xs font-normal text-gray-500">(locked mid-cycle)</span>
           </p>
@@ -360,76 +407,95 @@ export function PlanPicker({ value, onChange, lockBillingCycle = false }: { valu
         )}
       </div>
 
-      {/* Service mode */}
       <div>
-        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Service mode</p>
-        <div className="flex gap-2 flex-wrap">
-          {modes.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => {
-                const patch: Partial<SubscriptionSelection> = { operation_mode: m.key };
-                if (m.key === 'counter') patch.max_tables = 0;
-                else if (value.max_tables === 0) patch.max_tables = INCLUDED_TABLES_BASIC;
-                onChange({ ...value, ...patch });
-              }}
-              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${value.operation_mode === m.key ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
-            >
-              {m.label}
-            </button>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Plan size</p>
+        <p className="mb-2 text-xs text-gray-500">
+          Need more than 25 tables? Contact us for a custom commercial plan.
+        </p>
+        <div className="space-y-2">
+          {PLAN_BANDS.map((band) => {
+            const active = activeBand === band.id;
+            const price = bandMonthlyForTier(band.id, cityTier);
+            return (
+              <button
+                key={band.id}
+                type="button"
+                onClick={() => setBand(band.id)}
+                className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                  active ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {band.title} · up to {band.tables} tables
+                  </p>
+                  <span className="text-sm font-bold text-primary">₹{price}/mo</span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{band.blurb}</p>
+              </button>
+            );
+          })}
+        </div>
+        <ul className="mt-3 space-y-1 text-xs text-gray-600">
+          {SHARED_PLAN_FEATURES.filter((f) => !f.includes('trial')).map((f) => (
+            <li key={f}>• {f}</li>
           ))}
-        </div>
+        </ul>
       </div>
 
-      {/* Tables (dine-in) */}
-      {value.operation_mode !== 'counter' && (
-        <div>
-          <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-            Tables — {value.max_tables} tables
-            {tableBundles > 0 && <span className="ml-1 font-normal text-gray-400">(+₹{tableBundles * TABLE_STAFF_BUNDLE_PRICE}/mo)</span>}
-          </p>
-          <input
-            type="range"
-            min={MIN_TABLES_DINE_IN}
-            max={MAX_TABLES}
-            step={TABLE_STAFF_BUNDLE_SIZE}
-            value={value.max_tables}
-            onChange={(e) => set({ max_tables: Number(e.target.value) })}
-            className="w-full accent-primary"
+      <div>
+        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Extra team (optional)
+        </p>
+        <p className="mb-2 text-xs text-gray-500">
+          Included: 2 staff, 1 chef, 1 manager. Caps: +5 staff, +3 chefs, +2 managers.
+        </p>
+        <div className="rounded-lg border border-gray-200 px-3">
+          <SeatStepper
+            label="Additional staff"
+            unitPrice={PRICING.extra_staff}
+            value={value.extra_staff}
+            max={MAX_EXTRA_STAFF}
+            onChange={(extra_staff) => set({ extra_staff })}
           />
-          <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-            <span>{MIN_TABLES_DINE_IN}</span><span>{INCLUDED_TABLES_BASIC} (included)</span><span>{MAX_TABLES}</span>
-          </div>
+          <SeatStepper
+            label="Additional chefs"
+            unitPrice={PRICING.extra_chef}
+            value={value.extra_chefs ?? 0}
+            max={MAX_EXTRA_CHEFS}
+            onChange={(extra_chefs) => set({ extra_chefs })}
+          />
+          <SeatStepper
+            label="Additional managers"
+            unitPrice={PRICING.extra_manager}
+            value={value.extra_managers}
+            max={MAX_EXTRA_MANAGERS}
+            onChange={(extra_managers) => set({ extra_managers })}
+          />
         </div>
-      )}
-
-      {/* Base price */}
-      <div className="rounded-lg bg-gray-50 px-3 py-2.5 text-sm">
-        <p className="text-gray-700">Base plan <span className="font-semibold">₹{BASIC_MONTHLY_PRICE}/mo</span></p>
-        {value.operation_mode === 'both' && (
-          <p className="text-gray-500 text-xs mt-0.5">Dual service mode +₹{PRICING.dual_service}/mo</p>
-        )}
       </div>
 
-      {/* Add-ons */}
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Add-ons</p>
         <div className="space-y-2">
-          {visibleAddons.map((addon) => {
-            const active = value[addon.key as keyof SubscriptionSelection] as boolean;
+          {ADDON_OPTIONS.map((addon) => {
+            const active = Boolean(value[addon.key]);
             return (
-              <label key={addon.key} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${active ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+              <label
+                key={addon.key}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${active ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
                 <input
                   type="checkbox"
                   checked={active}
                   onChange={(e) => set({ [addon.key]: e.target.checked })}
                   className="accent-primary"
                 />
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-gray-800">{addon.title}</p>
                   <p className="text-xs text-gray-500">{addon.description}</p>
                 </div>
-                <span className="text-xs font-bold text-gray-700 shrink-0">+₹{addon.price}/mo</span>
+                <span className="shrink-0 text-xs font-bold text-gray-700">+₹{addon.price}/mo</span>
               </label>
             );
           })}
