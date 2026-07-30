@@ -5,6 +5,7 @@ import { Provider } from 'react-redux';
 import { store } from './store';
 import './index.css';
 import App from './App.tsx';
+import { SessionBootstrap } from './components/app/SessionBootstrap';
 
 // Prevent mouse-wheel / trackpad scroll from nudging focused number inputs (cash, prices).
 document.addEventListener(
@@ -22,7 +23,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Provider store={store}>
       <BrowserRouter>
-        <App />
+        <SessionBootstrap>
+          <App />
+        </SessionBootstrap>
       </BrowserRouter>
     </Provider>
   </StrictMode>

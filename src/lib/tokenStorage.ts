@@ -1,46 +1,16 @@
 /**
- * Web auth token storage (Security P2).
- * - Access JWT: sessionStorage (cleared when the tab closes; reduces XSS dwell time vs localStorage)
- * - Refresh JWT: httpOnly cookie set by API (not readable by JS); legacy localStorage cleared on write
+ * Web auth token storage (Security P2 → hardened).
+ * - Access JWT: in-memory only (not readable after XSS via sessionStorage/localStorage)
+ * - Refresh JWT: httpOnly cookie set by API (not readable by JS)
+ * - Session restore: cookie refresh on app bootstrap (see SessionBootstrap)
  */
 
 const ACCESS_KEY = 'auth_token';
 const REFRESH_KEY = 'refresh_token';
 
-function migrateAccessFromLocal(): string | null {
-  try {
-    const legacy = localStorage.getItem(ACCESS_KEY);
-    if (!legacy) return null;
-    sessionStorage.setItem(ACCESS_KEY, legacy);
-    localStorage.removeItem(ACCESS_KEY);
-    return legacy;
-  } catch {
-    return null;
-  }
-}
+let memoryAccessToken: string | null = null;
 
-export function getAccessToken(): string | null {
-  try {
-    return sessionStorage.getItem(ACCESS_KEY) ?? migrateAccessFromLocal();
-  } catch {
-    return localStorage.getItem(ACCESS_KEY);
-  }
-}
-
-export function setAccessToken(token: string): void {
-  try {
-    sessionStorage.setItem(ACCESS_KEY, token);
-  } catch {
-    localStorage.setItem(ACCESS_KEY, token);
-  }
-  try {
-    localStorage.removeItem(ACCESS_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-export function clearAccessToken(): void {
+function scrubPersistedAccessTokens(): void {
   try {
     sessionStorage.removeItem(ACCESS_KEY);
   } catch {
@@ -51,6 +21,23 @@ export function clearAccessToken(): void {
   } catch {
     // ignore
   }
+}
+
+/** One-time scrub of legacy persisted access JWTs on module load. */
+scrubPersistedAccessTokens();
+
+export function getAccessToken(): string | null {
+  return memoryAccessToken;
+}
+
+export function setAccessToken(token: string): void {
+  memoryAccessToken = token;
+  scrubPersistedAccessTokens();
+}
+
+export function clearAccessToken(): void {
+  memoryAccessToken = null;
+  scrubPersistedAccessTokens();
 }
 
 /** Legacy body refresh only — prefer httpOnly cookie. Cleared after migration. */
