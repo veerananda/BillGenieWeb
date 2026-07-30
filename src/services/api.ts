@@ -427,7 +427,7 @@ export interface CreateSupportIssueRequest {
 
 class APIClient {
   /** Serialize concurrent refresh calls (avoids token-rotation races). */
-  private refreshInFlight: Promise<boolean> | null = null;
+  private refreshInFlight: Promise<AuthResponse | null> | null = null;
   private lastRefreshError: string | null = null;
   private lastRefreshFailureKind: 'auth' | 'network' | null = null;
 
@@ -631,6 +631,17 @@ class APIClient {
   }
 
   async refreshAccessToken(): Promise<boolean> {
+    const result = await this.restoreSessionFromCookie();
+    return !!result;
+  }
+
+  /** True when the last refresh attempt failed because the cookie/session was rejected. */
+  wasLastRefreshAuthFailure(): boolean {
+    return this.lastRefreshFailureKind === 'auth';
+  }
+
+  /** Cookie-based session restore for memory-only access tokens. */
+  async restoreSessionFromCookie(): Promise<AuthResponse | null> {
     if (this.refreshInFlight) {
       return this.refreshInFlight;
     }
@@ -640,7 +651,7 @@ class APIClient {
     return this.refreshInFlight;
   }
 
-  private async doRefreshAccessToken(): Promise<boolean> {
+  private async doRefreshAccessToken(): Promise<AuthResponse | null> {
     this.lastRefreshError = null;
     this.lastRefreshFailureKind = null;
 
@@ -651,16 +662,17 @@ class APIClient {
         const legacy = getLegacyRefreshToken();
         const body = legacy ? { refresh_token: legacy } : {};
         const r = await this.makeRequest('/auth/refresh', 'POST', body, { skipRetry: true });
-        this.storeAuthData(r?.data ?? r);
+        const authData = (r?.data ?? r) as AuthResponse;
+        this.storeAuthData(authData);
         clearLegacyRefreshToken();
-        return true;
+        return authData;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Token refresh failed';
         this.lastRefreshError = message;
 
         if (isSessionInvalidatedMessage(message)) {
           this.lastRefreshFailureKind = 'auth';
-          return false;
+          return null;
         }
 
         // Server rejected refresh (expired/invalid) — do not keep retrying forever.
@@ -669,7 +681,7 @@ class APIClient {
           !/failed to fetch|network|timeout|aborted|connection/i.test(message);
         if (looksAuth) {
           this.lastRefreshFailureKind = 'auth';
-          return false;
+          return null;
         }
 
         this.lastRefreshFailureKind = 'network';
@@ -677,10 +689,10 @@ class APIClient {
           await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
           continue;
         }
-        return false;
+        return null;
       }
     }
-    return false;
+    return null;
   }
 
   isAuthenticated(): boolean {

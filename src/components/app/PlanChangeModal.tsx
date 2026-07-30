@@ -108,6 +108,10 @@ export function PlanChangeModal({ open, mode, currentSelection, onClose, onSucce
 
       await new Promise<void>((resolve, reject) => {
         if (order.dev_mode) {
+          if (import.meta.env.PROD) {
+            reject(new Error('Payment gateway is not configured'));
+            return;
+          }
           void apiClient
             .verifyPlanChangePayment({
               razorpay_order_id: order.order_id,
