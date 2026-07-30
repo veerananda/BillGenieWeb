@@ -38,6 +38,7 @@ import { Badge } from '../../components/app/Badge';
 import { Modal } from '../../components/app/Modal';
 import { Spinner } from '../../components/app/Spinner';
 import { EmptyState } from '../../components/app/EmptyState';
+import { itemVisibleForChannel, resolveMenuUnitPriceForChannel, type MenuChannelId } from '../../lib/menuChannels';
 import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { TrackingQrModal } from '../../components/app/TrackingQrModal';
 import { MenuItemOrderCard } from '../../components/app/MenuItemOrderCard';
@@ -227,11 +228,14 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
     }
   }, [open, counterModes, resetPaymentFields]);
 
+  const orderChannel: MenuChannelId =
+    serviceMode === 'takeaway' ? 'counter_takeaway' : 'counter_eat_here';
+
   const categories = useMemo(() => {
     const cats = new Set<string>();
-    menuItems.filter((m) => m.is_available).forEach((m) => cats.add(m.category));
+    menuItems.filter((m) => itemVisibleForChannel(m, orderChannel)).forEach((m) => cats.add(m.category));
     return Array.from(cats);
-  }, [menuItems]);
+  }, [menuItems, orderChannel]);
 
   // Default to first category on initial load
   useEffect(() => {
@@ -242,7 +246,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
 
   const categoryCount = (cat: string) =>
     menuItems.filter((m) => {
-      if (!m.is_available || m.category !== cat) return false;
+      if (!itemVisibleForChannel(m, orderChannel) || m.category !== cat) return false;
       if (dietFilter === 'veg' && !m.is_veg) return false;
       if (dietFilter === 'non_veg' && m.is_veg) return false;
       return true;
@@ -250,13 +254,13 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
 
   const visibleItems = useMemo(() => {
     return menuItems.filter((m) => {
-      if (!m.is_available) return false;
+      if (!itemVisibleForChannel(m, orderChannel)) return false;
       if (dietFilter === 'veg' && !m.is_veg) return false;
       if (dietFilter === 'non_veg' && m.is_veg) return false;
       if (search.trim()) return m.name.toLowerCase().includes(search.toLowerCase());
       return m.category === activeCategory;
     });
-  }, [menuItems, dietFilter, activeCategory, search]);
+  }, [menuItems, dietFilter, activeCategory, search, orderChannel]);
 
   const orderTotals = useMemo(
     () => calculateOrderTotals(cart, discountValue, discountType, { pricesIncludeGst, compositeScheme }),
@@ -279,7 +283,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
   function addVariantToCart(item: MenuItem, variant?: MenuItemVariant) {
     const variantId = variant?.id;
     const variantLabel = variant?.label;
-    const price = variant?.price ?? item.price;
+    const price = resolveMenuUnitPriceForChannel(item, variant, orderChannel);
     const key = cartLineKey(item.id, variantId);
     setCart((prev) => {
       const ex = prev.find((c) => cartLineKey(c.menuItemId, c.variantId) === key);
@@ -708,6 +712,7 @@ function NewOrderPanel({ open, onClose, onCreated, onPaymentComplete, menuItems 
                       onAdd={addVariantToCart}
                       onChangeQty={changePortionQty}
                       categoryBlocklist={categoryBlocklist}
+                      channel={orderChannel}
                     />
                   ))}
                 </div>

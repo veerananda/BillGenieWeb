@@ -1,10 +1,10 @@
 import { Beef, Leaf, Minus, Plus } from 'lucide-react';
 import type { MenuItem, MenuItemVariant } from '../../services/api';
 import { availableMenuVariants, formatOrderLineDisplayName } from '../../lib/orderHelpers';
-
-function variantUnitPrice(item: MenuItem, variant?: MenuItemVariant) {
-  return variant?.price ?? item.price;
-}
+import {
+  resolveMenuUnitPriceForChannel,
+  type MenuChannelId,
+} from '../../lib/menuChannels';
 
 export interface MenuItemOrderCardProps {
   item: MenuItem;
@@ -14,6 +14,8 @@ export interface MenuItemOrderCardProps {
   onChangeQty: (item: MenuItem, variant: MenuItemVariant | undefined, delta: number) => void;
   /** Restaurant category_display_blocklist — section labels stay off the dish name. */
   categoryBlocklist?: string[] | null;
+  /** Sales channel for channel-specific pricing. */
+  channel?: MenuChannelId;
 }
 
 /**
@@ -26,6 +28,7 @@ export function MenuItemOrderCard({
   onAdd,
   onChangeQty,
   categoryBlocklist,
+  channel = 'dine_in',
 }: MenuItemOrderCardProps) {
   const variants = availableMenuVariants(item);
   const multiPortion = variants.length > 1;
@@ -34,12 +37,14 @@ export function MenuItemOrderCard({
   const displayName = formatOrderLineDisplayName(item.name, item.category, {
     categoryBlocklist,
   });
+  const unitPrice = (variant?: MenuItemVariant) =>
+    resolveMenuUnitPriceForChannel(item, variant, channel);
 
   const priceLabel = multiPortion
     ? variants
-        .map((v) => `${v.label || 'Regular'} ₹${variantUnitPrice(item, v).toFixed(0)}`)
+        .map((v) => `${v.label || 'Regular'} ₹${unitPrice(v).toFixed(0)}`)
         .join(' · ')
-    : `₹${variantUnitPrice(item, singleVariant).toLocaleString('en-IN')}`;
+    : `₹${unitPrice(singleVariant).toLocaleString('en-IN')}`;
 
   return (
     <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
@@ -102,7 +107,7 @@ export function MenuItemOrderCard({
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-gray-900">{variant.label || 'Regular'}</p>
                   <p className="text-xs font-semibold text-primary">
-                    ₹{variantUnitPrice(item, variant).toFixed(2)}
+                    ₹{unitPrice(variant).toFixed(2)}
                   </p>
                 </div>
                 <div className="shrink-0">

@@ -25,6 +25,8 @@ export interface MenuItem {
   is_available: boolean;
   readily_available?: boolean;
   is_taxable?: boolean;
+  available_channels?: string[];
+  channel_prices?: Record<string, number>;
   variants?: MenuItemVariant[];
 }
 

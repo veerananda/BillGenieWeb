@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Utensils,
   UtensilsCrossed,
@@ -38,6 +38,7 @@ import {
 } from '../../lib/orderHelpers';
 import { useAttendants } from '../../lib/useAttendants';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
+import { itemVisibleForChannel, resolveMenuUnitPriceForChannel } from '../../lib/menuChannels';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectAuthRole, selectCanCancelOrders } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
@@ -50,7 +51,7 @@ import {
   acknowledgeKitchenCancels,
   selectAcknowledgedCancelledByOrderId,
 } from '../../store/ordersSlice';
-import { selectMenuItems, selectMenuCategories, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
+import { selectMenuItems, selectMenuHydrated, setMenuItems } from '../../store/menuSlice';
 import type { MenuItem, MenuItemVariant } from '../../store/menuSlice';
 import type {
   RestaurantTable,
@@ -1740,9 +1741,14 @@ function TakeOrderPanel({
 }) {
   const dispatch = useAppDispatch();
   const menuItems = useAppSelector(selectMenuItems);
-  const menuCategories = useAppSelector(selectMenuCategories);
   const profile = useAppSelector(selectProfile);
   const categoryBlocklist = profile?.category_display_blocklist ?? [];
+
+  const menuCategories = useMemo(
+    () =>
+      [...new Set(menuItems.filter((m) => itemVisibleForChannel(m, 'dine_in')).map((i) => i.category))].sort(),
+    [menuItems]
+  );
 
   const [search, setSearch] = useState('');
   const [dietFilter, setDietFilter] = useState<'all' | 'veg' | 'non_veg'>('all');
@@ -1769,7 +1775,7 @@ function TakeOrderPanel({
   // Count per category respecting diet filter (not search)
   const categoryCount = (cat: string) =>
     menuItems.filter((m) => {
-      if (!m.is_available || m.category !== cat) return false;
+      if (!itemVisibleForChannel(m, 'dine_in') || m.category !== cat) return false;
       if (dietFilter === 'veg' && !m.is_veg) return false;
       if (dietFilter === 'non_veg' && m.is_veg) return false;
       return true;
@@ -1777,7 +1783,7 @@ function TakeOrderPanel({
 
   // When searching, span all categories; otherwise filter by activeCategory
   const visibleItems = menuItems.filter((m) => {
-    if (!m.is_available) return false;
+    if (!itemVisibleForChannel(m, 'dine_in')) return false;
     if (dietFilter === 'veg' && !m.is_veg) return false;
     if (dietFilter === 'non_veg' && m.is_veg) return false;
     if (search.trim()) return m.name.toLowerCase().includes(search.toLowerCase());
@@ -1787,7 +1793,7 @@ function TakeOrderPanel({
   const addVariantToCart = (item: MenuItem, variant?: MenuItemVariant) => {
     const variantId = variant?.id;
     const variantLabel = variant?.label;
-    const unitPrice = variant?.price ?? item.price;
+    const unitPrice = resolveMenuUnitPriceForChannel(item, variant, 'dine_in');
     const key = cartLineKey(item.id, variantId);
     setCart((prev) => {
       const existing = prev.find((c) => cartLineKey(c.menuItem.id, c.variantId) === key);
@@ -2032,6 +2038,7 @@ function TakeOrderPanel({
                       onAdd={addVariantToCart}
                       onChangeQty={changePortionQty}
                       categoryBlocklist={categoryBlocklist}
+                      channel="dine_in"
                     />
                   ))}
                 </div>
