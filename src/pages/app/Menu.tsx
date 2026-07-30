@@ -26,6 +26,15 @@ import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
 import { EmptyState } from '../../components/app/EmptyState';
+import {
+  DEFAULT_MENU_CHANNELS,
+  MENU_CHANNELS,
+  normalizeChannelPrices,
+  normalizeMenuChannels,
+  toggleMenuChannel,
+  type ChannelPrices,
+  type MenuChannelId,
+} from '../../lib/menuChannels';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -174,6 +183,8 @@ export function Menu() {
   const [itemPrice, setItemPrice] = useState('');
   const [itemVeg, setItemVeg] = useState(false);
   const [itemAvailable, setItemAvailable] = useState(true);
+  const [itemChannels, setItemChannels] = useState<MenuChannelId[]>([...DEFAULT_MENU_CHANNELS]);
+  const [itemChannelPrices, setItemChannelPrices] = useState<ChannelPrices>({});
   const [itemReadilyAvailable, setItemReadilyAvailable] = useState(false);
   const [itemTaxable, setItemTaxable] = useState(true);
   const [itemPortions, setItemPortions] = useState<PortionDraft[]>([]);
@@ -326,6 +337,8 @@ export function Menu() {
     setItemPrice('');
     setItemVeg(false);
     setItemAvailable(true);
+    setItemChannels([...DEFAULT_MENU_CHANNELS]);
+    setItemChannelPrices({});
     setItemReadilyAvailable(false);
     setItemTaxable(true);
     setItemPortions([]);
@@ -361,6 +374,10 @@ export function Menu() {
     );
     setItemVeg(item.is_veg);
     setItemAvailable(item.is_available);
+    const channels = normalizeMenuChannels(item.available_channels);
+    const base = Number(defaultVariant?.price ?? item.price) || 0;
+    setItemChannels(channels);
+    setItemChannelPrices(normalizeChannelPrices(channels, item.channel_prices, base));
     setItemReadilyAvailable(item.readily_available ?? false);
     setItemTaxable(item.is_taxable !== false);
     setItemModalError('');
@@ -393,6 +410,7 @@ export function Menu() {
     }
 
     const variants = buildVariantsPayload(price, itemPortions, itemRegularVariantId);
+    const channelPrices = normalizeChannelPrices(itemChannels, itemChannelPrices, price);
 
     setItemModalLoading(true);
     try {
@@ -402,6 +420,8 @@ export function Menu() {
           price,
           is_veg: itemVeg,
           is_available: itemAvailable,
+          available_channels: itemChannels,
+          channel_prices: channelPrices,
           readily_available: itemReadilyAvailable,
           is_taxable: itemTaxable,
           variants,
@@ -413,6 +433,8 @@ export function Menu() {
           price,
           is_veg: itemVeg,
           is_available: itemAvailable,
+          available_channels: itemChannels,
+          channel_prices: channelPrices,
           readily_available: itemReadilyAvailable,
           is_taxable: itemTaxable,
           category: itemModalCategory,
@@ -854,6 +876,73 @@ export function Menu() {
           <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
             <p className="text-sm font-medium text-gray-700">Available</p>
             <Toggle checked={itemAvailable} onChange={() => setItemAvailable((v) => !v)} />
+          </div>
+
+          <div
+            className={`rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3 ${
+              !itemAvailable ? 'opacity-50' : ''
+            }`}
+          >
+            <p className="text-sm font-medium text-gray-700">Available on</p>
+            <div className="flex flex-wrap gap-2">
+              {MENU_CHANNELS.map((channel) => {
+                const selected = itemChannels.includes(channel.id);
+                const basePrice = parseFloat(itemPrice);
+                return (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    disabled={!itemAvailable}
+                    onClick={() => {
+                      const next = toggleMenuChannel(
+                        itemChannels,
+                        channel.id,
+                        itemChannelPrices,
+                        Number.isFinite(basePrice) && basePrice >= 0 ? basePrice : 0
+                      );
+                      setItemChannels(next.channels);
+                      setItemChannelPrices(next.prices);
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                      selected
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {channel.label}
+                  </button>
+                );
+              })}
+            </div>
+            {itemChannels.length > 0 ? (
+              <div className="space-y-2">
+                {itemChannels.map((channelId) => {
+                  const meta = MENU_CHANNELS.find((c) => c.id === channelId);
+                  return (
+                    <div key={channelId} className="flex items-center gap-3">
+                      <label className="w-36 shrink-0 text-xs font-medium text-gray-600">
+                        {meta?.label ?? channelId} price
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        disabled={!itemAvailable}
+                        value={itemChannelPrices[channelId] ?? ''}
+                        onChange={(e) => {
+                          const n = parseFloat(e.target.value);
+                          setItemChannelPrices((prev) => ({
+                            ...prev,
+                            [channelId]: Number.isFinite(n) ? n : 0,
+                          }));
+                        }}
+                        className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1">
