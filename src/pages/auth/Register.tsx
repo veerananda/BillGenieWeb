@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import {
   TRIAL_DURATION_DAYS,
