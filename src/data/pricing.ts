@@ -26,9 +26,9 @@ export const SUBSCRIPTION_INCLUDED = {
 export const INCLUDED_TABLES_BASIC = PLAN_STARTER_TABLES;
 export const MIN_TABLES_DINE_IN = 5;
 export const MAX_TABLES = PLAN_SCALE_TABLES;
-export const MAX_EXTRA_STAFF = 5;
-export const MAX_EXTRA_CHEFS = 3;
-export const MAX_EXTRA_MANAGERS = 2;
+export const MAX_EXTRA_STAFF = 3; // total staff ≤ 5 with 2 included
+export const MAX_EXTRA_CHEFS = 2; // total chefs ≤ 3 with 1 included
+export const MAX_EXTRA_MANAGERS = 1; // total managers ≤ 2 with 1 included
 
 export const PLAN_MONTHLY_BY_TIER: Record<PlanBand, Record<CityTier, number>> = {
   starter: { tier_1: 1199, tier_2: 999, tier_3: 799 },

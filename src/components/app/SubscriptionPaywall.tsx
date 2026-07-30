@@ -434,8 +434,8 @@ export function PlanPicker({
           Extra team (optional)
         </p>
         <p className="mb-2 text-xs text-gray-500">
-          Base includes 1 manager, 2 staff, and 1 chef. Add more seats if you need them (max +5 staff,
-          +3 chefs, +2 managers).
+          Base includes 1 manager, 2 staff, and 1 chef. Add seats up to 5 staff, 3 chefs, and 2
+          managers total (max +3 staff, +2 chefs, +1 manager).
         </p>
         <div className="rounded-lg border border-gray-200 px-3">
           <SeatStepper

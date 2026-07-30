@@ -19,9 +19,9 @@ const MARKETING_ADDONS = [
   { key: 'expenses', title: 'Expenses', description: 'Track manual expenses and monthly settle reports', price: PRICING.expenses },
   { key: 'inventory', title: 'Inventory suite', description: 'Ingredients, stock levels, alerts, and stock refill', price: PRICING.inventory },
   { key: 'history_extended', title: 'Extended order history', description: '2 years of order & sales history (plans include 90 days)', price: PRICING.history_extended },
-  { key: 'extra_staff', title: 'Extra staff', description: 'Additional staff seats beyond the 2 included (max +5)', price: PRICING.extra_staff },
-  { key: 'extra_chef', title: 'Extra chef', description: 'Additional chef seats beyond the 1 included (max +3)', price: PRICING.extra_chef },
-  { key: 'extra_manager', title: 'Extra manager', description: 'Additional manager seats beyond the 1 included (max +2)', price: PRICING.extra_manager },
+  { key: 'extra_staff', title: 'Extra staff', description: 'Additional staff beyond the 2 included (up to 5 total, max +3)', price: PRICING.extra_staff },
+  { key: 'extra_chef', title: 'Extra chef', description: 'Additional chef beyond the 1 included (up to 3 total, max +2)', price: PRICING.extra_chef },
+  { key: 'extra_manager', title: 'Extra manager', description: 'Additional manager beyond the 1 included (up to 2 total, max +1)', price: PRICING.extra_manager },
 ];
 
 type Cycle = 'monthly' | 'annual';
