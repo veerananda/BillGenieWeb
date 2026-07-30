@@ -319,11 +319,7 @@ export function SubscriptionPaywall({
 
 import {
   ADDON_OPTIONS,
-  MAX_EXTRA_CHEFS,
-  MAX_EXTRA_MANAGERS,
-  MAX_EXTRA_STAFF,
   PLAN_BANDS,
-  PRICING,
   SHARED_PLAN_FEATURES,
   bandMonthlyForTier,
   planBandFromTables,
@@ -331,48 +327,6 @@ import {
   type CityTier,
   type PlanBand,
 } from '../../data/pricing';
-
-function SeatStepper({
-  label,
-  unitPrice,
-  value,
-  max,
-  onChange,
-}: {
-  label: string;
-  unitPrice: number;
-  value: number;
-  max: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2 last:border-0">
-      <div>
-        <p className="text-sm font-semibold text-gray-800">{label}</p>
-        <p className="text-xs text-gray-500">₹{unitPrice}/mo each</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="h-8 w-8 rounded-full border border-gray-200 text-sm font-bold"
-          onClick={() => onChange(Math.max(0, value - 1))}
-          disabled={value <= 0}
-        >
-          −
-        </button>
-        <span className="w-6 text-center text-sm font-bold">{value}</span>
-        <button
-          type="button"
-          className="h-8 w-8 rounded-full border border-gray-200 text-sm font-bold"
-          onClick={() => onChange(Math.min(max, value + 1))}
-          disabled={value >= max}
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function PlanPicker({
   value,
@@ -427,39 +381,6 @@ export function PlanPicker({
             <li key={f}>• {f}</li>
           ))}
         </ul>
-      </div>
-
-      <div>
-        <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-          Extra team (optional)
-        </p>
-        <p className="mb-2 text-xs text-gray-500">
-          Base includes 1 manager, 2 staff, and 1 chef. Add seats up to 5 staff, 3 chefs, and 2
-          managers total (max +3 staff, +2 chefs, +1 manager).
-        </p>
-        <div className="rounded-lg border border-gray-200 px-3">
-          <SeatStepper
-            label="Additional staff"
-            unitPrice={PRICING.extra_staff}
-            value={value.extra_staff}
-            max={MAX_EXTRA_STAFF}
-            onChange={(extra_staff) => set({ extra_staff })}
-          />
-          <SeatStepper
-            label="Additional chefs"
-            unitPrice={PRICING.extra_chef}
-            value={value.extra_chefs ?? 0}
-            max={MAX_EXTRA_CHEFS}
-            onChange={(extra_chefs) => set({ extra_chefs })}
-          />
-          <SeatStepper
-            label="Additional managers"
-            unitPrice={PRICING.extra_manager}
-            value={value.extra_managers}
-            max={MAX_EXTRA_MANAGERS}
-            onChange={(extra_managers) => set({ extra_managers })}
-          />
-        </div>
       </div>
 
       <div>
