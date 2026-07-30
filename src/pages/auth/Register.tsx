@@ -24,10 +24,32 @@ function generateLoginId(): string {
 
 // ── Step types ────────────────────────────────────────────────────────────────
 
-type StartMode = 'trial' | 'paid';
+type StartMode = 'trial' | 'paid' | 'custom_request';
 
 interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
+
+type CustomRequestForm = {
+  max_tables: number;
+  extra_staff: number;
+  extra_chefs: number;
+  extra_managers: number;
+  inventory: boolean;
+  expenses: boolean;
+  history_extended: boolean;
+  notes: string;
+};
+
+const DEFAULT_CUSTOM_REQUEST: CustomRequestForm = {
+  max_tables: 26,
+  extra_staff: 0,
+  extra_chefs: 0,
+  extra_managers: 0,
+  inventory: false,
+  expenses: false,
+  history_extended: false,
+  notes: '',
+};
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
 
@@ -114,6 +136,7 @@ export function Register() {
   const [step2, setStep2] = useState<Step2>({ ownerName: '', email: '', phone: '' });
   const [startMode, setStartMode] = useState<StartMode>('trial');
   const [subscription, setSubscription] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
+  const [customRequest, setCustomRequest] = useState<CustomRequestForm>(DEFAULT_CUSTOM_REQUEST);
   const [loginId] = useState(generateLoginId);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -194,11 +217,24 @@ export function Register() {
         password,
         start_mode: startMode,
         subscription: startMode === 'paid' ? subscription : undefined,
+        custom_deal_request:
+          startMode === 'custom_request'
+            ? {
+                ...customRequest,
+                billing_cycle: 'monthly',
+                notes: customRequest.notes.trim() || undefined,
+                contact_phone: step2.phone.trim() || undefined,
+              }
+            : undefined,
       });
+      const customMsg =
+        startMode === 'custom_request'
+          ? ` Custom plan request received — BillGenie will confirm pricing, then you can pay from the app.`
+          : '';
       navigate('/login', {
         replace: true,
         state: {
-          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}. Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
+          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}.${customMsg} Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
         },
       });
     } catch (err) {
@@ -352,6 +388,22 @@ export function Register() {
                       )}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setStartMode('custom_request')}
+                    className={`mt-3 flex w-full flex-col items-start rounded-xl border-2 p-4 text-left transition ${
+                      startMode === 'custom_request'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <p className={`text-sm font-bold ${startMode === 'custom_request' ? 'text-primary' : 'text-gray-900'}`}>
+                      Request custom plan
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      More than 25 tables or a negotiated rate — we confirm pricing, then you pay in-app.
+                    </p>
+                  </button>
                 </div>
 
                 {/* Trial: feature list */}
@@ -372,6 +424,80 @@ export function Register() {
                 {/* Paid: full plan picker */}
                 {startMode === 'paid' && (
                   <PlanStep subscription={subscription} onChange={setSubscription} cityTier={cityTier} />
+                )}
+
+                {startMode === 'custom_request' && (
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm text-gray-600">
+                      Tell us the capacity you need. BillGenie will set a negotiated price — payment opens in the app after that.
+                    </p>
+                    <label className="block text-sm text-gray-800">
+                      Tables needed (26–200)
+                      <input
+                        type="number"
+                        min={26}
+                        max={200}
+                        value={customRequest.max_tables}
+                        onChange={(e) =>
+                          setCustomRequest((p) => ({
+                            ...p,
+                            max_tables: Math.min(200, Math.max(26, Number(e.target.value) || 26)),
+                          }))
+                        }
+                        className={inputCls}
+                      />
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ['extra_staff', 'Extra staff'],
+                          ['extra_chefs', 'Extra chefs'],
+                          ['extra_managers', 'Extra managers'],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <label key={key} className="block text-xs text-gray-700">
+                          {label}
+                          <input
+                            type="number"
+                            min={0}
+                            value={customRequest[key]}
+                            onChange={(e) =>
+                              setCustomRequest((p) => ({ ...p, [key]: Math.max(0, Number(e.target.value) || 0) }))
+                            }
+                            className={inputCls}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-sm text-gray-700">
+                      {(
+                        [
+                          ['inventory', 'Inventory'],
+                          ['expenses', 'Expenses'],
+                          ['history_extended', 'Extended history'],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={customRequest[key]}
+                            onChange={() => setCustomRequest((p) => ({ ...p, [key]: !p[key] }))}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <label className="block text-sm text-gray-800">
+                      Notes (optional)
+                      <textarea
+                        rows={3}
+                        value={customRequest.notes}
+                        onChange={(e) => setCustomRequest((p) => ({ ...p, notes: e.target.value }))}
+                        className={inputCls}
+                        placeholder="Locations, peak covers, special needs…"
+                      />
+                    </label>
+                  </div>
                 )}
 
                 <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />

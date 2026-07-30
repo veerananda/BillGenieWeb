@@ -54,7 +54,9 @@ export function SubscriptionPaywall({
   const [error, setError] = useState<string | null>(null);
 
   const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
-  const allowsPlanReview = Boolean(quote?.requires_plan_selection) || isPendingActivation;
+  const awaitingCustomDeal = Boolean(quote?.awaiting_custom_deal);
+  const allowsPlanReview =
+    (Boolean(quote?.requires_plan_selection) || isPendingActivation) && !awaitingCustomDeal;
   const showPlanPicker = allowsPlanReview && (editingPlan || !isPendingActivation);
 
   const localQuote = useMemo(() => {
@@ -202,7 +204,15 @@ export function SubscriptionPaywall({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <p className="text-sm text-gray-600">
-            {canPay ? (
+            {awaitingCustomDeal ? (
+              <>
+                Your custom plan request
+                {quote?.custom_deal_request?.max_tables
+                  ? ` (${quote.custom_deal_request.max_tables} tables)`
+                  : ''}{' '}
+                is with BillGenie. We&apos;ll confirm negotiated pricing, then payment will open here.
+              </>
+            ) : canPay ? (
               isPendingActivation ? (
                 showPlanPicker
                   ? 'Adjust your plans and add-ons before payment.'
@@ -278,7 +288,7 @@ export function SubscriptionPaywall({
 
         {/* Footer */}
         <div className="border-t border-gray-100 px-5 py-4 space-y-2">
-          {canPay ? (
+          {canPay && !awaitingCustomDeal ? (
             <button
               onClick={handlePay}
               disabled={paying || loadingQuote || !displayQuote}
@@ -387,7 +397,8 @@ export function PlanPicker({
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Choose your plan</p>
         <p className="mb-2 text-xs text-gray-500">
-          Pick a size band by table capacity. Need more than 25 tables? Contact us for a custom plan.
+          Pick a size band by table capacity. Need more than 25 tables? Choose “Request custom plan”
+          at registration for a commercial deal.
         </p>
         <div className="space-y-2">
           {PLAN_BANDS.map((band) => {
