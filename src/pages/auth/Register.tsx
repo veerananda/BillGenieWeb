@@ -1,29 +1,17 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Copy, CheckCircle2, Loader2, Minus, Plus, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import {
-  ADDON_OPTIONS,
-  BASIC_FEATURES,
-  BASIC_MONTHLY_PRICE,
-  PRICING,
   TRIAL_DURATION_DAYS,
-  INCLUDED_TABLES_BASIC,
-  MIN_TABLES_DINE_IN,
-  MAX_TABLES,
-  TABLE_STAFF_BUNDLE_SIZE,
   formatInr,
   calculateSubscriptionQuote,
-  bundledStaffFromTables,
-  bundledManagersFromTables,
   DEFAULT_SUBSCRIPTION_SELECTION,
   type SubscriptionSelection,
-  type OperationMode,
-  type BillingCycle,
   type CityTier,
-  priceForTier,
 } from '../../data/pricing';
+import { PlanPicker } from '../../components/app/SubscriptionPaywall';
 import { INDIA_LOCATION_OPTIONS, citiesForState, resolveCityTier } from '../../data/indiaLocations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -42,12 +30,12 @@ interface Step2 { ownerName: string; email: string; phone: string; }
 
 const TRIAL_INCLUDES = [
   `${TRIAL_DURATION_DAYS}-day free trial — full access, no credit card needed`,
-  'Up to 10 dine-in tables',
+  'Dine-in + counter + kitchen',
+  'Starter limits — up to 10 dine-in tables',
   'Menu management (unlimited items)',
   'Order management & checkout',
-  'Sales reports & order history',
-  '2 staff accounts included',
-  'Kitchen display system',
+  'Sales reports & 90-day order history',
+  '1 admin · 1 manager · 2 staff · 1 chef',
 ] as const;
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
@@ -87,109 +75,6 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
-// ── Numeric stepper widget ────────────────────────────────────────────────────
-
-function NumericStepper({
-  label,
-  subtitle,
-  value,
-  min = 0,
-  max = 20,
-  onChange,
-}: {
-  label: string;
-  subtitle: string;
-  value: number;
-  min?: number;
-  max?: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-      <div className="flex-1 pr-4">
-        <div className="text-sm font-medium text-gray-900">{label}</div>
-        <div className="mt-0.5 text-xs text-gray-500">{subtitle}</div>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(min, value - 1))}
-          disabled={value <= min}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 disabled:opacity-30 hover:border-gray-400 transition"
-        >
-          <Minus size={14} />
-        </button>
-        <span className="w-6 text-center text-base font-bold text-gray-900">{value}</span>
-        <button
-          type="button"
-          onClick={() => onChange(Math.min(max, value + 1))}
-          disabled={value >= max}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 disabled:opacity-30 hover:border-gray-400 transition"
-        >
-          <Plus size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Table capacity stepper ────────────────────────────────────────────────────
-
-function TableCapacityStepper({
-  value,
-  onChange,
-  cityTier,
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  cityTier: CityTier;
-}) {
-  const tables = value || INCLUDED_TABLES_BASIC;
-  const staffIncluded = bundledStaffFromTables(tables);
-  const managersIncluded = bundledManagersFromTables(tables);
-
-  const stepDown = () => {
-    if (tables <= INCLUDED_TABLES_BASIC) {
-      onChange(Math.max(MIN_TABLES_DINE_IN, tables - TABLE_STAFF_BUNDLE_SIZE));
-    } else {
-      onChange(Math.max(INCLUDED_TABLES_BASIC, tables - TABLE_STAFF_BUNDLE_SIZE));
-    }
-  };
-  const stepUp = () => onChange(Math.min(MAX_TABLES, tables + TABLE_STAFF_BUNDLE_SIZE));
-
-  return (
-    <div className="flex items-center justify-between py-3">
-      <div className="flex-1 pr-4">
-        <div className="text-sm font-medium text-gray-900">Max dine-in tables</div>
-        <div className="mt-1 text-xs text-gray-500 leading-5">
-          {INCLUDED_TABLES_BASIC} included in basic. Each +{TABLE_STAFF_BUNDLE_SIZE} tables adds 1 staff ({formatInr(priceForTier(PRICING.table_staff_bundle, cityTier))}/mo).<br />
-          Includes {staffIncluded} staff · {managersIncluded} manager{managersIncluded === 1 ? '' : 's'} (1 per 15 tables).
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={stepDown}
-          disabled={tables <= MIN_TABLES_DINE_IN}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 disabled:opacity-30 hover:border-gray-400 transition"
-        >
-          <Minus size={14} />
-        </button>
-        <span className="w-8 text-center text-base font-bold text-gray-900">{tables}</span>
-        <button
-          type="button"
-          onClick={stepUp}
-          disabled={tables >= MAX_TABLES}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 disabled:opacity-30 hover:border-gray-400 transition"
-        >
-          <Plus size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Plan step component ───────────────────────────────────────────────────────
 
 function PlanStep({
   subscription,
@@ -201,198 +86,22 @@ function PlanStep({
   cityTier: CityTier;
 }) {
   const quote = useMemo(() => calculateSubscriptionQuote(subscription, cityTier), [cityTier, subscription]);
-
-  function setMode(mode: OperationMode) {
-    onChange({
-      ...subscription,
-      operation_mode: mode,
-      max_tables:
-        mode === 'counter' ? 0 : Math.max(subscription.max_tables || INCLUDED_TABLES_BASIC, MIN_TABLES_DINE_IN),
-      kitchen_dine_in: mode === 'counter' ? false : subscription.kitchen_dine_in,
-      kitchen_counter: mode === 'dine_in' ? false : subscription.kitchen_counter,
-    });
-  }
-
-  function setCycle(billing_cycle: BillingCycle) {
-    onChange({ ...subscription, billing_cycle });
-  }
-
-  function toggleAddon(key: keyof Pick<SubscriptionSelection, 'history_extended' | 'inventory' | 'kitchen_dine_in' | 'kitchen_counter'>) {
-    onChange({ ...subscription, [key]: !subscription[key] });
-  }
-
   const displayTotal =
     subscription.billing_cycle === 'annual'
       ? `${formatInr(quote.annual_total)}/year`
       : `${formatInr(quote.monthly_subtotal)}/month`;
 
-  const visibleAddons = ADDON_OPTIONS.filter(
-    (a) => !a.onlyFor || a.onlyFor.includes(subscription.operation_mode)
-  );
-
   return (
-    <div className="space-y-6">
-      {/* Basic plan */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">Basic plan</p>
-        <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="flex items-baseline justify-between">
-            <span className="text-base font-bold text-gray-900">Basic</span>
-            <span className="text-base font-bold text-gray-900">{formatInr(priceForTier(BASIC_MONTHLY_PRICE, cityTier))}<span className="text-xs font-normal text-gray-500">/mo</span></span>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">Includes after {TRIAL_DURATION_DAYS}-day free trial:</p>
-          <ul className="mt-2 space-y-1">
-            {BASIC_FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-1.5 text-xs text-gray-600">
-                <CheckCircle2 size={11} className="mt-0.5 shrink-0 text-primary" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* Service mode */}
-      <div>
-        <p className="text-sm font-semibold text-gray-900">Service mode</p>
-        <p className="mt-0.5 text-xs text-gray-500">Basic includes one mode. Both adds dine-in + counter.</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {([
-            ['dine_in', 'Dine-in only'],
-            ['counter', 'Counter only'],
-            ['both', `Both (+${formatInr(priceForTier(PRICING.dual_service, cityTier))})`],
-          ] as const).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setMode(mode)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-                subscription.operation_mode === mode
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table capacity */}
-      {subscription.operation_mode !== 'counter' && (
-        <div>
-          <p className="text-sm font-semibold text-gray-900">Table capacity &amp; team</p>
-          <p className="mt-0.5 text-xs text-gray-500">Staff and manager seats are included automatically from your table count.</p>
-          <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <TableCapacityStepper
-              value={subscription.max_tables || INCLUDED_TABLES_BASIC}
-              onChange={(max_tables) => onChange({ ...subscription, max_tables })}
-              cityTier={cityTier}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Extra team */}
-      <div>
-        <p className="text-sm font-semibold text-gray-900">Extra team <span className="text-xs font-normal text-gray-500">(optional)</span></p>
-        <p className="mt-0.5 text-xs text-gray-500">Add seats beyond what your table bundles already include.</p>
-        <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-4">
-          <NumericStepper
-            label="Additional staff"
-            subtitle={`${formatInr(priceForTier(PRICING.extra_staff, cityTier))} / month each`}
-            value={subscription.extra_staff}
-            onChange={(extra_staff) => onChange({ ...subscription, extra_staff })}
-          />
-          <NumericStepper
-            label="Additional managers"
-            subtitle={`${formatInr(priceForTier(PRICING.extra_manager, cityTier))} / month each`}
-            value={subscription.extra_managers}
-            max={10}
-            onChange={(extra_managers) => onChange({ ...subscription, extra_managers })}
-          />
-        </div>
-      </div>
-
-      {/* Add-ons */}
-      <div>
-        <p className="text-sm font-semibold text-gray-900">Optional add-ons</p>
-        <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 divide-y divide-gray-100">
-          {visibleAddons.map((addon) => {
-            const checked = subscription[addon.key];
-            return (
-              <button
-                key={addon.key}
-                type="button"
-                onClick={() => toggleAddon(addon.key)}
-                className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-gray-100 transition"
-              >
-                <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition ${checked ? 'border-primary bg-primary' : 'border-gray-300 bg-white'}`}>
-                  {checked && <Check size={11} strokeWidth={3} className="text-white" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium text-gray-900">{addon.title}</span>
-                    <span className="shrink-0 text-xs font-semibold text-primary">+{formatInr(priceForTier(addon.price, cityTier))}/mo</span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-gray-500">{addon.description}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Billing cycle */}
-      <div>
-        <p className="text-sm font-semibold text-gray-900">Billing</p>
-        <div className="mt-2 flex gap-2">
-          {([
-            ['monthly', 'Monthly'],
-            ['annual', 'Annual (1 month free)'],
-          ] as const).map(([cycle, label]) => (
-            <button
-              key={cycle}
-              type="button"
-              onClick={() => setCycle(cycle)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
-                subscription.billing_cycle === cycle
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Total card */}
-      <div className="rounded-xl bg-primary/8 border border-primary/20 p-4">
+    <div className="space-y-4">
+      <PlanPicker value={subscription} onChange={onChange} cityTier={cityTier} />
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
         <p className="text-xs text-gray-600">
           {subscription.billing_cycle === 'annual' ? 'Estimated after trial' : 'Estimated monthly (excl. 18% GST)'}
         </p>
         <p className="mt-1 text-2xl font-extrabold text-primary">{displayTotal}</p>
-        {subscription.operation_mode !== 'counter' && (
-          <p className="mt-1 text-xs text-gray-600">
-            Plan includes {quote.bundled_staff} staff and {quote.bundled_managers} manager{quote.bundled_managers === 1 ? '' : 's'} for {quote.selection.max_tables} tables.
-          </p>
-        )}
-        {subscription.billing_cycle === 'annual' ? (
-          <p className="mt-1 text-xs text-gray-500">
-            ≈ {formatInr(quote.annual_monthly_equivalent)}/mo · Save {formatInr(quote.annual_savings)} vs monthly
-          </p>
-        ) : (
-          <p className="mt-1 text-xs text-gray-500">{TRIAL_DURATION_DAYS}-day free trial · prices sum as you select features</p>
-        )}
-        <div className="mt-2 space-y-0.5">
-          {quote.line_items.filter((li) => li.amount > 0).map((li) => (
-            <div key={li.id} className="flex justify-between text-xs text-gray-500">
-              <span>{li.label}</span>
-              <span>{formatInr(li.amount)}</span>
-            </div>
-          ))}
-        </div>
+        <p className="mt-1 text-xs text-gray-600">
+          Includes {quote.bundled_staff} staff · {quote.bundled_chefs} chef{quote.bundled_chefs === 1 ? '' : 's'} · {quote.bundled_managers} manager{quote.bundled_managers === 1 ? '' : 's'} · {quote.selection.max_tables} tables.
+        </p>
       </div>
     </div>
   );

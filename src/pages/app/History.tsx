@@ -541,7 +541,7 @@ export function History() {
       (profile?.subscription_config as Record<string, unknown> | undefined) ??
       null
   );
-  const hasExtendedHistory = limits.history_days > 30;
+  const hasExtendedHistory = limits.history_days > 90;
   const todayIso = isoDate(new Date());
   const defaultRange = getDateRange('month');
 
@@ -713,9 +713,9 @@ export function History() {
       <PageHeader title="Order History" />
 
       {/* Subscription banner */}
-      {limits.history_days <= 30 && (
+      {limits.history_days <= 90 && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Order history is limited to the last 30 days on your plan. Upgrade for up to 2 years of history.
+          Order history is limited to the last 90 days on your plan. Upgrade for up to 2 years of history.
         </div>
       )}
 

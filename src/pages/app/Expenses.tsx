@@ -10,6 +10,10 @@ import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
 import { formatInr } from '../../data/pricing';
 import {
+  hasExpensesAccess,
+  parseSubscriptionLimits,
+} from '../../lib/subscriptionLimits';
+import {
   buildExpenseMonthOptions,
   currentExpenseMonthKey,
 } from '../../lib/expenseMonths';
@@ -27,7 +31,12 @@ function formatMoney(amount: number): string {
 export function Expenses() {
   const role = useAppSelector(selectAuthRole);
   const profile = useAppSelector(selectProfile);
-  const allowed = role === 'admin' || role === 'manager';
+  const roleAllowed = role === 'admin' || role === 'manager';
+  const limits = parseSubscriptionLimits(
+    (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
+  );
+  const expensesOnPlan = hasExpensesAccess(limits);
+  const allowed = roleAllowed && expensesOnPlan;
 
   const monthOptions = useMemo(
     () => buildExpenseMonthOptions(profile?.created_at),
@@ -86,8 +95,20 @@ export function Expenses() {
     void load(selected.year, selected.month);
   }, [allowed, load, selected?.year, selected?.month]);
 
-  if (!allowed) {
+  if (!roleAllowed) {
     return <Navigate to="/app/orders" replace />;
+  }
+
+  if (!expensesOnPlan) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <Wallet className="h-10 w-10 text-gray-400" />
+        <h2 className="text-lg font-semibold text-gray-900">Expenses add-on required</h2>
+        <p className="max-w-md text-sm text-gray-600">
+          Add the Expenses add-on from Profile → Change plan to track restaurant expenses and settle reports.
+        </p>
+      </div>
+    );
   }
 
   async function handleAdd(e: FormEvent) {

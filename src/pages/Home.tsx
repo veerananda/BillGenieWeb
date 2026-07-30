@@ -3,7 +3,7 @@ import { ArrowRight, CheckCircle2, Zap, ShieldCheck, Clock } from 'lucide-react'
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FeatureCard } from '../components/FeatureCard';
 import { HOME_HIGHLIGHTS } from '../data/features';
-import { BASIC_FEATURES, BASIC_MONTHLY_PRICE, TRIAL_DURATION_DAYS, formatInr } from '../data/pricing';
+import { SHARED_PLAN_FEATURES, STARTS_FROM_MONTHLY, TRIAL_DURATION_DAYS, formatInr } from '../data/pricing';
 
 const TRUST_ITEMS = [
   { icon: Zap, label: 'Set up in under 10 minutes' },
@@ -130,12 +130,14 @@ export function Home() {
               Simple pricing
             </span>
             <h2 className="mt-3 text-3xl font-bold text-ink">
-              {formatInr(BASIC_MONTHLY_PRICE)}
+              Starts from {formatInr(STARTS_FROM_MONTHLY)}
               <span className="text-base font-medium text-ink-soft">/month</span>
             </h2>
-            <p className="mt-2 text-ink-soft">Everything you need to get started, with a {TRIAL_DURATION_DAYS}-day free trial.</p>
+            <p className="mt-2 text-ink-soft">
+              Starter, Growth, or Scale by table size — plus a {TRIAL_DURATION_DAYS}-day free trial.
+            </p>
             <ul className="mt-6 space-y-3">
-              {BASIC_FEATURES.slice(0, 4).map((item) => (
+              {SHARED_PLAN_FEATURES.slice(0, 4).map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-ink-soft">
                   <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" />
                   {item}

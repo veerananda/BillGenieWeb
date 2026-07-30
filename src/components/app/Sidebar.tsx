@@ -53,7 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Kitchen',            to: '/app/kitchen',   icon: Flame,           roles: ['admin', 'manager', 'chef'],  subscriptionKey: 'kitchen' },
   { label: 'Sales',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
   { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
-  { label: 'Expenses',           to: '/app/expenses',  icon: Wallet,          roles: ['admin', 'manager'] },
+  { label: 'Expenses',           to: '/app/expenses',  icon: Wallet,          roles: ['admin', 'manager'], subscriptionKey: 'expenses' },
   { label: 'Ingredient Mgmt',    to: '/app/ingredient-management', icon: ChefHat,     inventoryKind: 'ingredients' },
   { label: 'Inventory',          to: '/app/inventory-management',   icon: Package,     inventoryKind: 'inventory' },
   { label: 'Stock Refill',       to: '/app/stock-refill',           icon: PackagePlus, inventoryKind: 'stock' },
@@ -87,6 +87,7 @@ export function Sidebar({ onClose }: Props) {
     // Subscription gates
     if (item.subscriptionKey === 'dine_in_enabled' && !limits.dine_in_enabled) return false;
     if (item.subscriptionKey === 'counter_enabled' && !limits.counter_enabled) return false;
+    if (item.subscriptionKey === 'expenses' && !limits.expenses && !limits.is_legacy) return false;
     if (item.subscriptionKey === 'kitchen' && !limits.kitchen_dine_in && !limits.kitchen_counter) return false;
 
     // Inventory pages: subscription must be enabled, then role-specific access
