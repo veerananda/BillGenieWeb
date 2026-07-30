@@ -54,12 +54,24 @@ export interface RegisterData {
   phone: string;
   password: string;
   login_id: string;
-  start_mode: 'trial' | 'paid';
+  start_mode: 'trial' | 'paid' | 'custom_request';
   address?: string;
   city?: string;
   state?: string;
   cuisine?: string;
   subscription?: import('../data/pricing').SubscriptionSelection;
+  custom_deal_request?: {
+    max_tables: number;
+    extra_staff: number;
+    extra_chefs: number;
+    extra_managers: number;
+    inventory: boolean;
+    expenses: boolean;
+    history_extended: boolean;
+    billing_cycle: 'monthly' | 'annual';
+    notes?: string;
+    contact_phone?: string;
+  };
 }
 
 export interface AuthResponse {
@@ -204,6 +216,12 @@ export interface SubscriptionRenewalQuote {
   subscription_phase?: string;
   requires_plan_selection?: boolean;
   requires_payment?: boolean;
+  awaiting_custom_deal?: boolean;
+  custom_deal_request?: {
+    max_tables: number;
+    status?: string;
+    notes?: string;
+  };
   current_selection?: import('../data/pricing').SubscriptionSelection;
 }
 
@@ -1254,6 +1272,21 @@ class APIClient {
   ): Promise<SubscriptionRenewalOrder> {
     const body = selection ? { selection } : undefined;
     return this.makeRequest('/subscription/create-order', 'POST', body);
+  }
+
+  async requestCustomDeal(data: {
+    max_tables: number;
+    extra_staff: number;
+    extra_chefs: number;
+    extra_managers: number;
+    inventory: boolean;
+    expenses: boolean;
+    history_extended: boolean;
+    billing_cycle: 'monthly' | 'annual';
+    notes?: string;
+    contact_phone?: string;
+  }): Promise<{ message: string; awaiting_custom_deal: boolean }> {
+    return this.makeRequest('/subscription/request-custom-deal', 'POST', data);
   }
 
   async verifySubscriptionPayment(data: {
