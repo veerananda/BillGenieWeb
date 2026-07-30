@@ -24,7 +24,7 @@ import {
   type CityTier,
   priceForTier,
 } from '../../data/pricing';
-import { INDIA_LOCATION_OPTIONS, citiesForState, formatCityTier, resolveCityTier } from '../../data/indiaLocations';
+import { INDIA_LOCATION_OPTIONS, citiesForState, resolveCityTier } from '../../data/indiaLocations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -373,7 +373,6 @@ function PlanStep({
           {subscription.billing_cycle === 'annual' ? 'Estimated after trial' : 'Estimated monthly (excl. 18% GST)'}
         </p>
         <p className="mt-1 text-2xl font-extrabold text-primary">{displayTotal}</p>
-        <p className="mt-1 text-xs text-gray-500">Location tier: {formatCityTier(cityTier)}</p>
         {subscription.operation_mode !== 'counter' && (
           <p className="mt-1 text-xs text-gray-600">
             Plan includes {quote.bundled_staff} staff and {quote.bundled_managers} manager{quote.bundled_managers === 1 ? '' : 's'} for {quote.selection.max_tables} tables.
@@ -568,9 +567,6 @@ export function Register() {
                       <option key={item.name} value={item.name}>{item.name}</option>
                     ))}
                   </select>
-                  {step1.city ? (
-                    <p className="mt-1.5 text-xs text-gray-500">Detected pricing tier: {formatCityTier(cityTier)}</p>
-                  ) : null}
                 </div>
                 <div>
                   <label className={labelCls}>Address <span className="text-xs font-normal text-gray-400">(optional)</span></label>
