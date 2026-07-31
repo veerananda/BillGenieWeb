@@ -102,9 +102,9 @@ export function Sidebar({ onClose }: Props) {
     return true;
   }
 
-  function handleLogout() {
+  async function handleLogout() {
     wsService.disconnect();
-    apiClient.logout();
+    await apiClient.logout();
     dispatch(clearAuth());
     dispatch(clearOrders());
     dispatch(clearMenu());

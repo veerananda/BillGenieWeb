@@ -9,7 +9,6 @@ import {
   clearAccessToken,
   clearLegacyRefreshToken,
   getAccessToken,
-  getLegacyRefreshToken,
   setAccessToken,
 } from '../lib/tokenStorage';
 
@@ -450,13 +449,14 @@ class APIClient {
 
   /** Clear auth and redirect to login with an honest reason code. */
   forceClientLogout(reason: LogoutReason): void {
-    this.logout();
-    try {
-      sessionStorage.setItem('logout_reason', reason);
-    } catch {
-      // ignore storage failures
-    }
-    window.location.replace('/login');
+    void this.logout({ skipServer: false }).finally(() => {
+      try {
+        sessionStorage.setItem('logout_reason', reason);
+      } catch {
+        // ignore storage failures
+      }
+      window.location.replace('/login');
+    });
   }
 
   private async makeRequest(
@@ -643,7 +643,14 @@ class APIClient {
     return this.makeRequest(`/auth/resend-verification?${query}`, 'POST');
   }
 
-  logout(): void {
+  async logout(options?: { skipServer?: boolean }): Promise<void> {
+    if (!options?.skipServer) {
+      try {
+        await this.makeRequest('/auth/logout', 'POST', undefined, { skipRetry: true, silent: true });
+      } catch {
+        // Best-effort — always clear client state and cookie-clear attempt already done server-side when reachable.
+      }
+    }
     clearAccessToken();
     clearLegacyRefreshToken();
     [RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
@@ -684,10 +691,9 @@ class APIClient {
     const maxAttempts = 3;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        // Prefer httpOnly cookie; send legacy body token only during migration.
-        const legacy = getLegacyRefreshToken();
-        const body = legacy ? { refresh_token: legacy } : {};
-        const r = await this.makeRequest('/auth/refresh', 'POST', body, { skipRetry: true });
+        // Prefer httpOnly refresh cookie only — never send JS-readable refresh tokens.
+        clearLegacyRefreshToken();
+        const r = await this.makeRequest('/auth/refresh', 'POST', {}, { skipRetry: true });
         const authData = (r?.data ?? r) as AuthResponse;
         this.storeAuthData(authData);
         clearLegacyRefreshToken();

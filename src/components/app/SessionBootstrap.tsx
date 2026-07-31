@@ -37,7 +37,7 @@ export function SessionBootstrap({ children }: { children: ReactNode }) {
         dispatch(setAuth(auth));
       } else if (apiClient.wasLastRefreshAuthFailure()) {
         // Drop stale local session markers only when the cookie was rejected.
-        apiClient.logout();
+        void apiClient.logout({ skipServer: true });
         dispatch(clearAuth());
       }
       setReady(true);

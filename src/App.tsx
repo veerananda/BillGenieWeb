@@ -96,15 +96,78 @@ function App() {
       >
         <Route index element={<AppHomeRedirect />} />
         <Route path="dashboard" element={<AppHomeRedirect />} />
-        <Route path="menu" element={<LazyAppPage><Menu /></LazyAppPage>} />
-        <Route path="orders" element={<LazyAppPage><Orders /></LazyAppPage>} />
-        <Route path="counter" element={<LazyAppPage><Counter /></LazyAppPage>} />
-        <Route path="kitchen" element={<LazyAppPage><KitchenRoute><Kitchen /></KitchenRoute></LazyAppPage>} />
-        <Route path="sales" element={<LazyAppPage><Sales /></LazyAppPage>} />
-        <Route path="history" element={<LazyAppPage><History /></LazyAppPage>} />
-        <Route path="expenses" element={<LazyAppPage><Expenses /></LazyAppPage>} />
-        <Route path="staff" element={<LazyAppPage><Staff /></LazyAppPage>} />
-        <Route path="profile" element={<LazyAppPage><Profile /></LazyAppPage>} />
+        <Route
+          path="menu"
+          element={
+            <ProtectedRoute roles={['admin', 'manager']}>
+              <LazyAppPage><Menu /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="orders"
+          element={
+            <ProtectedRoute roles={['admin', 'manager', 'staff']}>
+              <LazyAppPage><Orders /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="counter"
+          element={
+            <ProtectedRoute roles={['admin', 'manager', 'staff']}>
+              <LazyAppPage><Counter /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="kitchen"
+          element={
+            <ProtectedRoute roles={['admin', 'manager', 'chef']}>
+              <LazyAppPage><KitchenRoute><Kitchen /></KitchenRoute></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="sales"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <LazyAppPage><Sales /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="history"
+          element={
+            <ProtectedRoute roles={['admin', 'manager']}>
+              <LazyAppPage><History /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="expenses"
+          element={
+            <ProtectedRoute roles={['admin', 'manager']}>
+              <LazyAppPage><Expenses /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="staff"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <LazyAppPage><Staff /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="profile"
+          element={
+            <ProtectedRoute roles={['admin', 'manager']}>
+              <LazyAppPage><Profile /></LazyAppPage>
+            </ProtectedRoute>
+          }
+        />
         <Route path="printers" element={<LazyAppPage><Printers /></LazyAppPage>} />
         <Route path="ingredient-management" element={<LazyAppPage><IngredientManagement /></LazyAppPage>} />
         <Route path="inventory-management" element={<LazyAppPage><InventoryManagement /></LazyAppPage>} />
