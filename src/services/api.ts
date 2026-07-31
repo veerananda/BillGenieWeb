@@ -54,24 +54,23 @@ export interface RegisterData {
   phone: string;
   password: string;
   login_id: string;
-  start_mode: 'trial' | 'paid' | 'custom_request';
+  start_mode: 'trial' | 'paid';
   address?: string;
   city?: string;
   state?: string;
   cuisine?: string;
   subscription?: import('../data/pricing').SubscriptionSelection;
-  custom_deal_request?: {
-    max_tables: number;
-    extra_staff: number;
-    extra_chefs: number;
-    extra_managers: number;
-    inventory: boolean;
-    expenses: boolean;
-    history_extended: boolean;
-    billing_cycle: 'monthly' | 'annual';
-    notes?: string;
-    contact_phone?: string;
-  };
+}
+
+export interface CustomPlanLeadRequest {
+  name: string;
+  phone: string;
+  restaurant_name: string;
+  address: string;
+  city?: string;
+  state?: string;
+  notes?: string;
+  source?: 'app' | 'web';
 }
 
 export interface AuthResponse {
@@ -594,6 +593,15 @@ class APIClient {
 
   async register(data: RegisterData): Promise<RegisterResponse> {
     return this.makeRequest('/auth/register', 'POST', data);
+  }
+
+  async submitCustomPlanLead(
+    data: CustomPlanLeadRequest
+  ): Promise<{ message: string }> {
+    return this.makeRequest('/public/custom-plan-leads', 'POST', {
+      ...data,
+      source: data.source || 'web',
+    });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
