@@ -65,6 +65,11 @@ function CopyButton({ text }: { text: string }) {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => {
+        navigator.clipboard.writeText('').catch(() => {
+          // ignore — clipboard clear is best-effort
+        });
+      }, 30_000);
     });
   }
 
