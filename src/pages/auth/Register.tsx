@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard, ChevronLeft } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import {
   TRIAL_DURATION_DAYS,
@@ -10,11 +10,8 @@ import {
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
   PLAN_BANDS,
-  PLAN_MONTHLY_BY_TIER,
-  tablesForPlanBand,
   type SubscriptionSelection,
   type CityTier,
-  type PlanBand,
 } from '../../data/pricing';
 import { PlanPicker } from '../../components/app/SubscriptionPaywall';
 import { INDIA_LOCATION_OPTIONS, citiesForState, resolveCityTier } from '../../data/indiaLocations';
@@ -188,12 +185,8 @@ export function Register() {
     setStep((s) => s - 1);
   }
 
-  function choosePlanBand(band: PlanBand) {
+  function goToSelfServe() {
     setError(null);
-    setSubscription((prev) => ({
-      ...prev,
-      max_tables: tablesForPlanBand(band),
-    }));
     setStep(0);
     setPath('self_serve');
   }
@@ -263,84 +256,101 @@ export function Register() {
 
   const inputCls = 'mt-1.5 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition';
   const labelCls = 'block text-sm font-medium text-gray-900';
+  const showSubpageHeader = path === 'self_serve' || path === 'custom_lead';
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10">
       <div className="mx-auto w-full max-w-lg">
         <div className="rounded-2xl border border-gray-200 bg-white px-8 py-10 shadow-sm">
 
-          {/* Logo */}
-          <div className="flex flex-col items-center gap-2 mb-6">
-            <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
-            <span className="text-xl font-bold text-gray-900">BillGenie</span>
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-900">
-                {path === 'custom_lead' || path === 'lead_done'
-                  ? 'Custom plan'
-                  : path === 'plans'
-                    ? 'Choose a plan'
-                    : 'Create your account'}
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                {path === 'plans'
-                  ? 'Glance at our plans — or ask BillGenie for a custom one'
-                  : path === 'custom_lead'
-                    ? 'Leave your details — no account created'
-                    : path === 'lead_done'
-                      ? 'We received your request'
-                      : `${TRIAL_DURATION_DAYS}-day free trial — no credit card required`}
-              </p>
-            </div>
-          </div>
-
-          {path === 'plans' && (
-            <div className="space-y-3">
-              {PLAN_BANDS.map((band) => {
-                const fromPrice = PLAN_MONTHLY_BY_TIER[band.id].tier_3;
-                return (
-                  <button
-                    key={band.id}
-                    type="button"
-                    onClick={() => choosePlanBand(band.id)}
-                    className="flex w-full flex-col items-start rounded-xl border-2 border-gray-200 bg-white p-4 text-left transition hover:border-primary/40"
-                  >
-                    <p className="text-sm font-bold text-gray-900">{band.title}</p>
-                    <p className="mt-1 text-xs text-gray-500">{band.blurb}</p>
-                    <p className="mt-2 text-sm font-semibold text-primary">
-                      From {formatInr(fromPrice)}/mo
-                    </p>
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setPath('custom_lead');
-                }}
-                className="flex w-full flex-col items-start rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-left transition hover:border-primary/40"
-              >
-                <p className="text-sm font-bold text-gray-900">Need a custom plan?</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  More than 25 tables or a negotiated rate — BillGenie will connect with you.
-                </p>
-              </button>
-              {error && <ErrorBox>{error}</ErrorBox>}
-            </div>
-          )}
-
-          {path === 'custom_lead' && (
-            <form onSubmit={handleLeadSubmit} className="space-y-4">
+          {showSubpageHeader ? (
+            <div className="mb-6 flex items-center">
               <button
                 type="button"
                 onClick={() => {
                   setError(null);
                   setPath('plans');
                 }}
-                className="text-sm font-semibold text-primary"
+                aria-label="Back to plans"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-primary transition hover:bg-primary/5"
               >
-                ← Back to plans
+                <ChevronLeft size={24} />
               </button>
+              <h1 className="flex-1 pr-10 text-center text-xl font-bold text-gray-900">
+                {path === 'custom_lead' ? 'Custom plan' : 'Create account'}
+              </h1>
+            </div>
+          ) : (
+            <div className="mb-6 flex flex-col items-center gap-2">
+              <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
+              <span className="text-xl font-bold text-gray-900">BillGenie</span>
+              <div className="text-center">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {path === 'lead_done' ? 'Custom plan' : 'Our plans'}
+                </h1>
+                <p className="mt-1 text-sm text-gray-500">
+                  {path === 'lead_done'
+                    ? 'We received your request'
+                    : 'See what each plan includes, then register. Pricing depends on your city and is confirmed later.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {path === 'custom_lead' ? (
+            <p className="mb-6 text-center text-sm text-gray-500">
+              Leave your details — no account created
+            </p>
+          ) : null}
+
+          {path === 'plans' && (
+            <div className="space-y-3">
+              {PLAN_BANDS.map((band) => (
+                <div
+                  key={band.id}
+                  className="flex w-full flex-col items-start rounded-2xl border border-gray-200 bg-white p-4 text-left"
+                >
+                  <p className="text-base font-bold text-gray-900">{band.title}</p>
+                  <p className="mt-2 text-xs font-semibold text-primary">{band.bestFor}</p>
+                  <ul className="mt-2 space-y-1">
+                    {band.details.map((line) => (
+                      <li key={line} className="text-sm text-gray-600">
+                        • {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setPath('custom_lead');
+                }}
+                className="flex w-full flex-col items-start rounded-2xl border-2 border-sky-500 bg-sky-50 p-4 text-left transition hover:border-sky-600 hover:bg-sky-50/80"
+              >
+                <p className="text-base font-bold text-sky-800">Need a custom plan?</p>
+                <p className="mt-1 text-sm text-sky-700">
+                  More than 25 tables, multi-location, or a negotiated commercial deal — leave your
+                  details and BillGenie will connect. No account is created.
+                </p>
+              </button>
+              {error && <ErrorBox>{error}</ErrorBox>}
+              <p className="pt-2 text-center text-sm text-gray-600">
+                Ready to continue? Click Register to create your restaurant account.
+              </p>
+              <button
+                type="button"
+                onClick={goToSelfServe}
+                className="flex w-full items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-dark"
+              >
+                Register
+              </button>
+            </div>
+          )}
+
+          {path === 'custom_lead' && (
+            <form onSubmit={handleLeadSubmit} className="space-y-4">
               <div>
                 <label className={labelCls}>Your name <span className="text-red-500">*</span></label>
                 <input
@@ -420,16 +430,6 @@ export function Register() {
           <StepIndicator current={step} />
 
           <div className="mt-8">
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setPath('plans');
-              }}
-              className="mb-4 text-sm font-semibold text-primary"
-            >
-              ← Back to plans
-            </button>
             {/* ── Step 0: Restaurant info ── */}
             {step === 0 && (
               <div className="space-y-4">

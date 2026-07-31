@@ -62,24 +62,50 @@ export const PLAN_BANDS: Array<{
   title: string;
   tables: number;
   blurb: string;
+  bestFor: string;
+  details: string[];
 }> = [
   {
     id: 'starter',
     title: 'Starter',
     tables: PLAN_STARTER_TABLES,
     blurb: 'Up to 10 tables · 2 staff · 1 chef · 1 manager',
+    bestFor: 'Small cafés and compact dining rooms',
+    details: [
+      'Up to 10 dine-in tables',
+      'Team: 1 admin · 1 manager · 2 staff · 1 chef',
+      'Dine-in + counter (takeaway) + kitchen screens',
+      'Unlimited menu items, billing & sales summary',
+      'Order history for the last 90 days',
+    ],
   },
   {
     id: 'growth',
     title: 'Growth',
     tables: PLAN_GROWTH_TABLES,
     blurb: 'Up to 18 tables · 4 staff · 2 chefs · 1 manager',
+    bestFor: 'Busy mid-size restaurants with more floor staff',
+    details: [
+      'Up to 18 dine-in tables',
+      'Team: 1 admin · 1 manager · 4 staff · 2 chefs',
+      'Dine-in + counter (takeaway) + kitchen screens',
+      'Unlimited menu items, billing & sales summary',
+      'Order history for the last 90 days',
+    ],
   },
   {
     id: 'scale',
     title: 'Scale',
     tables: PLAN_SCALE_TABLES,
     blurb: 'Up to 25 tables · 5 staff · 3 chefs · 1 manager',
+    bestFor: 'Larger dining floors needing more kitchen coverage',
+    details: [
+      'Up to 25 dine-in tables',
+      'Team: 1 admin · 1 manager · 5 staff · 3 chefs',
+      'Dine-in + counter (takeaway) + kitchen screens',
+      'Unlimited menu items, billing & sales summary',
+      'Order history for the last 90 days',
+    ],
   },
 ];
 
