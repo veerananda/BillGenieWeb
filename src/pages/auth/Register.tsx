@@ -9,8 +9,12 @@ import {
   formatInr,
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
+  PLAN_BANDS,
+  PLAN_MONTHLY_BY_TIER,
+  tablesForPlanBand,
   type SubscriptionSelection,
   type CityTier,
+  type PlanBand,
 } from '../../data/pricing';
 import { PlanPicker } from '../../components/app/SubscriptionPaywall';
 import { INDIA_LOCATION_OPTIONS, citiesForState, resolveCityTier } from '../../data/indiaLocations';
@@ -24,7 +28,8 @@ function generateLoginId(): string {
 
 // ── Step types ────────────────────────────────────────────────────────────────
 
-type StartMode = 'trial' | 'paid' | 'custom_request';
+type StartMode = 'trial' | 'paid';
+type RegisterPath = 'plans' | 'self_serve' | 'custom_lead' | 'lead_done';
 
 interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
@@ -104,11 +109,19 @@ export function Register() {
   const navigate = useNavigate();
 
   const [step, setStep] = useState(0);
+  const [path, setPath] = useState<RegisterPath>('plans');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [leadMessage, setLeadMessage] = useState('');
+  const [lead, setLead] = useState({
+    name: '',
+    phone: '',
+    restaurantName: '',
+    address: '',
+  });
 
   const [step1, setStep1] = useState<Step1>({ restaurantName: '', cuisine: '', city: '', address: '', state: '' });
   const [step2, setStep2] = useState<Step2>({ ownerName: '', email: '', phone: '' });
@@ -168,7 +181,47 @@ export function Register() {
 
   function goBack() {
     setError(null);
+    if (step === 0) {
+      setPath('plans');
+      return;
+    }
     setStep((s) => s - 1);
+  }
+
+  function choosePlanBand(band: PlanBand) {
+    setError(null);
+    setSubscription((prev) => ({
+      ...prev,
+      max_tables: tablesForPlanBand(band),
+    }));
+    setStep(0);
+    setPath('self_serve');
+  }
+
+  async function handleLeadSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    if (!lead.name.trim()) { setError('Name is required.'); return; }
+    if (!lead.phone.trim()) { setError('Phone number is required.'); return; }
+    if (!lead.restaurantName.trim()) { setError('Restaurant name is required.'); return; }
+    if (!lead.address.trim()) { setError('Address is required.'); return; }
+
+    setLoading(true);
+    try {
+      const response = await apiClient.submitCustomPlanLead({
+        name: lead.name.trim(),
+        phone: lead.phone.trim(),
+        restaurant_name: lead.restaurantName.trim(),
+        address: lead.address.trim(),
+        source: 'web',
+      });
+      setLeadMessage(response?.message || 'Thanks — BillGenie will contact you shortly.');
+      setPath('lead_done');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit your request.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -194,30 +247,11 @@ export function Register() {
         password,
         start_mode: startMode,
         subscription: startMode === 'paid' ? subscription : undefined,
-        custom_deal_request:
-          startMode === 'custom_request'
-            ? {
-                max_tables: 26,
-                extra_staff: 0,
-                extra_chefs: 0,
-                extra_managers: 0,
-                inventory: false,
-                expenses: false,
-                history_extended: false,
-                billing_cycle: 'monthly',
-                notes: 'Requested via web register — BillGenie to follow up',
-                contact_phone: step2.phone.trim() || undefined,
-              }
-            : undefined,
       });
-      const customMsg =
-        startMode === 'custom_request'
-          ? ` BillGenie will get in touch with you shortly about a commercial plan.`
-          : '';
       navigate('/login', {
         replace: true,
         state: {
-          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}.${customMsg} Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
+          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}. Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
         },
       });
     } catch (err) {
@@ -240,15 +274,162 @@ export function Register() {
             <img src="/logo.png" alt="BillGenie" className="h-14 w-14 rounded-full object-cover shadow-md" />
             <span className="text-xl font-bold text-gray-900">BillGenie</span>
             <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
-              <p className="mt-1 text-sm text-gray-500">{TRIAL_DURATION_DAYS}-day free trial — no credit card required</p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {path === 'custom_lead' || path === 'lead_done'
+                  ? 'Custom plan'
+                  : path === 'plans'
+                    ? 'Choose a plan'
+                    : 'Create your account'}
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">
+                {path === 'plans'
+                  ? 'Glance at our plans — or ask BillGenie for a custom one'
+                  : path === 'custom_lead'
+                    ? 'Leave your details — no account created'
+                    : path === 'lead_done'
+                      ? 'We received your request'
+                      : `${TRIAL_DURATION_DAYS}-day free trial — no credit card required`}
+              </p>
             </div>
           </div>
 
+          {path === 'plans' && (
+            <div className="space-y-3">
+              {PLAN_BANDS.map((band) => {
+                const fromPrice = PLAN_MONTHLY_BY_TIER[band.id].tier_3;
+                return (
+                  <button
+                    key={band.id}
+                    type="button"
+                    onClick={() => choosePlanBand(band.id)}
+                    className="flex w-full flex-col items-start rounded-xl border-2 border-gray-200 bg-white p-4 text-left transition hover:border-primary/40"
+                  >
+                    <p className="text-sm font-bold text-gray-900">{band.title}</p>
+                    <p className="mt-1 text-xs text-gray-500">{band.blurb}</p>
+                    <p className="mt-2 text-sm font-semibold text-primary">
+                      From {formatInr(fromPrice)}/mo
+                    </p>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setPath('custom_lead');
+                }}
+                className="flex w-full flex-col items-start rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-left transition hover:border-primary/40"
+              >
+                <p className="text-sm font-bold text-gray-900">Need a custom plan?</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  More than 25 tables or a negotiated rate — BillGenie will connect with you.
+                </p>
+              </button>
+              {error && <ErrorBox>{error}</ErrorBox>}
+            </div>
+          )}
+
+          {path === 'custom_lead' && (
+            <form onSubmit={handleLeadSubmit} className="space-y-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setPath('plans');
+                }}
+                className="text-sm font-semibold text-primary"
+              >
+                ← Back to plans
+              </button>
+              <div>
+                <label className={labelCls}>Your name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={lead.name}
+                  onChange={(e) => setLead((p) => ({ ...p, name: e.target.value }))}
+                  className={inputCls}
+                  placeholder="Full name"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Phone <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  value={lead.phone}
+                  onChange={(e) => setLead((p) => ({ ...p, phone: e.target.value }))}
+                  className={inputCls}
+                  placeholder="10-digit mobile number"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Restaurant name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={lead.restaurantName}
+                  onChange={(e) => setLead((p) => ({ ...p, restaurantName: e.target.value }))}
+                  className={inputCls}
+                  placeholder="e.g. Spice Garden"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Address <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={lead.address}
+                  onChange={(e) => setLead((p) => ({ ...p, address: e.target.value }))}
+                  className={inputCls}
+                  placeholder="Street, area, city"
+                />
+              </div>
+              {error && <ErrorBox>{error}</ErrorBox>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {loading ? <><Loader2 size={15} className="animate-spin" />Sending…</> : 'Request a call from BillGenie'}
+              </button>
+            </form>
+          )}
+
+          {path === 'lead_done' && (
+            <div className="space-y-4 text-center">
+              <p className="text-sm text-gray-700">{leadMessage}</p>
+              <p className="text-sm text-gray-500">
+                No account was created. We will reach you on the phone number you shared.
+              </p>
+              <Link
+                to="/login"
+                className="inline-flex rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Back to login
+              </Link>
+              <button
+                type="button"
+                onClick={() => setPath('plans')}
+                className="block w-full text-sm font-semibold text-primary"
+              >
+                See plans again
+              </button>
+            </div>
+          )}
+
+          {path === 'self_serve' && (
+            <>
           {/* Stepper */}
           <StepIndicator current={step} />
 
           <div className="mt-8">
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPath('plans');
+              }}
+              className="mb-4 text-sm font-semibold text-primary"
+            >
+              ← Back to plans
+            </button>
             {/* ── Step 0: Restaurant info ── */}
             {step === 0 && (
               <div className="space-y-4">
@@ -348,45 +529,29 @@ export function Register() {
                     </button>
 
                     {/* Subscribe now card */}
-                    <button
-                      type="button"
-                      onClick={() => setStartMode('paid')}
-                      className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
-                        startMode === 'paid'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'paid' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
-                        <CreditCard size={18} />
-                      </div>
-                      <p className={`mt-3 text-sm font-bold ${startMode === 'paid' ? 'text-primary' : 'text-gray-900'}`}>
-                        Subscribe now
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">Pick a plan &amp; start today</p>
-                      {startMode === 'paid' && (
-                        <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
-                          <Check size={11} strokeWidth={3} className="text-white" />
-                        </div>
-                      )}
-                    </button>
-                  </div>
                   <button
                     type="button"
-                    onClick={() => setStartMode('custom_request')}
-                    className={`mt-3 flex w-full flex-col items-start rounded-xl border-2 p-4 text-left transition ${
-                      startMode === 'custom_request'
+                    onClick={() => setStartMode('paid')}
+                    className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
+                      startMode === 'paid'
                         ? 'border-primary bg-primary/5'
                         : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
-                    <p className={`text-sm font-bold ${startMode === 'custom_request' ? 'text-primary' : 'text-gray-900'}`}>
-                      Request custom plan
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'paid' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                      <CreditCard size={18} />
+                    </div>
+                    <p className={`mt-3 text-sm font-bold ${startMode === 'paid' ? 'text-primary' : 'text-gray-900'}`}>
+                      Subscribe now
                     </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      More than 25 tables or a negotiated rate — BillGenie will contact you shortly.
-                    </p>
+                    <p className="mt-1 text-xs text-gray-500">Pick a plan &amp; start today</p>
+                    {startMode === 'paid' && (
+                      <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
+                        <Check size={11} strokeWidth={3} className="text-white" />
+                      </div>
+                    )}
                   </button>
+                  </div>
                 </div>
 
                 {/* Trial: feature list */}
@@ -407,16 +572,6 @@ export function Register() {
                 {/* Paid: full plan picker */}
                 {startMode === 'paid' && (
                   <PlanStep subscription={subscription} onChange={setSubscription} cityTier={cityTier} />
-                )}
-
-                {startMode === 'custom_request' && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
-                    <p className="text-sm font-semibold text-gray-900">Custom commercial plan</p>
-                    <p className="text-sm text-gray-600">
-                      No plan details needed here — BillGenie will get in touch with you shortly using
-                      your register phone and email. After we confirm pricing, you can pay from the app.
-                    </p>
-                  </div>
                 )}
 
                 <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />
@@ -515,6 +670,8 @@ export function Register() {
               </form>
             )}
           </div>
+            </>
+          )}
 
           <p className="mt-6 text-center text-sm text-gray-500">
             Already have an account?{' '}

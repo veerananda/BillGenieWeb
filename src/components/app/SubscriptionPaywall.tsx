@@ -351,7 +351,7 @@ export function PlanPicker({
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Choose your plan</p>
         <p className="mb-2 text-xs text-gray-500">
-          Pick a size band by table capacity. Need more than 25 tables? Choose “Request custom plan”
+          Pick a size band by table capacity. Need more than 25 tables? Ask BillGenie for a custom plan from signup.
           at registration for a commercial deal.
         </p>
         <div className="space-y-2">
