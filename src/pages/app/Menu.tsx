@@ -50,33 +50,87 @@ interface PortionDraft {
   label: string;
   price: string;
   recipe_scale: string;
+  /** Channel id → price text for this extra portion. */
+  channel_prices: Record<string, string>;
 }
 
-function isRegularLabel(label: string) {
-  return label.trim().toLowerCase() === 'regular';
+const DEFAULT_PORTION_LABEL = 'Full';
+
+function isDefaultPortionLabel(label: string) {
+  const t = label.trim().toLowerCase();
+  return !t || t === 'regular' || t === 'full';
+}
+
+function parseChannelPriceMap(
+  channels: MenuChannelId[],
+  prices: Record<string, string> | undefined,
+  fallback: number
+): ChannelPrices {
+  const raw: Record<string, number> = {};
+  for (const ch of channels) {
+    const text = prices?.[ch];
+    if (text !== undefined && String(text).trim() !== '') {
+      const n = parseFloat(String(text));
+      if (Number.isFinite(n) && n >= 0) raw[ch] = n;
+    }
+  }
+  return normalizeChannelPrices(channels, raw, fallback);
+}
+
+function applyChannelToggleToPortions(
+  portions: PortionDraft[],
+  channel: MenuChannelId,
+  enabled: boolean,
+  basePrice: number
+): PortionDraft[] {
+  return portions.map((portion) => {
+    const next = { ...(portion.channel_prices || {}) };
+    if (!enabled) {
+      delete next[channel];
+      return { ...portion, channel_prices: next };
+    }
+    if (next[channel] === undefined || String(next[channel]).trim() === '') {
+      next[channel] = portion.price || (basePrice >= 0 ? String(basePrice) : '0');
+    }
+    return { ...portion, channel_prices: next };
+  });
 }
 
 function buildVariantsPayload(
   price: number,
   portions: PortionDraft[],
+  channels: MenuChannelId[],
+  regularChannelPrices: ChannelPrices,
   regularId?: string
 ): MenuVariantWrite[] {
   const extras = portions
-    .map((p, i) => ({
-      id: p.id,
-      label: p.label.trim(),
-      price: parseFloat(p.price),
-      recipe_scale: parseFloat(p.recipe_scale) || 1,
-      sort_order: i + 1,
-    }))
-    .filter((p) => p.label && !isNaN(p.price) && p.price >= 0);
+    .map((p, i) => {
+      const label = p.label.trim();
+      const portionPrice = parseFloat(p.price);
+      const scale = parseFloat(p.recipe_scale) || 1;
+      const unitPrice = Number.isFinite(portionPrice) && portionPrice >= 0 ? portionPrice : NaN;
+      return {
+        id: p.id,
+        label,
+        price: unitPrice,
+        recipe_scale: scale,
+        sort_order: i + 1,
+        channel_prices: parseChannelPriceMap(
+          channels,
+          p.channel_prices,
+          Number.isFinite(unitPrice) ? unitPrice : price
+        ),
+      };
+    })
+    .filter((p) => p.label && !isDefaultPortionLabel(p.label) && !isNaN(p.price) && p.price >= 0);
 
   return [
     {
       ...(regularId ? { id: regularId } : {}),
-      label: 'Regular',
+      label: DEFAULT_PORTION_LABEL,
       price,
       recipe_scale: 1,
+      channel_prices: normalizeChannelPrices(channels, regularChannelPrices, price),
       is_default: true,
       sort_order: 0,
     },
@@ -85,6 +139,7 @@ function buildVariantsPayload(
       label: p.label,
       price: p.price,
       recipe_scale: p.recipe_scale,
+      channel_prices: p.channel_prices,
       is_default: false,
       sort_order: p.sort_order,
     })),
@@ -354,30 +409,48 @@ export function Menu() {
     const variants = [...(item.variants ?? [])].sort((a, b) => a.sort_order - b.sort_order);
     const defaultVariant =
       variants.find((v) => v.is_default) ??
-      variants.find((v) => isRegularLabel(v.label)) ??
+      variants.find((v) => isDefaultPortionLabel(v.label)) ??
       variants[0];
     setItemPrice(String(defaultVariant?.price ?? item.price));
     setItemRegularVariantId(
-      defaultVariant && (defaultVariant.is_default || isRegularLabel(defaultVariant.label))
+      defaultVariant && (defaultVariant.is_default || isDefaultPortionLabel(defaultVariant.label))
         ? defaultVariant.id
         : undefined
     );
+    const channels = normalizeMenuChannels(item.available_channels);
+    const base = Number(defaultVariant?.price ?? item.price) || 0;
     setItemPortions(
       variants
-        .filter((v) => v.id !== defaultVariant?.id && !isRegularLabel(v.label))
-        .map((v) => ({
-          id: v.id,
-          label: v.label,
-          price: String(v.price),
-          recipe_scale: String(v.recipe_scale ?? 1),
-        }))
+        .filter((v) => v.id !== defaultVariant?.id && !isDefaultPortionLabel(v.label))
+        .map((v) => {
+          const map = v.channel_prices;
+          const portionBase = Number(v.price) || 0;
+          const channel_prices: Record<string, string> = {};
+          for (const ch of channels) {
+            const fromVariant = map?.[ch];
+            channel_prices[ch] =
+              typeof fromVariant === 'number' && Number.isFinite(fromVariant)
+                ? String(fromVariant)
+                : String(portionBase || '');
+          }
+          return {
+            id: v.id,
+            label: v.label,
+            price: String(v.price),
+            recipe_scale: String(v.recipe_scale ?? 1),
+            channel_prices,
+          };
+        })
     );
     setItemVeg(item.is_veg);
     setItemAvailable(item.is_available);
-    const channels = normalizeMenuChannels(item.available_channels);
-    const base = Number(defaultVariant?.price ?? item.price) || 0;
     setItemChannels(channels);
-    setItemChannelPrices(normalizeChannelPrices(channels, item.channel_prices, base));
+    // Prefer Full variant channel_prices when present; fall back to item-level map.
+    const defaultChannelMap =
+      defaultVariant?.channel_prices && Object.keys(defaultVariant.channel_prices).length > 0
+        ? defaultVariant.channel_prices
+        : item.channel_prices;
+    setItemChannelPrices(normalizeChannelPrices(channels, defaultChannelMap, base));
     setItemReadilyAvailable(item.readily_available ?? false);
     setItemTaxable(item.is_taxable !== false);
     setItemModalError('');
@@ -404,12 +477,21 @@ export function Menu() {
       const portionPrice = parseFloat(portion.price);
       const scale = parseFloat(portion.recipe_scale);
       if (!label) { setItemModalError('Each portion needs a label.'); return; }
-      if (isRegularLabel(label)) { setItemModalError('Use the Price field for Regular; add other portions below.'); return; }
+      if (isDefaultPortionLabel(label)) {
+        setItemModalError('Use the Price field for Full; add other portions (e.g. Half) below.');
+        return;
+      }
       if (isNaN(portionPrice) || portionPrice < 0) { setItemModalError(`Enter a valid price for "${label}".`); return; }
       if (isNaN(scale) || scale <= 0) { setItemModalError(`Enter a valid recipe scale for "${label}".`); return; }
     }
 
-    const variants = buildVariantsPayload(price, itemPortions, itemRegularVariantId);
+    const variants = buildVariantsPayload(
+      price,
+      itemPortions,
+      itemChannels,
+      itemChannelPrices,
+      itemRegularVariantId
+    );
     const channelPrices = normalizeChannelPrices(itemChannels, itemChannelPrices, price);
 
     setItemModalLoading(true);
@@ -777,25 +859,35 @@ export function Menu() {
               placeholder="0.00"
               className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <p className="mt-1 text-xs text-gray-400">Default / Regular portion price</p>
+            <p className="mt-1 text-xs text-gray-400">Full / default portion price</p>
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-700">Portions</p>
+                <p className="text-sm font-medium text-gray-700">Extra portions</p>
                 <p className="mt-0.5 text-xs text-gray-400">
-                  Optional (Half, Full, Family). Recipe × multiplies ingredient stock use (0.5 / 1 / 2).
+                  Optional (Half, Family). Scale multiplies ingredient stock use (0.5 / 2).
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  const basePrice = parseFloat(itemPrice);
+                  const seeded: Record<string, string> = {};
+                  for (const ch of itemChannels) {
+                    seeded[ch] =
+                      itemChannelPrices[ch] !== undefined
+                        ? String(itemChannelPrices[ch])
+                        : Number.isFinite(basePrice) && basePrice >= 0
+                          ? String(basePrice)
+                          : '';
+                  }
                   setItemPortions((prev) => [
                     ...prev,
-                    { label: '', price: '', recipe_scale: '1' },
-                  ])
-                }
+                    { label: '', price: '', recipe_scale: '1', channel_prices: seeded },
+                  ]);
+                }}
                 className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20"
               >
                 <Plus size={12} /> Add
@@ -803,10 +895,21 @@ export function Menu() {
             </div>
             {itemPortions.length > 0 && (
               <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 px-0.5">
+                  <span className="min-w-[5.5rem] flex-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    Portion
+                  </span>
+                  <span className="w-24 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    Price
+                  </span>
+                  <span className="w-24 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    Scale
+                  </span>
+                  <span className="w-8" aria-hidden />
+                </div>
                 {itemPortions.map((portion, index) => (
-                  <div key={portion.id ?? `new-${index}`} className="flex flex-wrap items-end gap-2">
+                  <div key={portion.id ?? `new-${index}`} className="flex flex-wrap items-center gap-2">
                     <div className="min-w-[5.5rem] flex-1">
-                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Label</label>
                       <input
                         type="text"
                         value={portion.label}
@@ -820,7 +923,6 @@ export function Menu() {
                       />
                     </div>
                     <div className="w-24">
-                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Price</label>
                       <input
                         type="number"
                         min="0"
@@ -836,7 +938,6 @@ export function Menu() {
                       />
                     </div>
                     <div className="w-24">
-                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Recipe ×</label>
                       <input
                         type="number"
                         min="0.01"
@@ -849,8 +950,8 @@ export function Menu() {
                             )
                           )
                         }
-                        placeholder="1"
-                        title="How much of the dish recipe to use (Half = 0.5, Full = 1, Family = 2)"
+                        placeholder="0.5"
+                        title="How much of the dish recipe to use (Half = 0.5, Family = 2)"
                         className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
@@ -900,6 +1001,15 @@ export function Menu() {
                         itemChannelPrices,
                         Number.isFinite(basePrice) && basePrice >= 0 ? basePrice : 0
                       );
+                      const turningOn = next.channels.includes(channel.id);
+                      setItemPortions((prev) =>
+                        applyChannelToggleToPortions(
+                          prev,
+                          channel.id,
+                          turningOn,
+                          Number.isFinite(basePrice) && basePrice >= 0 ? basePrice : 0
+                        )
+                      );
                       setItemChannels(next.channels);
                       setItemChannelPrices(next.prices);
                     }}
@@ -915,33 +1025,106 @@ export function Menu() {
               })}
             </div>
             {itemChannels.length > 0 ? (
-              <div className="space-y-2">
-                {itemChannels.map((channelId) => {
-                  const meta = MENU_CHANNELS.find((c) => c.id === channelId);
-                  return (
-                    <div key={channelId} className="flex items-center gap-3">
-                      <label className="w-36 shrink-0 text-xs font-medium text-gray-600">
-                        {meta?.label ?? channelId} price
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        disabled={!itemAvailable}
-                        value={itemChannelPrices[channelId] ?? ''}
-                        onChange={(e) => {
-                          const n = parseFloat(e.target.value);
-                          setItemChannelPrices((prev) => ({
-                            ...prev,
-                            [channelId]: Number.isFinite(n) ? n : 0,
-                          }));
-                        }}
-                        className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+              itemPortions.length === 0 ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {itemChannels.map((channelId) => {
+                    const meta = MENU_CHANNELS.find((c) => c.id === channelId);
+                    return (
+                      <div key={channelId} className="min-w-0">
+                        <label className="mb-1 block text-[11px] font-semibold text-gray-500">
+                          {meta?.label ?? channelId}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          disabled={!itemAvailable}
+                          value={itemChannelPrices[channelId] ?? ''}
+                          placeholder={itemPrice || '0'}
+                          onChange={(e) => {
+                            const n = parseFloat(e.target.value);
+                            setItemChannelPrices((prev) => ({
+                              ...prev,
+                              [channelId]: Number.isFinite(n) ? n : 0,
+                            }));
+                          }}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-gray-500">Channel prices by portion</p>
+                  {itemChannels.map((channelId) => {
+                    const meta = MENU_CHANNELS.find((c) => c.id === channelId);
+                    return (
+                      <div
+                        key={channelId}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 space-y-2"
+                      >
+                        <p className="text-xs font-bold text-gray-800">{meta?.label ?? channelId}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <div className="w-[5.5rem]">
+                            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                              Full
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              disabled={!itemAvailable}
+                              value={itemChannelPrices[channelId] ?? ''}
+                              placeholder={itemPrice || '0'}
+                              onChange={(e) => {
+                                const n = parseFloat(e.target.value);
+                                setItemChannelPrices((prev) => ({
+                                  ...prev,
+                                  [channelId]: Number.isFinite(n) ? n : 0,
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                            />
+                          </div>
+                          {itemPortions.map((portion, index) => (
+                            <div key={`${channelId}-${portion.id ?? index}`} className="w-[5.5rem]">
+                              <label className="mb-1 block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                {portion.label.trim() || `P${index + 1}`}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                disabled={!itemAvailable}
+                                value={portion.channel_prices?.[channelId] ?? ''}
+                                placeholder={portion.price || '0'}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  setItemPortions((prev) =>
+                                    prev.map((p, i) =>
+                                      i === index
+                                        ? {
+                                            ...p,
+                                            channel_prices: {
+                                              ...p.channel_prices,
+                                              [channelId]: text,
+                                            },
+                                          }
+                                        : p
+                                    )
+                                  );
+                                }}
+                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             ) : null}
           </div>
 

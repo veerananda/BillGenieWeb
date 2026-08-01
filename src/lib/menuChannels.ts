@@ -72,21 +72,34 @@ export function resolveChannelUnitPrice(
   return base >= 0 ? base : 0;
 }
 
-/** Channel price applies to base/Regular; other portions keep their variant price. */
+/** Prefer variant.channel_prices; Regular also falls back to item.channel_prices. */
 export function resolveMenuUnitPriceForChannel(
   item: {
     price?: number;
     channel_prices?: Record<string, number> | null;
     channelPrices?: Record<string, number> | null;
   },
-  variant: { price?: number; is_default?: boolean; label?: string } | undefined,
+  variant:
+    | {
+        price?: number;
+        is_default?: boolean;
+        label?: string;
+        channel_prices?: Record<string, number> | null;
+        channelPrices?: Record<string, number> | null;
+      }
+    | undefined,
   channel: MenuChannelId
 ): number {
   const fallback = variant?.price ?? item.price ?? 0;
+  const variantMap = variant?.channel_prices ?? variant?.channelPrices ?? undefined;
+  const fromVariant = variantMap?.[channel];
+  if (typeof fromVariant === 'number' && Number.isFinite(fromVariant) && fromVariant >= 0) {
+    return fromVariant;
+  }
   const isDefault =
     !variant ||
     Boolean(variant.is_default) ||
-    /^regular$/i.test(String(variant.label || '').trim());
+    /^(regular|full)$/i.test(String(variant.label || '').trim());
   if (isDefault) {
     return resolveChannelUnitPrice(item, channel, fallback);
   }
