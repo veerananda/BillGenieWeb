@@ -158,6 +158,7 @@ export interface MenuItemVariant {
   label: string;
   price: number;
   recipe_scale: number;
+  channel_prices?: Record<string, number>;
   is_default: boolean;
   is_available: boolean;
   sort_order: number;
@@ -168,6 +169,7 @@ export interface MenuVariantWrite {
   label: string;
   price: number;
   recipe_scale: number;
+  channel_prices?: Record<string, number>;
   is_default: boolean;
   is_available?: boolean;
   sort_order?: number;
