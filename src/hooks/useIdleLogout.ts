@@ -27,15 +27,17 @@ export function useIdleLogout(enabled: boolean) {
     if (!enabled) return;
 
     const logout = () => {
-      try {
-        wsService.disconnect();
-        apiClient.logout();
-        clearAuth();
-        sessionStorage.setItem('logout_reason', 'idle_timeout');
-      } catch {
-        // ignore
-      }
-      window.location.replace('/login');
+      void (async () => {
+        try {
+          wsService.disconnect();
+          await apiClient.logout();
+          clearAuth();
+          sessionStorage.setItem('logout_reason', 'idle_timeout');
+        } catch {
+          // ignore
+        }
+        window.location.replace('/login');
+      })();
     };
 
     const arm = () => {
