@@ -881,15 +881,10 @@ export function Menu() {
               <button
                 type="button"
                 onClick={() => {
-                  const basePrice = parseFloat(itemPrice);
                   const seeded: Record<string, string> = {};
                   for (const ch of itemChannels) {
-                    seeded[ch] =
-                      itemChannelPrices[ch] !== undefined
-                        ? String(itemChannelPrices[ch])
-                        : Number.isFinite(basePrice) && basePrice >= 0
-                          ? String(basePrice)
-                          : '';
+                    // Leave empty until portion price is entered (do not copy Full price).
+                    seeded[ch] = '';
                   }
                   setItemPortions((prev) => [
                     ...prev,
@@ -936,11 +931,29 @@ export function Menu() {
                         min="0"
                         step="0.01"
                         value={portion.price}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const newPrice = e.target.value;
+                          const fullRaw = parseFloat(itemPrice);
+                          const fullPriceStr =
+                            Number.isFinite(fullRaw) && fullRaw >= 0 ? String(fullRaw) : '';
                           setItemPortions((prev) =>
-                            prev.map((p, i) => (i === index ? { ...p, price: e.target.value } : p))
-                          )
-                        }
+                            prev.map((p, i) => {
+                              if (i !== index) return p;
+                              const channel_prices = { ...(p.channel_prices || {}) };
+                              for (const ch of itemChannels) {
+                                const cur = channel_prices[ch] ?? '';
+                                if (
+                                  cur === '' ||
+                                  cur === p.price ||
+                                  (fullPriceStr !== '' && cur === fullPriceStr)
+                                ) {
+                                  channel_prices[ch] = newPrice;
+                                }
+                              }
+                              return { ...p, price: newPrice, channel_prices };
+                            })
+                          );
+                        }}
                         placeholder="0"
                         className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
