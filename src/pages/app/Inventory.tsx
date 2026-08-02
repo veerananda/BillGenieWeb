@@ -26,7 +26,7 @@ import {
   type RecipeIngredientInput,
 } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectAuthRole, selectCanRestockInventory } from '../../store/authSlice';
+import { selectAuthRole, selectCanRestockInventory, selectCanDeductInventory } from '../../store/authSlice';
 import {
   selectInventoryIngredients,
   setInventoryIngredients,
@@ -38,6 +38,7 @@ import {
   canViewIngredientManagement,
   canViewInventory,
   canRestockInventory,
+  canDeductInventory,
 } from '../../lib/inventoryAlerts';
 import {
   defaultEntryUnit,
@@ -91,7 +92,7 @@ function stockColor(current: number, alertQuantity: number) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB 1 — Ingredient Mgmt
+// TAB 1 — Ingredient management
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MenuCategoryGroup {
@@ -508,7 +509,7 @@ export function IngredientManagement() {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              className="flex-1 rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
             >
               Cancel
             </button>
@@ -536,9 +537,10 @@ export function StockRefill() {
   const dispatch = useAppDispatch();
   const role = useAppSelector(selectAuthRole);
   const canRestockPerm = useAppSelector(selectCanRestockInventory);
+  const canDeductPerm = useAppSelector(selectCanDeductInventory);
   const ingredients = useAppSelector(selectInventoryIngredients);
   const canRestock = role === 'admin' || role === 'manager' || canRestockPerm;
-  const canManageStock = role === 'admin' || role === 'manager';
+  const canManageDeduct = canDeductInventory(role, canDeductPerm);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -648,7 +650,7 @@ export function StockRefill() {
   }
 
   async function handleDeduct() {
-    if (!canManageStock) return;
+    if (!canManageDeduct) return;
     if (!deductIngredientId) {
       setDeductError('Select an ingredient to deduct.');
       return;
@@ -735,14 +737,14 @@ export function StockRefill() {
     <div className="space-y-4 pb-24">
       <PageHeader title="Stock Refill" subtitle="Enter quantities to add, then refill all at once" />
 
-      {canManageStock && (
+      {canManageDeduct && (
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <MinusCircle className="h-4 w-4 text-red-500" />
             <h3 className="text-sm font-bold text-gray-900">Deduct expired stock</h3>
           </div>
           <p className="mb-3 text-xs text-gray-500">
-            Remove spoiled or expired quantity from inventory. Admin and managers only.
+            Remove spoiled or expired quantity from inventory.
           </p>
           <div className="grid gap-3 sm:grid-cols-[1fr_100px_90px_auto]">
             <select

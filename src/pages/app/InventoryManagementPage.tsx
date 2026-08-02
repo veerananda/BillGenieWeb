@@ -233,13 +233,13 @@ export function InventoryManagement() {
       />
 
       {lowStockItems.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-bold text-amber-700">Low Stock Alert</p>
-            <p className="text-sm text-amber-600">
-              {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} at or below alert quantity —
-              check Stock Refill.
+        <div className="flex items-center gap-3 rounded-xl bg-amber-500 px-4 py-3 text-white">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Low Stock Alert</p>
+            <p className="text-xs text-amber-100">
+              {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} at or below alert
+              quantity — check Stock Refill.
             </p>
           </div>
         </div>
@@ -468,7 +468,7 @@ function DeleteModal({
       <div className="mt-5 flex gap-3">
         <button
           onClick={onClose}
-          className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="flex-1 rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5"
         >
           Cancel
         </button>

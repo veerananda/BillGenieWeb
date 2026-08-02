@@ -1244,7 +1244,7 @@ export function Profile() {
               type="button"
               onClick={closeTableModal}
               disabled={tableModalSaving}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-60"
+              className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-60"
             >
               Cancel
             </button>

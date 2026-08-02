@@ -22,7 +22,7 @@ import { upsertInventoryIngredient, type InventoryIngredient } from '../../store
 import { addMenuItem, updateMenuItem, removeMenuItem } from '../../store/menuSlice';
 import type { Order, RestaurantTable, MenuItem } from '../../services/api';
 import type { AppDispatch } from '../../store';
-import { playAssistanceBell } from '../../lib/notificationSound';
+import { bindAssistanceAudioUnlock, playAssistanceBell, unlockAssistanceAudio } from '../../lib/notificationSound';
 
 import { useIdleLogout } from '../../hooks/useIdleLogout';
 
@@ -124,6 +124,9 @@ export function AppShell() {
   }
 
   useEffect(() => {
+    // Unlock Web Audio on first staff click/key so Call Waiter alerts can ting later.
+    const unbindAudio = bindAssistanceAudioUnlock();
+
     apiClient.getRestaurantProfile().then((profile) => {
       dispatch(setProfile(profile));
     }).catch(() => {});
@@ -139,6 +142,7 @@ export function AppShell() {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        unlockAssistanceAudio();
         if (!wsService.isConnected()) {
           apiClient.refreshAccessToken().catch(() => {}).finally(() => {
             wsService.forceReconnect();
@@ -233,7 +237,9 @@ export function AppShell() {
           );
           // Play bell when this is a NEW assistance request (not already pending)
           if (assistanceRequested) {
-            const existing = store.getState().tables.tables.find((t) => t.id === tableId);
+            const existing = store.getState().tables.tables.find(
+              (t) => String(t.id) === String(tableId)
+            );
             if (!existing?.assistance_requested_at) {
               playAssistanceBell();
             }
@@ -267,6 +273,7 @@ export function AppShell() {
     ];
 
     return () => {
+      unbindAudio();
       unsubscribe.forEach((fn) => fn());
       unsubWsConnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);

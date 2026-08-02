@@ -34,6 +34,15 @@ export function canRestockInventory(
   return false;
 }
 
+export function canDeductInventory(
+  role: string | null | undefined,
+  canDeductFlag?: boolean
+): boolean {
+  if (role === 'admin' || role === 'manager') return true;
+  if (role === 'staff' || role === 'chef') return Boolean(canDeductFlag);
+  return false;
+}
+
 /** RED when at/below half of alert qty; YELLOW when at/below alert qty. */
 export function getStockWarningLevel(
   currentStock: number,

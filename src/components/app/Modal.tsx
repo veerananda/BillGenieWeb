@@ -8,11 +8,21 @@ interface Props {
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   zIndexClass?: string;
+  /** Force the dialog to the viewport center on all breakpoints (default: bottom sheet on mobile). */
+  centered?: boolean;
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl' };
 
-export function Modal({ open, onClose, title, children, maxWidth = 'md', zIndexClass = 'z-50' }: Props) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  maxWidth = 'md',
+  zIndexClass = 'z-50',
+  centered = false,
+}: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,21 +42,22 @@ export function Modal({ open, onClose, title, children, maxWidth = 'md', zIndexC
   return (
     <div
       ref={overlayRef}
-      className={`fixed inset-0 ${zIndexClass} flex items-end justify-center bg-black/50 sm:items-center sm:p-4`}
+      className={`fixed inset-0 ${zIndexClass} flex justify-center bg-black/50 p-4 ${
+        centered ? 'items-center' : 'items-end sm:items-center'
+      }`}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
       {/*
         Panel:
-        - Mobile: full-width sheet rising from bottom, rounded top corners, max 92vh tall
-        - sm+: centred dialog, rounded all corners, max 90vh tall
+        - Mobile (default): full-width sheet rising from bottom, rounded top corners, max 92vh tall
+        - sm+ / centered: centred dialog, rounded all corners, max 90vh tall
         The header is shrink-0 (never scrolls away).
         The body is flex-1 + min-h-0 + overflow-y-auto so it scrolls independently.
       */}
       <div
         className={`
           flex w-full flex-col bg-white shadow-xl overflow-hidden
-          rounded-t-2xl sm:rounded-2xl
-          max-h-[92vh] sm:max-h-[90vh]
+          ${centered ? 'rounded-2xl max-h-[90vh]' : 'rounded-t-2xl sm:rounded-2xl max-h-[92vh] sm:max-h-[90vh]'}
           ${widths[maxWidth]}
         `}
       >

@@ -19,7 +19,15 @@ import { apiClient, type StaffMember } from '../../services/api';
 import { useAppSelector } from '../../store/hooks';
 import { selectAuthRole } from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
-import { parseSubscriptionLimits, canAssignChefRole } from '../../lib/subscriptionLimits';
+import {
+  parseSubscriptionLimits,
+  canAssignChefRole,
+  canAddStaff,
+  canAddManager,
+  canAddChef,
+  formatStaffPlanHint,
+  usageFromTeamMembers,
+} from '../../lib/subscriptionLimits';
 import { PageHeader } from '../../components/app/PageHeader';
 import { Spinner } from '../../components/app/Spinner';
 import { Modal } from '../../components/app/Modal';
@@ -41,6 +49,7 @@ interface StaffFormData {
   password: string;
   can_cancel_orders: boolean;
   can_restock_inventory: boolean;
+  can_deduct_inventory: boolean;
   menu_management_access: boolean;
 }
 
@@ -94,6 +103,7 @@ function RoleTile({
   icon: Icon,
   label,
   desc,
+  seats,
   selected,
   disabled,
   onClick,
@@ -101,6 +111,7 @@ function RoleTile({
   icon: React.ElementType;
   label: string;
   desc: string;
+  seats?: string;
   selected: boolean;
   disabled?: boolean;
   onClick: () => void;
@@ -110,7 +121,8 @@ function RoleTile({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex flex-1 flex-col items-center gap-1.5 rounded-xl border-2 p-3 text-center transition-all disabled:opacity-45 ${
+      title={disabled ? 'Plan seat limit reached for this role' : undefined}
+      className={`flex flex-1 flex-col items-center gap-1.5 rounded-xl border-2 p-3 text-center transition-all disabled:cursor-not-allowed disabled:opacity-45 ${
         selected
           ? 'border-primary bg-primary/10'
           : 'border-gray-200 bg-white hover:border-gray-300'
@@ -123,6 +135,15 @@ function RoleTile({
       <span className={`text-[11px] leading-tight ${selected ? 'text-primary/70' : 'text-gray-400'}`}>
         {desc}
       </span>
+      {seats ? (
+        <span
+          className={`text-[10px] font-semibold ${
+            disabled && !selected ? 'text-red-500' : selected ? 'text-primary' : 'text-gray-500'
+          }`}
+        >
+          {seats}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -178,6 +199,13 @@ interface StaffFormModalProps {
   newlyCreatedKey: string | null;
   onDismissKey: () => void;
   kitchenEnabled: boolean;
+  planHint: string;
+  staffAvailable: boolean;
+  managerAvailable: boolean;
+  chefAvailable: boolean;
+  staffSeatsLabel: string;
+  managerSeatsLabel: string;
+  chefSeatsLabel: string;
 }
 
 function StaffFormModal({
@@ -188,9 +216,20 @@ function StaffFormModal({
   newlyCreatedKey,
   onDismissKey,
   kitchenEnabled,
+  planHint,
+  staffAvailable,
+  managerAvailable,
+  chefAvailable,
+  staffSeatsLabel,
+  managerSeatsLabel,
+  chefSeatsLabel,
 }: StaffFormModalProps) {
   const isEdit = !!editTarget;
   const isAdmin = editTarget?.role === 'admin';
+
+  const canSelectStaff = staffAvailable || editTarget?.role === 'staff';
+  const canSelectManager = managerAvailable || editTarget?.role === 'manager';
+  const canSelectChef = chefAvailable || editTarget?.role === 'chef';
 
   const [form, setForm] = useState<StaffFormData>({
     name: '',
@@ -199,6 +238,7 @@ function StaffFormModal({
     password: '',
     can_cancel_orders: false,
     can_restock_inventory: false,
+    can_deduct_inventory: false,
     menu_management_access: false,
   });
   const [saving, setSaving] = useState(false);
@@ -218,16 +258,25 @@ function StaffFormModal({
           password: '',
           can_cancel_orders: editTarget.can_cancel_orders ?? false,
           can_restock_inventory: editTarget.can_restock_inventory ?? false,
+          can_deduct_inventory: editTarget.can_deduct_inventory ?? false,
           menu_management_access: editTarget.menu_management_access ?? false,
         });
       } else {
+        const initialRole: 'manager' | 'staff' | 'chef' = staffAvailable
+          ? 'staff'
+          : managerAvailable
+            ? 'manager'
+            : chefAvailable
+              ? 'chef'
+              : 'staff';
         setForm({
           name: '',
-          role: 'staff',
+          role: initialRole,
           staff_key: generateStaffKey(),
           password: '',
           can_cancel_orders: false,
           can_restock_inventory: false,
+          can_deduct_inventory: false,
           menu_management_access: false,
         });
       }
@@ -236,12 +285,25 @@ function StaffFormModal({
       setRegeneratedKey(null);
       setShowPassword(false);
     }
-  }, [open, editTarget]);
+  }, [open, editTarget, staffAvailable, managerAvailable, chefAvailable]);
 
   useEffect(() => {
     if (!open || isEdit || kitchenEnabled || form.role !== 'chef') return;
     setForm((f) => ({ ...f, role: 'staff', can_cancel_orders: false }));
   }, [open, isEdit, kitchenEnabled, form.role]);
+
+  useEffect(() => {
+    if (!open || isEdit) return;
+    if (form.role === 'staff' && !staffAvailable && managerAvailable) {
+      setForm((f) => ({ ...f, role: 'manager', can_cancel_orders: false, menu_management_access: false }));
+    } else if (form.role === 'manager' && !managerAvailable && staffAvailable) {
+      setForm((f) => ({ ...f, role: 'staff' }));
+    } else if (form.role === 'chef' && !chefAvailable && staffAvailable) {
+      setForm((f) => ({ ...f, role: 'staff' }));
+    } else if (form.role === 'chef' && !chefAvailable && managerAvailable) {
+      setForm((f) => ({ ...f, role: 'manager', can_cancel_orders: false, menu_management_access: false }));
+    }
+  }, [open, isEdit, form.role, staffAvailable, managerAvailable, chefAvailable]);
 
   function handleClose() {
     onDismissKey();
@@ -280,6 +342,22 @@ function StaffFormModal({
       return;
     }
 
+    const roleChanging = !isEdit || editTarget?.role !== form.role;
+    if (roleChanging) {
+      if (form.role === 'staff' && !canSelectStaff) {
+        setError('Staff limit reached. Delete a staff account or upgrade your plan.');
+        return;
+      }
+      if (form.role === 'manager' && !canSelectManager) {
+        setError('Manager limit reached. Delete a manager account or upgrade your plan.');
+        return;
+      }
+      if (form.role === 'chef' && !canSelectChef) {
+        setError('Chef limit reached. Delete a chef account or upgrade your plan.');
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -290,7 +368,10 @@ function StaffFormModal({
         if (!isAdmin) {
           payload.role = form.role;
           if (form.role === 'staff') payload.can_cancel_orders = form.can_cancel_orders;
-          if (form.role === 'staff' || form.role === 'chef') payload.can_restock_inventory = form.can_restock_inventory;
+          if (form.role === 'staff' || form.role === 'chef') {
+            payload.can_restock_inventory = form.can_restock_inventory;
+            payload.can_deduct_inventory = form.can_deduct_inventory;
+          }
           if (form.role === 'manager') payload.menu_management_access = form.menu_management_access;
         }
         if (form.password.trim()) payload.password = form.password.trim();
@@ -304,7 +385,10 @@ function StaffFormModal({
           password: form.password.trim(),
         };
         if (form.role === 'staff') payload.can_cancel_orders = form.can_cancel_orders;
-        if (form.role === 'staff' || form.role === 'chef') payload.can_restock_inventory = form.can_restock_inventory;
+        if (form.role === 'staff' || form.role === 'chef') {
+          payload.can_restock_inventory = form.can_restock_inventory;
+          payload.can_deduct_inventory = form.can_deduct_inventory;
+        }
         if (form.role === 'manager') payload.menu_management_access = form.menu_management_access;
         const created = await apiClient.createStaff(payload);
         onSaved(created, true);
@@ -469,8 +553,9 @@ function StaffFormModal({
         {!isAdmin && !newlyCreatedKey && (
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">Role</label>
+            <p className="mb-2 text-xs text-gray-500">{planHint}</p>
             {!kitchenEnabled && isEdit && editTarget?.role === 'chef' ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
                 <span className="font-semibold">Chef</span> — role kept; kitchen screen is locked until a kitchen
                 add-on is enabled. You can change role to Staff or Manager below.
               </div>
@@ -480,14 +565,18 @@ function StaffFormModal({
                 icon={User}
                 label="Staff"
                 desc="Orders & billing"
+                seats={staffSeatsLabel}
                 selected={form.role === 'staff'}
+                disabled={!canSelectStaff}
                 onClick={() => setForm((f) => ({ ...f, role: 'staff' }))}
               />
               <RoleTile
                 icon={Briefcase}
                 label="Manager"
                 desc="Menu & settings"
+                seats={managerSeatsLabel}
                 selected={form.role === 'manager'}
+                disabled={!canSelectManager}
                 onClick={() =>
                   setForm((f) => ({ ...f, role: 'manager', can_cancel_orders: false, menu_management_access: false }))
                 }
@@ -497,7 +586,9 @@ function StaffFormModal({
                   icon={ChefHat}
                   label="Chef"
                   desc="Kitchen only"
+                  seats={chefSeatsLabel}
                   selected={form.role === 'chef'}
+                  disabled={!canSelectChef}
                   onClick={() =>
                     setForm((f) => ({ ...f, role: 'chef', can_cancel_orders: false }))
                   }
@@ -524,6 +615,14 @@ function StaffFormModal({
             onChange={(v) => setForm((f) => ({ ...f, can_restock_inventory: v }))}
           />
         )}
+        {!isAdmin && !newlyCreatedKey && (form.role === 'staff' || form.role === 'chef') && (
+          <PermissionRow
+            title="Allow deduct stock"
+            hint="When enabled, this user can deduct expired or wasted stock on the Stock Refill page."
+            checked={form.can_deduct_inventory}
+            onChange={(v) => setForm((f) => ({ ...f, can_deduct_inventory: v }))}
+          />
+        )}
         {!isAdmin && !newlyCreatedKey && form.role === 'manager' && (
           <PermissionRow
             title="Full menu management"
@@ -546,8 +645,8 @@ function StaffFormModal({
               {isEdit
                 ? isAdmin
                   ? '• Admin account cannot be deleted\n• Use email + password to log in as admin'
-                  : '• Share the 6-digit login key with staff\n• Chef role requires a kitchen add-on\n• Regenerating a key resets login to the new key'
-                : '• Chef is available only with a kitchen add-on\n• Share the 6-digit login key and password with the staff member\n• Login: Staff Key + Password'}
+                  : '• Staff and chef seats are separate on your plan\n• Share the 6-digit login key with staff\n• Regenerating a key resets login to the new key'
+                : '• Staff and chef seats are separate — filling staff does not use chef seats\n• Chef is available only with a kitchen add-on\n• Share the 6-digit login key and password with the staff member\n• Login: Staff Key + Password'}
             </p>
           </div>
         )}
@@ -563,7 +662,7 @@ function StaffFormModal({
           <button
             type="button"
             onClick={handleClose}
-            className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            className="flex-1 rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
           >
             {newlyCreatedKey ? 'Done' : 'Cancel'}
           </button>
@@ -638,7 +737,7 @@ function DeleteModal({ member, onClose, onDeleted }: DeleteModalProps) {
       <div className="mt-5 flex gap-3">
         <button
           onClick={onClose}
-          className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          className="flex-1 rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
         >
           Cancel
         </button>
@@ -697,7 +796,10 @@ function StaffCard({
         </div>
 
         {/* Permission chips */}
-        {(member.can_cancel_orders || member.can_restock_inventory || member.menu_management_access) && (
+        {(member.can_cancel_orders ||
+          member.can_restock_inventory ||
+          member.can_deduct_inventory ||
+          member.menu_management_access) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {member.can_cancel_orders && (
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
@@ -707,6 +809,11 @@ function StaffCard({
             {member.can_restock_inventory && (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
                 <Check className="h-3 w-3" /> Stock refill
+              </span>
+            )}
+            {member.can_deduct_inventory && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
+                <Check className="h-3 w-3" /> Deduct stock
               </span>
             )}
             {member.menu_management_access && (
@@ -762,12 +869,23 @@ export function Staff() {
 
   // Always count from the live local list so add/delete immediately reflects in the gate.
   // The profile usage snapshot is stale and doesn't update on mutation.
-  const staffCount = staff.filter((s) => s.role === 'staff' || s.role === 'chef').length;
-  const managerCount = staff.filter((s) => s.role === 'manager').length;
+  const usage = usageFromTeamMembers(staff, profile?.subscription_usage as { tables?: number } | undefined);
+  const staffCount = usage.staff ?? 0;
+  const chefCount = usage.chefs ?? 0;
+  const managerCount = usage.managers;
+  const maxStaff = limits?.max_staff ?? limits?.max_staff_and_chefs ?? 0;
+  const maxChefs = limits?.max_chefs ?? 1;
 
-  const staffSeatAvailable = limits
-    ? staffCount < limits.max_staff_and_chefs || managerCount < limits.max_managers
-    : true;
+  const staffAvailable = limits ? canAddStaff(limits, usage) : true;
+  const managerAvailable = limits ? canAddManager(limits, usage) : true;
+  const chefAvailable = limits ? canAddChef(limits, usage) : false;
+  const staffSeatAvailable = staffAvailable || managerAvailable || chefAvailable;
+  const planHint = limits
+    ? formatStaffPlanHint(limits, usage)
+    : 'Plan limits unavailable';
+  const staffSeatsLabel = `${staffCount}/${maxStaff}`;
+  const managerSeatsLabel = `${managerCount}/${limits?.max_managers ?? 0}`;
+  const chefSeatsLabel = `${chefCount}/${maxChefs}`;
 
   const [formOpen, setFormOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StaffMember | null>(null);
@@ -847,31 +965,45 @@ export function Staff() {
 
       {/* Plan seat tracker */}
       {limits && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Plan</span>
-          <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-              staffCount >= limits.max_staff_and_chefs
-                ? 'bg-red-100 text-red-700'
-                : 'bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            Staff &amp; Chefs: {staffCount} / {limits.max_staff_and_chefs}
-          </span>
-          <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-              managerCount >= limits.max_managers
-                ? 'bg-red-100 text-red-700'
-                : 'bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            Managers: {managerCount} / {limits.max_managers}
-          </span>
-          {!staffSeatAvailable && (
-            <span className="ml-auto text-xs text-red-600 font-medium">
-              Plan limit reached — upgrade to add more
+        <div className="space-y-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs text-gray-500">{planHint}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Seats</span>
+            <span
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                staffCount >= maxStaff
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              Staff: {staffCount} / {maxStaff}
             </span>
-          )}
+            {kitchenEnabled ? (
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  chefCount >= maxChefs
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}
+              >
+                Chef: {chefCount} / {maxChefs}
+              </span>
+            ) : null}
+            <span
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                managerCount >= limits.max_managers
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              Manager: {managerCount} / {limits.max_managers}
+            </span>
+            {!staffSeatAvailable && (
+              <span className="ml-auto text-xs text-red-600 font-medium">
+                Plan limit reached — upgrade to add more
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -928,6 +1060,13 @@ export function Staff() {
         newlyCreatedKey={newlyCreatedKey}
         onDismissKey={() => setNewlyCreatedKey(null)}
         kitchenEnabled={kitchenEnabled}
+        planHint={planHint}
+        staffAvailable={staffAvailable}
+        managerAvailable={managerAvailable}
+        chefAvailable={chefAvailable}
+        staffSeatsLabel={staffSeatsLabel}
+        managerSeatsLabel={managerSeatsLabel}
+        chefSeatsLabel={chefSeatsLabel}
       />
 
       <DeleteModal
