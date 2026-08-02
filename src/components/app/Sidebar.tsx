@@ -54,7 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Sales',         to: '/app/sales',     icon: BarChart3,       roles: ['admin'] },
   { label: 'Order History',      to: '/app/history',   icon: Receipt,         roles: ['admin', 'manager'] },
   { label: 'Expenses',           to: '/app/expenses',  icon: Wallet,          roles: ['admin', 'manager'], subscriptionKey: 'expenses' },
-  { label: 'Ingredient Mgmt',    to: '/app/ingredient-management', icon: ChefHat,     inventoryKind: 'ingredients' },
+  { label: 'Ingredient management',    to: '/app/ingredient-management', icon: ChefHat,     inventoryKind: 'ingredients' },
   { label: 'Inventory',          to: '/app/inventory-management',   icon: Package,     inventoryKind: 'inventory' },
   { label: 'Stock Refill',       to: '/app/stock-refill',           icon: PackagePlus, inventoryKind: 'stock' },
   { label: 'Team Management',   to: '/app/staff',     icon: Users,           roles: ['admin'] },

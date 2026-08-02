@@ -245,7 +245,7 @@ function KOTCard({
           <button
             onClick={() => setConfirmAction(null)}
             disabled={busy}
-            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             Go back
           </button>

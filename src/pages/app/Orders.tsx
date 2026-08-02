@@ -165,12 +165,14 @@ function TableCard({
   table,
   order,
   onClick,
+  onOpenQr,
   kitchenEnabled,
   acknowledgedCancelledByOrderId,
 }: {
   table: RestaurantTable;
   order: Order | undefined;
   onClick: () => void;
+  onOpenQr: () => void;
   kitchenEnabled: boolean;
   acknowledgedCancelledByOrderId: Record<string, string[]>;
 }) {
@@ -225,7 +227,7 @@ function TableCard({
       ))}
     <button
       onClick={onClick}
-      className={`group flex h-full w-full flex-col gap-1.5 overflow-hidden rounded-xl border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`group flex h-full w-full flex-col gap-1.5 overflow-hidden rounded-xl border-2 p-3 pr-9 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         fill === 'blue'
           ? 'border-[#3419e2] bg-[#3419e2]'
           : fill === 'yellow'
@@ -311,6 +313,24 @@ function TableCard({
         <p className="text-xs text-gray-400">Tap to take an order</p>
       )}
       </div>
+    </button>
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpenQr();
+      }}
+      title="Customer assistance QR"
+      aria-label={`Customer assistance QR for ${table.name}`}
+      className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
+        fill === 'yellow' || fill === 'rose'
+          ? 'bg-white/70 text-amber-950 hover:bg-white'
+          : fill
+            ? 'bg-white/25 text-white hover:bg-white/40'
+            : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
+      }`}
+    >
+      <QrCode className="h-3.5 w-3.5" />
     </button>
     </div>
   );
@@ -1254,7 +1274,7 @@ function OrderDetailPanel({
                         setVacantConfirmOpen(true);
                       }}
                       disabled={cancelLoading}
-                      className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                      className="flex-1 rounded-xl border border-primary py-3 text-sm font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-40"
                     >
                       Make vacant
                     </button>
@@ -1622,7 +1642,7 @@ function OrderDetailPanel({
               <button
                 onClick={paymentMethod === 'split' && splitPhase === 'upi' ? () => setSplitPhase('cash') : closePaymentModal}
                 disabled={paymentLoading}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
               >
                 Back
               </button>
@@ -1670,7 +1690,7 @@ function OrderDetailPanel({
           <button
             onClick={() => setCancelConfirmOpen(false)}
             disabled={cancelLoading}
-            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             Go back
           </button>
@@ -1707,7 +1727,7 @@ function OrderDetailPanel({
             type="button"
             onClick={() => setVacantConfirmOpen(false)}
             disabled={cancelLoading}
-            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             Go back
           </button>
@@ -2179,6 +2199,11 @@ export function Orders() {
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
   const [panelMode, setPanelMode] = useState<'detail' | 'vacant' | 'take-order' | 'add-items' | null>(null);
 
+  // Assistance QR opened from table tile
+  const [tileQrTable, setTileQrTable] = useState<RestaurantTable | null>(null);
+  const [tileQrUrl, setTileQrUrl] = useState<string | null>(null);
+  const [tileQrLoading, setTileQrLoading] = useState(false);
+
   // Shared fetch + reconcile logic — used by initial load and background poll
   const fetchTablesAndOrders = useCallback(
     async (opts: { showLoader: boolean; includeMenu: boolean }) => {
@@ -2278,6 +2303,37 @@ export function Orders() {
     setSelectedTable(table);
     setPanelMode(table.is_occupied ? 'detail' : 'vacant');
   };
+
+  const openTileAssistanceQr = useCallback(
+    async (table: RestaurantTable) => {
+      setTileQrTable(table);
+      setTileQrLoading(true);
+      setTileQrUrl(null);
+      try {
+        const order = getOrderForTable(table);
+        if (order?.id) {
+          try {
+            await apiClient.setTableOccupied(table.id, order.id);
+          } catch (occupyErr) {
+            console.warn('[Orders] could not ensure table occupied before assistance QR', occupyErr);
+          }
+        }
+        const response = await apiClient.getTableAssistanceQr(table.id);
+        setTileQrUrl(response.assistance_url);
+      } catch (err) {
+        setTileQrTable(null);
+        window.alert(err instanceof Error ? err.message : 'Could not create assistance QR');
+      } finally {
+        setTileQrLoading(false);
+      }
+    },
+    [getOrderForTable]
+  );
+
+  const closeTileAssistanceQr = useCallback(() => {
+    setTileQrTable(null);
+    setTileQrUrl(null);
+  }, []);
 
   const closePanel = useCallback(() => {
     setSelectedTable(null);
@@ -2381,6 +2437,7 @@ export function Orders() {
                   kitchenEnabled={kitchenEnabled}
                   acknowledgedCancelledByOrderId={acknowledgedCancelledByOrderId}
                   onClick={() => handleTableClick(table)}
+                  onOpenQr={() => void openTileAssistanceQr(table)}
                 />
               ))}
             </div>
@@ -2438,6 +2495,14 @@ export function Orders() {
           />
         );
       })()}
+
+      <AssistanceQrModal
+        open={!!tileQrTable}
+        onClose={closeTileAssistanceQr}
+        tableName={tileQrTable?.name ?? ''}
+        assistanceUrl={tileQrUrl}
+        loading={tileQrLoading}
+      />
     </div>
   );
 }

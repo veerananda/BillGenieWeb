@@ -40,7 +40,7 @@ export function AssistanceQrModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Customer assistance QR" maxWidth="sm">
+    <Modal open={open} onClose={onClose} title="Customer assistance QR" maxWidth="sm" centered>
       <div className="space-y-4 text-center">
         <p className="text-sm text-gray-600">
           Ask the customer to scan this QR for table <span className="font-semibold text-gray-800">{tableName}</span>.

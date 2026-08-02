@@ -69,6 +69,63 @@ export function canAddManager(limits: SubscriptionLimits, usage: SubscriptionUsa
   return usage.managers < limits.max_managers;
 }
 
+export function canAddChef(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
+  if (!canAssignChefRole(limits)) return false;
+  const maxChefs = limits.max_chefs ?? 1;
+  const chefsUsed = usage.chefs ?? 0;
+  return chefsUsed < maxChefs;
+}
+
+export function formatStaffPlanHint(
+  limits: SubscriptionLimits,
+  usage: SubscriptionUsage
+): string {
+  const maxStaff = limits.max_staff ?? limits.max_staff_and_chefs;
+  const maxChefs = limits.max_chefs ?? 1;
+  const staffUsed = usage.staff ?? 0;
+  const chefsUsed = usage.chefs ?? 0;
+  const kitchen = canAssignChefRole(limits);
+  const chefPart = kitchen ? ` · ${chefsUsed}/${maxChefs} chef` : '';
+  return `Plan: 1 admin · ${staffUsed}/${maxStaff} staff${chefPart} · ${usage.managers}/${limits.max_managers} manager${limits.max_managers === 1 ? '' : 's'}`;
+}
+
+/** Derive seat usage from the live team list so add/delete updates the gate immediately. */
+export function usageFromTeamMembers(
+  members: Array<{ role?: string | null }>,
+  base?: Partial<SubscriptionUsage> | null
+): SubscriptionUsage {
+  let managers = 0;
+  let staffCount = 0;
+  let chefs = 0;
+  let admins = 0;
+  for (const member of members) {
+    switch (member.role) {
+      case 'manager':
+        managers += 1;
+        break;
+      case 'staff':
+        staffCount += 1;
+        break;
+      case 'chef':
+        chefs += 1;
+        break;
+      case 'admin':
+        admins += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  return {
+    tables: base?.tables ?? 0,
+    managers,
+    staff: staffCount,
+    chefs,
+    staff_and_chefs: staffCount + chefs,
+    admins: admins || base?.admins || 0,
+  };
+}
+
 export function canAddTable(limits: SubscriptionLimits, usage: SubscriptionUsage): boolean {
   return usage.tables < limits.max_tables;
 }

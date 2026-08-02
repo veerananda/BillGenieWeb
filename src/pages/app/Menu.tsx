@@ -254,6 +254,7 @@ export function Menu() {
 
   // Toggling availability
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<MenuItem | null>(null);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -537,19 +538,26 @@ export function Menu() {
 
   // ── Availability toggle ─────────────────────────────────────────────────────
 
-  const handleToggleAvailability = useCallback(
-    async (item: MenuItem) => {
+  const requestToggleAvailability = useCallback(
+    (item: MenuItem) => {
       if (togglingId === item.id) return;
-      setTogglingId(item.id);
-      try {
-        const updated = await apiClient.updateMenuItem(item.id, { is_available: !item.is_available });
-        dispatch(updateMenuItemAction(updated));
-      } finally {
-        setTogglingId(null);
-      }
+      setToggleTarget(item);
     },
-    [dispatch, togglingId]
+    [togglingId]
   );
+
+  const confirmToggleAvailability = useCallback(async () => {
+    if (!toggleTarget || togglingId === toggleTarget.id) return;
+    const item = toggleTarget;
+    setTogglingId(item.id);
+    try {
+      const updated = await apiClient.updateMenuItem(item.id, { is_available: !item.is_available });
+      dispatch(updateMenuItemAction(updated));
+      setToggleTarget(null);
+    } finally {
+      setTogglingId(null);
+    }
+  }, [dispatch, toggleTarget, togglingId]);
 
   // ── Delete item ─────────────────────────────────────────────────────────────
 
@@ -648,7 +656,7 @@ export function Menu() {
                   key={item.id}
                   item={item}
                   togglingId={togglingId}
-                  onToggle={handleToggleAvailability}
+                  onToggle={requestToggleAvailability}
                   onEdit={openEditItem}
                   onDelete={setDeleteItemTarget}
                   showCategory
@@ -754,7 +762,7 @@ export function Menu() {
                             key={item.id}
                             item={item}
                             togglingId={togglingId}
-                            onToggle={handleToggleAvailability}
+                            onToggle={requestToggleAvailability}
                             onEdit={openEditItem}
                             onDelete={setDeleteItemTarget}
                             canManageMenu={canManageMenu}
@@ -800,7 +808,7 @@ export function Menu() {
               type="button"
               onClick={closeCatModal}
               disabled={catModalLoading}
-              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1156,7 +1164,7 @@ export function Menu() {
               type="button"
               onClick={closeItemModal}
               disabled={itemModalLoading}
-              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1188,7 +1196,7 @@ export function Menu() {
           <button
             onClick={() => setDeleteCatTarget(null)}
             disabled={deleteLoading}
-            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -1217,7 +1225,7 @@ export function Menu() {
           <button
             onClick={() => setDeleteItemTarget(null)}
             disabled={deleteLoading}
-            className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -1228,6 +1236,48 @@ export function Menu() {
           >
             {deleteLoading && <Spinner size="sm" className="text-white" />}
             Delete
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Availability toggle confirm ── */}
+      <Modal
+        open={!!toggleTarget}
+        onClose={() => !togglingId && setToggleTarget(null)}
+        title={toggleTarget?.is_available ? 'Disable item?' : 'Enable item?'}
+        maxWidth="sm"
+        centered
+      >
+        <p className="mb-6 text-sm text-gray-600">
+          {toggleTarget?.is_available ? (
+            <>
+              Hide <span className="font-semibold text-gray-900">"{toggleTarget?.name}"</span> from
+              Take Order and Counter?
+            </>
+          ) : (
+            <>
+              Make <span className="font-semibold text-gray-900">"{toggleTarget?.name}"</span> available
+              for ordering?
+            </>
+          )}
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setToggleTarget(null)}
+            disabled={!!togglingId}
+            className="flex-1 rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={confirmToggleAvailability}
+            disabled={!!togglingId}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 ${
+              toggleTarget?.is_available ? 'bg-amber-600' : 'bg-primary'
+            }`}
+          >
+            {togglingId && <Spinner size="sm" className="text-white" />}
+            {toggleTarget?.is_available ? 'Disable' : 'Enable'}
           </button>
         </div>
       </Modal>

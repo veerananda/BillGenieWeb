@@ -305,7 +305,7 @@ export function SubscriptionPaywall({
           ) : null}
           <button
             onClick={onClose}
-            className="w-full rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            className="w-full rounded-xl border border-primary py-2.5 text-sm font-medium text-primary hover:bg-primary/5 transition-colors"
           >
             {canPay ? 'Maybe later' : 'Close'}
           </button>
