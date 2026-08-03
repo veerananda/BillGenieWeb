@@ -3,15 +3,21 @@ import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import {
+  BILLING_CYCLE_OPTIONS,
+  HALF_YEARLY_MULTIPLIER,
   PLAN_BANDS,
   PLAN_MONTHLY_BY_TIER,
   PRICING,
+  QUARTERLY_MULTIPLIER,
   SHARED_PLAN_FEATURES,
   STARTS_FROM_MONTHLY,
   TRIAL_DURATION_DAYS,
   annualMonthlyEquivalent,
   annualSavings,
+  annualTotal,
+  billingCycleLabel,
   formatInr,
+  type BillingCycle,
   type PlanBand,
 } from '../data/pricing';
 
@@ -21,16 +27,32 @@ const MARKETING_ADDONS = [
   { key: 'history_extended', title: 'Extended order history', description: '2 years of order & sales history (plans include 90 days)', price: PRICING.history_extended },
 ];
 
-type Cycle = 'monthly' | 'annual';
-
-function bandPrice(band: PlanBand, cycle: Cycle): number {
+function bandPeriodPrice(band: PlanBand, cycle: BillingCycle): number {
   const monthly = PLAN_MONTHLY_BY_TIER[band].tier_2;
-  return cycle === 'monthly' ? monthly : annualMonthlyEquivalent(monthly);
+  switch (cycle) {
+    case 'annual':
+      return annualTotal(monthly);
+    case 'half_yearly':
+      return monthly * HALF_YEARLY_MULTIPLIER;
+    default:
+      return monthly * QUARTERLY_MULTIPLIER;
+  }
+}
+
+function cycleSuffix(cycle: BillingCycle): string {
+  switch (cycle) {
+    case 'annual':
+      return '/year';
+    case 'half_yearly':
+      return '/6 mo';
+    default:
+      return '/quarter';
+  }
 }
 
 export function Pricing() {
   usePageTitle('Pricing');
-  const [cycle, setCycle] = useState<Cycle>('monthly');
+  const [cycle, setCycle] = useState<BillingCycle>('quarterly');
 
   return (
     <div>
@@ -48,28 +70,24 @@ export function Pricing() {
             {TRIAL_DURATION_DAYS}-day free trial.
           </p>
 
-          <div className="mt-8 inline-flex items-center rounded-full border border-border bg-white p-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setCycle('monthly')}
-              className={`rounded-full px-5 py-2 text-sm font-semibold transition-all ${
-                cycle === 'monthly' ? 'bg-primary text-white shadow-sm' : 'text-ink-soft hover:text-ink'
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setCycle('annual')}
-              className={`rounded-full px-5 py-2 text-sm font-semibold transition-all ${
-                cycle === 'annual' ? 'bg-primary text-white shadow-sm' : 'text-ink-soft hover:text-ink'
-              }`}
-            >
-              Annual
-              <span className="ml-1.5 rounded-full bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary-dark">
-                Save {formatInr(annualSavings(STARTS_FROM_MONTHLY))}/yr on Starter
-              </span>
-            </button>
+          <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-1 rounded-full border border-border bg-white p-1 shadow-sm">
+            {BILLING_CYCLE_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setCycle(opt.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+                  cycle === opt.id ? 'bg-primary text-white shadow-sm' : 'text-ink-soft hover:text-ink'
+                }`}
+              >
+                {opt.label}
+                {opt.id === 'annual' ? (
+                  <span className="ml-1.5 rounded-full bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary-dark">
+                    Save {formatInr(annualSavings(STARTS_FROM_MONTHLY))}/yr
+                  </span>
+                ) : null}
+              </button>
+            ))}
           </div>
           <p className="mt-3 text-xs text-ink-muted">
             Prices shown for mid-size cities (Tier 2). Your city may adjust the plan base.
@@ -80,8 +98,12 @@ export function Pricing() {
       <div className="mx-auto max-w-5xl px-6 py-16">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {PLAN_BANDS.map((band) => {
-            const price = bandPrice(band.id, cycle);
+            const price = bandPeriodPrice(band.id, cycle);
             const featured = band.id === 'growth';
+            const monthlyEq =
+              cycle === 'annual'
+                ? annualMonthlyEquivalent(PLAN_MONTHLY_BY_TIER[band.id].tier_2)
+                : Math.round(price / (cycle === 'half_yearly' ? 6 : 3));
             return (
               <div
                 key={band.id}
@@ -103,11 +125,11 @@ export function Pricing() {
                   <p className="mt-1 text-sm text-ink-soft">{band.blurb}</p>
                   <div className="mt-4 flex items-baseline gap-1">
                     <span className="text-3xl font-bold text-ink">{formatInr(price)}</span>
-                    <span className="text-sm font-medium text-ink-soft">/month</span>
+                    <span className="text-sm font-medium text-ink-soft">{cycleSuffix(cycle)}</span>
                   </div>
-                  {cycle === 'annual' && (
-                    <p className="mt-1 text-xs text-ink-muted">billed annually</p>
-                  )}
+                  <p className="mt-1 text-xs text-ink-muted">
+                    ≈ {formatInr(monthlyEq)}/mo · billed per {billingCycleLabel(cycle)}
+                  </p>
                   <p className="mt-3 text-sm font-semibold text-ink">
                     Up to {band.tables} tables included
                   </p>
@@ -141,7 +163,7 @@ export function Pricing() {
             </span>
             <h2 className="mt-2 text-xl font-bold text-ink">Pay only for what you turn on</h2>
             <p className="mt-1 text-sm text-ink-soft">
-              Billed monthly, on top of your size plan. Enable or disable any time.
+              Priced monthly and charged with your billing cycle. Enable or disable any time.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

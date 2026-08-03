@@ -4,7 +4,7 @@
  * and restaurant-api/internal/services/subscription_pricing.go
  */
 
-export type BillingCycle = 'monthly' | 'annual';
+export type BillingCycle = 'quarterly' | 'half_yearly' | 'annual';
 export type OperationMode = 'dine_in' | 'counter' | 'both';
 export type CityTier = 'tier_1' | 'tier_2' | 'tier_3';
 export type PlanBand = 'starter' | 'growth' | 'scale';
@@ -46,7 +46,72 @@ export const BASIC_MONTHLY_PRICE = PLAN_MONTHLY_BY_TIER.starter.tier_2;
 export const STARTS_FROM_MONTHLY = PLAN_MONTHLY_BY_TIER.starter.tier_3;
 export const BASIC_MONTHLY_BY_TIER: Record<CityTier, number> = PLAN_MONTHLY_BY_TIER.starter;
 export const ANNUAL_MULTIPLIER = 11;
+export const QUARTERLY_MULTIPLIER = 3;
+export const HALF_YEARLY_MULTIPLIER = 6;
 export const TRIAL_DURATION_DAYS = 15;
+
+export const BILLING_CYCLE_OPTIONS: Array<{
+  id: BillingCycle;
+  label: string;
+  shortLabel: string;
+  hint?: string;
+}> = [
+  { id: 'quarterly', label: 'Quarterly', shortLabel: '3 months' },
+  { id: 'half_yearly', label: 'Half-yearly', shortLabel: '6 months' },
+  { id: 'annual', label: 'Annual', shortLabel: 'year', hint: '1 month free' },
+];
+
+export function normalizeBillingCycle(cycle: string | undefined | null): BillingCycle {
+  const c = String(cycle || '').toLowerCase().trim();
+  if (c === 'annual' || c === 'yearly' || c === 'year') return 'annual';
+  if (
+    c === 'half_yearly' ||
+    c === 'half-yearly' ||
+    c === 'halfyearly' ||
+    c === 'semiannual' ||
+    c === 'semi_annual'
+  ) {
+    return 'half_yearly';
+  }
+  return 'quarterly';
+}
+
+export function billingCycleLabel(cycle: BillingCycle | string): string {
+  switch (normalizeBillingCycle(cycle)) {
+    case 'annual':
+      return 'year';
+    case 'half_yearly':
+      return '6 months';
+    default:
+      return 'quarter';
+  }
+}
+
+export function periodSubtotalFromQuote(
+  quote: { monthly_subtotal: number; annual_total: number },
+  cycle: BillingCycle | string
+): number {
+  const monthly = quote.monthly_subtotal;
+  switch (normalizeBillingCycle(cycle)) {
+    case 'annual':
+      return quote.annual_total > 0 ? quote.annual_total : monthly * ANNUAL_MULTIPLIER;
+    case 'half_yearly':
+      return monthly * HALF_YEARLY_MULTIPLIER;
+    default:
+      return monthly * QUARTERLY_MULTIPLIER;
+  }
+}
+
+export function formatPeriodPrice(
+  quote: { monthly_subtotal: number; annual_total: number },
+  cycle: BillingCycle | string
+): string {
+  const amount = periodSubtotalFromQuote(quote, cycle);
+  const c = normalizeBillingCycle(cycle);
+  if (c === 'annual') return `${formatInr(amount)}/year`;
+  if (c === 'half_yearly') return `${formatInr(amount)}/6 mo`;
+  return `${formatInr(amount)}/quarter`;
+}
 
 export const PRICING = {
   extra_staff: 69,
@@ -124,7 +189,7 @@ export interface SubscriptionSelection {
 }
 
 export const DEFAULT_SUBSCRIPTION_SELECTION: SubscriptionSelection = {
-  billing_cycle: 'monthly',
+  billing_cycle: 'quarterly',
   operation_mode: 'both',
   max_tables: PLAN_STARTER_TABLES,
   extra_staff: 0,
@@ -248,7 +313,7 @@ export function normalizeSubscriptionSelection(
 ): SubscriptionSelection {
   return {
     ...selection,
-    billing_cycle: selection.billing_cycle === 'annual' ? 'annual' : 'monthly',
+    billing_cycle: normalizeBillingCycle(selection.billing_cycle),
     operation_mode: 'both',
     max_tables: normalizeMaxTables(selection.max_tables),
     kitchen_dine_in: true,

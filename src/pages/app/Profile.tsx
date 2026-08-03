@@ -276,6 +276,9 @@ function SubscriptionInfoCard({
   const [planMode, setPlanMode] = useState<'upgrade' | 'downgrade' | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [customBusy, setCustomBusy] = useState(false);
+  const awaitingCustom = Boolean(profile?.awaiting_custom_deal);
+  const isCustomDeal = Boolean(profile?.is_custom_deal);
 
   const daysColor =
     daysLeft === null
@@ -450,21 +453,72 @@ function SubscriptionInfoCard({
           </div>
 
           {showChange && (
-            <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
-              <button
-                type="button"
-                onClick={() => setPlanMode('upgrade')}
-                className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
-              >
-                Upgrade
-              </button>
-              <button
-                type="button"
-                onClick={() => setPlanMode('downgrade')}
-                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Downgrade
-              </button>
+            <div className="flex flex-col gap-2 border-t border-gray-100 pt-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlanMode('upgrade')}
+                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
+                >
+                  Upgrade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanMode('downgrade')}
+                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Downgrade
+                </button>
+                {canManagePlan ? (
+                  <button
+                    type="button"
+                    disabled={customBusy || isCustomDeal}
+                    onClick={() => {
+                      if (awaitingCustom || isCustomDeal) return;
+                      if (
+                        !window.confirm(
+                          'BillGenie already has your restaurant details. Submit a custom plan review request? You can still choose a catalog plan later — that withdraws this review.'
+                        )
+                      ) {
+                        return;
+                      }
+                      void (async () => {
+                        setActionError(null);
+                        setCustomBusy(true);
+                        try {
+                          await apiClient.requestCustomDeal();
+                          onRefresh();
+                        } catch (e: unknown) {
+                          setActionError(e instanceof Error ? e.message : 'Could not submit request');
+                        } finally {
+                          setCustomBusy(false);
+                        }
+                      })();
+                    }}
+                    className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
+                      awaitingCustom || isCustomDeal
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-primary bg-primary/5 font-semibold text-primary hover:bg-primary/10'
+                    } disabled:opacity-60`}
+                  >
+                    <span className="font-semibold">
+                      {isCustomDeal
+                        ? 'Custom plan active'
+                        : awaitingCustom
+                          ? 'Custom plan — review in progress'
+                          : 'Need a custom plan?'}
+                    </span>
+                    <span className="mt-0.5 block text-xs font-normal text-gray-600">
+                      {isCustomDeal
+                        ? 'Contact BillGenie support to change negotiated pricing or capacity.'
+                        : awaitingCustom
+                          ? 'BillGenie was notified. Choosing a catalog upgrade/downgrade withdraws this review.'
+                          : 'More than 25 tables or a negotiated deal — tap to notify BillGenie. No extra form needed.'}
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+              {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
             </div>
           )}
 

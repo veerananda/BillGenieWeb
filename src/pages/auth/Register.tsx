@@ -6,7 +6,8 @@ import { apiClient } from '../../services/api';
 import {
   TRIAL_DURATION_DAYS,
   TRIAL_INCLUDES,
-  formatInr,
+  billingCycleLabel,
+  formatPeriodPrice,
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
   PLAN_BANDS,
@@ -79,17 +80,15 @@ function PlanStep({
   cityTier: CityTier;
 }) {
   const quote = useMemo(() => calculateSubscriptionQuote(subscription, cityTier), [cityTier, subscription]);
-  const displayTotal =
-    subscription.billing_cycle === 'annual'
-      ? `${formatInr(quote.annual_total)}/year`
-      : `${formatInr(quote.monthly_subtotal)}/month`;
+  const displayTotal = formatPeriodPrice(quote, subscription.billing_cycle);
+  const periodLabel = billingCycleLabel(subscription.billing_cycle);
 
   return (
     <div className="space-y-4">
       <PlanPicker value={subscription} onChange={onChange} cityTier={cityTier} />
       <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
         <p className="text-xs text-gray-600">
-          {subscription.billing_cycle === 'annual' ? 'Estimated after trial' : 'Estimated monthly (excl. 18% GST)'}
+          Estimated {periodLabel} total (excl. 18% GST)
         </p>
         <p className="mt-1 text-2xl font-extrabold text-primary">{displayTotal}</p>
         <p className="mt-1 text-xs text-gray-600">

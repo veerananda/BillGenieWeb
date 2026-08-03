@@ -314,24 +314,26 @@ function TableCard({
       )}
       </div>
     </button>
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpenQr();
-      }}
-      title="Customer assistance QR"
-      aria-label={`Customer assistance QR for ${table.name}`}
-      className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
-        fill === 'yellow' || fill === 'rose'
-          ? 'bg-white/70 text-amber-950 hover:bg-white'
-          : fill
-            ? 'bg-white/25 text-white hover:bg-white/40'
-            : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
-      }`}
-    >
-      <QrCode className="h-3.5 w-3.5" />
-    </button>
+    {occupied ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenQr();
+        }}
+        title="Customer assistance QR"
+        aria-label={`Customer assistance QR for ${table.name}`}
+        className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
+          fill === 'yellow' || fill === 'rose'
+            ? 'bg-white/70 text-amber-950 hover:bg-white'
+            : fill
+              ? 'bg-white/25 text-white hover:bg-white/40'
+              : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
+        }`}
+      >
+        <QrCode className="h-3.5 w-3.5" />
+      </button>
+    ) : null}
     </div>
   );
 }
@@ -2306,6 +2308,9 @@ export function Orders() {
 
   const openTileAssistanceQr = useCallback(
     async (table: RestaurantTable) => {
+      if (!table.is_occupied) {
+        return;
+      }
       setTileQrTable(table);
       setTileQrLoading(true);
       setTileQrUrl(null);
