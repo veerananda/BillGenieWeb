@@ -5,8 +5,10 @@ import type { SubscriptionRenewalQuote } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectProfile, setProfile } from '../../store/profileSlice';
 import {
+  billingCycleLabel,
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
+  periodSubtotalFromQuote,
   type SubscriptionSelection,
 } from '../../data/pricing';
 
@@ -52,12 +54,15 @@ export function SubscriptionPaywall({
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customDealBusy, setCustomDealBusy] = useState(false);
 
   const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
   const awaitingCustomDeal = Boolean(quote?.awaiting_custom_deal);
+  const customDealReady = Boolean(quote?.is_custom_deal) && !awaitingCustomDeal;
   const allowsPlanReview =
-    (Boolean(quote?.requires_plan_selection) || isPendingActivation) && !awaitingCustomDeal;
-  const showPlanPicker = allowsPlanReview && (editingPlan || !isPendingActivation);
+    (Boolean(quote?.requires_plan_selection) || isPendingActivation) && !customDealReady;
+  const showPlanPicker =
+    allowsPlanReview && (editingPlan || !isPendingActivation || awaitingCustomDeal);
 
   const localQuote = useMemo(() => {
     if (!allowsPlanReview) return null;
@@ -66,9 +71,7 @@ export function SubscriptionPaywall({
 
   const displayQuote = useMemo(() => {
     if (allowsPlanReview && localQuote) {
-      const sub = planSelection.billing_cycle === 'annual'
-        ? localQuote.annual_total
-        : localQuote.monthly_subtotal;
+      const sub = periodSubtotalFromQuote(localQuote, planSelection.billing_cycle);
       return {
         total_inr: Math.round(sub * 1.18),
         subtotal_inr: sub,
@@ -176,16 +179,24 @@ export function SubscriptionPaywall({
 
   if (!open) return null;
 
-  const title = isPendingActivation
-    ? showPlanPicker
-      ? 'Review your plan'
-      : 'Payment required'
-    : allowsPlanReview
-      ? 'Choose your plan'
-      : 'Renew subscription';
+  const title = awaitingCustomDeal
+    ? 'Custom plan in review'
+    : customDealReady
+      ? 'Custom plan ready'
+      : isPendingActivation
+        ? showPlanPicker
+          ? 'Review your plan'
+          : 'Payment required'
+        : allowsPlanReview
+          ? 'Choose your plan'
+          : 'Renew subscription';
 
-  const billingLabel = displayQuote?.billing_cycle === 'annual' ? 'year' : 'month';
-  const payCta = isPendingActivation ? 'Complete payment' : 'Pay now';
+  const billingLabel = billingCycleLabel(displayQuote?.billing_cycle || 'quarterly');
+  const payCta = customDealReady
+    ? 'Pay & activate custom plan'
+    : isPendingActivation
+      ? 'Complete payment'
+      : 'Pay now';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -206,11 +217,16 @@ export function SubscriptionPaywall({
           <p className="text-sm text-gray-600">
             {awaitingCustomDeal ? (
               <>
-                Your custom plan request
-                {quote?.custom_deal_request?.max_tables
-                  ? ` (${quote.custom_deal_request.max_tables} tables)`
-                  : ''}{' '}
-                is with BillGenie. We&apos;ll confirm negotiated pricing, then payment will open here.
+                Custom plan review is in progress — BillGenie was notified. You can still pick a
+                catalog plan below; that withdraws the review. Or wait for pricing and pay when ready.
+              </>
+            ) : customDealReady && canPay ? (
+              <>
+                BillGenie confirmed your negotiated plan
+                {quote?.current_selection?.max_tables
+                  ? ` (up to ${quote.current_selection.max_tables} tables)`
+                  : ''}
+                . Review the amount below and pay with Razorpay to activate.
               </>
             ) : canPay ? (
               isPendingActivation ? (
@@ -234,6 +250,19 @@ export function SubscriptionPaywall({
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
           )}
 
+          {customDealReady && displayQuote ? (
+            <div className="rounded-xl border border-primary bg-primary/5 p-4 space-y-2">
+              <p className="text-sm font-bold text-gray-800">Your custom plan</p>
+              <ul className="space-y-1">
+                {(displayQuote.line_items ?? []).map((item) => (
+                  <li key={item.id} className="text-sm text-gray-600">
+                    • {item.label}{item.amount > 0 ? ` — ₹${item.amount.toLocaleString('en-IN')}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {/* Pending activation: show plan summary with edit button */}
           {isPendingActivation && allowsPlanReview && !showPlanPicker && displayQuote && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
@@ -253,10 +282,56 @@ export function SubscriptionPaywall({
               </button>
             </div>
           )}
-
           {/* Plan picker */}
           {showPlanPicker && (
-            <PlanPicker value={planSelection} onChange={setPlanSelection} />
+            <PlanPicker
+              value={planSelection}
+              onChange={setPlanSelection}
+              awaitingCustomDeal={awaitingCustomDeal}
+              customDealReady={customDealReady}
+              customDealBusy={customDealBusy}
+              onRequestCustomDeal={() => {
+                if (
+                  !window.confirm(
+                    'Submit a custom plan review using your restaurant account details?'
+                  )
+                ) {
+                  return;
+                }
+                void (async () => {
+                  try {
+                    setCustomDealBusy(true);
+                    await apiClient.requestCustomDeal();
+                    const data = await apiClient.getSubscriptionRenewalQuote();
+                    setQuote(data);
+                    if (data.current_selection) {
+                      setPlanSelection({
+                        ...DEFAULT_SUBSCRIPTION_SELECTION,
+                        ...data.current_selection,
+                      });
+                    }
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : 'Could not submit request');
+                  } finally {
+                    setCustomDealBusy(false);
+                  }
+                })();
+              }}
+              onCancelCustomDealRequest={() => {
+                void (async () => {
+                  try {
+                    setCustomDealBusy(true);
+                    await apiClient.cancelCustomDealRequest();
+                    const data = await apiClient.getSubscriptionRenewalQuote(planSelection);
+                    setQuote(data);
+                  } catch {
+                    // non-fatal
+                  } finally {
+                    setCustomDealBusy(false);
+                  }
+                })();
+              }}
+            />
           )}
 
           {/* Price display */}
@@ -288,7 +363,8 @@ export function SubscriptionPaywall({
 
         {/* Footer */}
         <div className="border-t border-gray-100 px-5 py-4 space-y-2">
-          {canPay && !awaitingCustomDeal ? (
+          {canPay &&
+          (!awaitingCustomDeal || (displayQuote?.total_inr || 0) > 0 || customDealReady) ? (
             <button
               onClick={handlePay}
               disabled={paying || loadingQuote || !displayQuote}
@@ -319,11 +395,14 @@ export function SubscriptionPaywall({
 
 import {
   ADDON_OPTIONS,
+  BILLING_CYCLE_OPTIONS,
   PLAN_BANDS,
   SHARED_PLAN_FEATURES,
   bandMonthlyForTier,
+  normalizeBillingCycle,
   planBandFromTables,
   tablesForPlanBand,
+  type BillingCycle,
   type CityTier,
   type PlanBand,
 } from '../../data/pricing';
@@ -333,30 +412,47 @@ export function PlanPicker({
   onChange,
   lockBillingCycle = false,
   cityTier = 'tier_2',
+  awaitingCustomDeal = false,
+  customDealReady = false,
+  onRequestCustomDeal,
+  onCancelCustomDealRequest,
+  customDealBusy = false,
 }: {
   value: SubscriptionSelection;
   onChange: (s: SubscriptionSelection) => void;
+  /** @deprecated Billing cycle can always be changed on upgrade/downgrade. */
   lockBillingCycle?: boolean;
   cityTier?: CityTier;
+  awaitingCustomDeal?: boolean;
+  customDealReady?: boolean;
+  onRequestCustomDeal?: () => void;
+  onCancelCustomDealRequest?: () => void;
+  customDealBusy?: boolean;
 }) {
+  void lockBillingCycle;
   function set(patch: Partial<SubscriptionSelection>) {
     onChange({ ...value, ...patch });
   }
 
   const activeBand = planBandFromTables(value.max_tables);
-  const setBand = (band: PlanBand) => set({ max_tables: tablesForPlanBand(band) });
+  const setBand = (band: PlanBand) => {
+    if (awaitingCustomDeal && onCancelCustomDealRequest) {
+      onCancelCustomDealRequest();
+    }
+    set({ max_tables: tablesForPlanBand(band) });
+  };
+  const cycle = normalizeBillingCycle(value.billing_cycle);
 
   return (
     <div className="space-y-4">
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Choose your plan</p>
         <p className="mb-2 text-xs text-gray-500">
-          Pick a size band by table capacity. Need more than 25 tables? Ask BillGenie for a custom plan from signup.
-          at registration for a commercial deal.
+          Pick a size band by table capacity, or request a custom plan — BillGenie already has your restaurant details.
         </p>
         <div className="space-y-2">
           {PLAN_BANDS.map((band) => {
-            const active = activeBand === band.id;
+            const active = activeBand === band.id && !awaitingCustomDeal && !customDealReady;
             const price = bandMonthlyForTier(band.id, cityTier);
             return (
               <button
@@ -374,6 +470,36 @@ export function PlanPicker({
               </button>
             );
           })}
+          {onRequestCustomDeal || awaitingCustomDeal || customDealReady ? (
+            <button
+              type="button"
+              disabled={customDealBusy || customDealReady || (awaitingCustomDeal && !onRequestCustomDeal)}
+              onClick={() => {
+                if (awaitingCustomDeal || customDealReady) return;
+                onRequestCustomDeal?.();
+              }}
+              className={`w-full rounded-lg border-2 p-3 text-left transition-colors ${
+                awaitingCustomDeal || customDealReady
+                  ? 'border-primary bg-primary/5'
+                  : 'border-sky-400 bg-sky-50 hover:border-sky-500'
+              } disabled:opacity-70`}
+            >
+              <p className="text-sm font-semibold text-sky-900">
+                {customDealReady
+                  ? 'Custom plan ready'
+                  : awaitingCustomDeal
+                    ? 'Custom plan — review in progress'
+                    : 'Need a custom plan?'}
+              </p>
+              <p className="mt-1 text-xs text-sky-800/80">
+                {customDealReady
+                  ? 'Pay below to activate your negotiated plan.'
+                  : awaitingCustomDeal
+                    ? 'BillGenie was notified. You can still pick a catalog plan above — that withdraws this review.'
+                    : 'More than 25 tables or a negotiated deal. Tap to submit — we already have your account details.'}
+              </p>
+            </button>
+          ) : null}
         </div>
         <p className="mt-3 text-xs font-semibold text-gray-500">Every plan includes:</p>
         <ul className="mt-1.5 space-y-1 text-xs text-gray-600">
@@ -412,25 +538,23 @@ export function PlanPicker({
 
       <div>
         <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Billing</p>
-        {lockBillingCycle ? (
-          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold capitalize text-gray-700">
-            {value.billing_cycle}
-            <span className="ml-2 text-xs font-normal text-gray-500">(locked mid-cycle)</span>
-          </p>
-        ) : (
-          <div className="flex gap-2">
-            {(['monthly', 'annual'] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => set({ billing_cycle: c })}
-                className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${value.billing_cycle === c ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
-              >
-                {c === 'monthly' ? 'Monthly' : 'Annual (1 month free)'}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {BILLING_CYCLE_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => set({ billing_cycle: opt.id as BillingCycle })}
+              className={`min-w-[30%] flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${cycle === opt.id ? 'border-primary bg-primary text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+            >
+              {opt.label}
+              {opt.hint ? (
+                <span className={`mt-0.5 block text-[10px] font-medium ${cycle === opt.id ? 'text-white/85' : 'text-gray-500'}`}>
+                  {opt.hint}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

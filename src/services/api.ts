@@ -206,7 +206,7 @@ export interface Ingredient {
 }
 
 export interface SubscriptionRenewalQuote {
-  billing_cycle: 'monthly' | 'annual';
+  billing_cycle: 'quarterly' | 'half_yearly' | 'annual';
   subtotal_inr: number;
   gst_inr: number;
   total_inr: number;
@@ -219,6 +219,7 @@ export interface SubscriptionRenewalQuote {
   requires_plan_selection?: boolean;
   requires_payment?: boolean;
   awaiting_custom_deal?: boolean;
+  is_custom_deal?: boolean;
   custom_deal_request?: {
     max_tables: number;
     status?: string;
@@ -234,7 +235,7 @@ export interface SubscriptionRenewalOrder {
   currency: string;
   name: string;
   description: string;
-  billing_cycle: 'monthly' | 'annual';
+  billing_cycle: 'quarterly' | 'half_yearly' | 'annual';
   total_inr: number;
   subtotal_inr: number;
   gst_inr: number;
@@ -276,6 +277,10 @@ export interface RestaurantProfile {
   pending_change_at?: string | null;
   subscription_plan?: string;
   subscription_monthly_price?: number;
+  pricing_mode?: string;
+  awaiting_custom_deal?: boolean;
+  is_custom_deal?: boolean;
+  custom_deal_request?: { max_tables?: number; status?: string } | null;
   subscription_config?: unknown;
   subscription_selection?: import('../data/pricing').SubscriptionSelection;
   subscription_limits?: import('../lib/subscriptionLimits').SubscriptionLimits;
@@ -1294,19 +1299,16 @@ class APIClient {
     return this.makeRequest('/subscription/create-order', 'POST', body);
   }
 
-  async requestCustomDeal(data: {
-    max_tables: number;
-    extra_staff: number;
-    extra_chefs: number;
-    extra_managers: number;
-    inventory: boolean;
-    expenses: boolean;
-    history_extended: boolean;
-    billing_cycle: 'monthly' | 'annual';
+  async requestCustomDeal(data?: {
     notes?: string;
     contact_phone?: string;
+    billing_cycle?: 'quarterly' | 'half_yearly' | 'annual';
   }): Promise<{ message: string; awaiting_custom_deal: boolean }> {
-    return this.makeRequest('/subscription/request-custom-deal', 'POST', data);
+    return this.makeRequest('/subscription/request-custom-deal', 'POST', data || {});
+  }
+
+  async cancelCustomDealRequest(): Promise<{ message: string; awaiting_custom_deal: boolean }> {
+    return this.makeRequest('/subscription/cancel-custom-deal-request', 'POST');
   }
 
   async verifySubscriptionPayment(data: {
@@ -1352,7 +1354,7 @@ class APIClient {
 
 export interface PlanChangeQuote {
   change_type: 'upgrade' | 'downgrade' | 'noop';
-  billing_cycle: 'monthly' | 'annual';
+  billing_cycle: 'quarterly' | 'half_yearly' | 'annual';
   remaining_days: number;
   period_days: number;
   current_selection: import('../data/pricing').SubscriptionSelection;

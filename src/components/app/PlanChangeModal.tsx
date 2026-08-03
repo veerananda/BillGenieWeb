@@ -6,6 +6,7 @@ import apiClient, {
 } from '../../services/api';
 import {
   DEFAULT_SUBSCRIPTION_SELECTION,
+  normalizeSubscriptionSelection,
   type SubscriptionSelection,
 } from '../../data/pricing';
 import { PlanPicker } from './SubscriptionPaywall';
@@ -74,10 +75,10 @@ export function PlanChangeModal({ open, mode, currentSelection, onClose, onSucce
       setBusy(false);
       return;
     }
-    const base = {
+    const base = normalizeSubscriptionSelection({
       ...DEFAULT_SUBSCRIPTION_SELECTION,
       ...(currentSelection ?? {}),
-    };
+    });
     setSelection(base);
     void loadQuote(base);
   }, [open, currentSelection, loadQuote]);
@@ -209,13 +210,10 @@ export function PlanChangeModal({ open, mode, currentSelection, onClose, onSucce
 
           <PlanPicker
             value={selection}
-            lockBillingCycle
-            onChange={(next) =>
-              setSelection({
-                ...next,
-                billing_cycle: selection.billing_cycle,
-              })
-            }
+            onChange={setSelection}
+            onCancelCustomDealRequest={() => {
+              void apiClient.cancelCustomDealRequest().catch(() => undefined);
+            }}
           />
 
           {loadingQuote && (

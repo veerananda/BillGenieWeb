@@ -26,7 +26,7 @@ export function TermsOfService() {
       <h2>Subscriptions and payments</h2>
       <ul>
         <li>
-          Paid plans are billed monthly or annually as selected. Prices are shown before payment and
+          Paid plans are billed quarterly, half-yearly, or annually as selected. Prices are shown before payment and
           may include applicable GST.
         </li>
         <li>
