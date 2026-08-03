@@ -7,7 +7,6 @@ import {
   TRIAL_DURATION_DAYS,
   TRIAL_INCLUDES,
   billingCycleLabel,
-  formatInr,
   formatPeriodPrice,
   calculateSubscriptionQuote,
   DEFAULT_SUBSCRIPTION_SELECTION,
