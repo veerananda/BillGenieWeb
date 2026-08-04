@@ -277,8 +277,6 @@ function SubscriptionInfoCard({
   const [cancelBusy, setCancelBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [customBusy, setCustomBusy] = useState(false);
-  const awaitingCustom = Boolean(profile?.awaiting_custom_deal);
-  const isCustomDeal = Boolean(profile?.is_custom_deal);
 
   const daysColor =
     daysLeft === null
@@ -452,75 +450,46 @@ function SubscriptionInfoCard({
             </div>
           </div>
 
-          {showChange && (
+          {showChange && canManagePlan ? (
             <div className="flex flex-col gap-2 border-t border-gray-100 pt-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPlanMode('upgrade')}
-                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
-                >
-                  Upgrade
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlanMode('downgrade')}
-                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Downgrade
-                </button>
-                {canManagePlan ? (
-                  <button
-                    type="button"
-                    disabled={customBusy || isCustomDeal}
-                    onClick={() => {
-                      if (awaitingCustom || isCustomDeal) return;
-                      if (
-                        !window.confirm(
-                          'BillGenie already has your restaurant details. Submit a custom plan review request? You can still upgrade or downgrade meanwhile — completing a catalog payment closes this request.'
-                        )
-                      ) {
-                        return;
-                      }
-                      void (async () => {
-                        setActionError(null);
-                        setCustomBusy(true);
-                        try {
-                          await apiClient.requestCustomDeal();
-                          onRefresh();
-                        } catch (e: unknown) {
-                          setActionError(e instanceof Error ? e.message : 'Could not submit request');
-                        } finally {
-                          setCustomBusy(false);
-                        }
-                      })();
-                    }}
-                    className={`rounded-xl border px-4 py-2.5 text-left text-sm transition-colors ${
-                      awaitingCustom || isCustomDeal
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-primary bg-primary/5 font-semibold text-primary hover:bg-primary/10'
-                    } disabled:opacity-60`}
-                  >
-                    <span className="font-semibold">
-                      {isCustomDeal
-                        ? 'Custom plan active'
-                        : awaitingCustom
-                          ? 'Custom plan — review in progress'
-                          : 'Need a custom plan?'}
-                    </span>
-                    <span className="mt-0.5 block text-xs font-normal text-gray-600">
-                      {isCustomDeal
-                        ? 'Contact BillGenie support to change negotiated pricing or capacity.'
-                        : awaitingCustom
-                          ? 'BillGenie was notified. You can still upgrade or downgrade; completing payment closes this request.'
-                          : 'More than 25 tables or a negotiated deal — tap to notify BillGenie. No extra form needed.'}
-                    </span>
-                  </button>
-                ) : null}
-              </div>
+              <button
+                type="button"
+                disabled={customBusy}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'BillGenie will be notified with your restaurant details. There is no self-serve upgrade or downgrade — we will contact you to negotiate.'
+                    )
+                  ) {
+                    return;
+                  }
+                  void (async () => {
+                    setActionError(null);
+                    setCustomBusy(true);
+                    try {
+                      const res = await apiClient.notifyPlanChange();
+                      window.alert(
+                        res?.message ||
+                          'BillGenie has been notified — we will contact you shortly.'
+                      );
+                      onRefresh();
+                    } catch (e: unknown) {
+                      setActionError(e instanceof Error ? e.message : 'Could not notify BillGenie');
+                    } finally {
+                      setCustomBusy(false);
+                    }
+                  })();
+                }}
+                className="rounded-xl border border-primary bg-primary/5 px-4 py-2.5 text-left text-sm font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
+              >
+                Request plan change
+                <span className="mt-0.5 block text-xs font-normal text-gray-600">
+                  Notify BillGenie — no in-app plan picker
+                </span>
+              </button>
               {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
             </div>
-          )}
+          ) : null}
 
           {!showChange &&
             String(profile?.subscription_plan || '').toLowerCase() === 'custom' &&

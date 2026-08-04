@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, CreditCard, Pencil, Loader2 } from 'lucide-react';
+import { X, CreditCard, Loader2 } from 'lucide-react';
 import apiClient from '../../services/api';
 import type { SubscriptionRenewalQuote } from '../../services/api';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -50,7 +50,6 @@ export function SubscriptionPaywall({
   const profile = useAppSelector(selectProfile);
   const [quote, setQuote] = useState<SubscriptionRenewalQuote | null>(null);
   const [planSelection, setPlanSelection] = useState<SubscriptionSelection>(DEFAULT_SUBSCRIPTION_SELECTION);
-  const [editingPlan, setEditingPlan] = useState(false);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,12 +58,11 @@ export function SubscriptionPaywall({
   const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
   const awaitingCustomDeal = Boolean(quote?.awaiting_custom_deal);
   const customDealReady = Boolean(quote?.is_custom_deal) && !awaitingCustomDeal;
-  const isForcedPlanChoice = Boolean(quote?.requires_plan_selection) && !isPendingActivation;
-  const canEditPlan =
-    canPay && !customDealReady && (isPendingActivation || Boolean(quote?.requires_plan_selection) || Boolean(quote));
-  const allowsPlanReview = canEditPlan;
-  const showPlanPicker =
-    allowsPlanReview && (editingPlan || isForcedPlanChoice || awaitingCustomDeal);
+  // Deal-first: pay current negotiated quote only — no self-serve review/picker.
+  const isForcedPlanChoice = false;
+  const canEditPlan = false;
+  const allowsPlanReview = false;
+  const showPlanPicker = false;
 
   const localQuote = useMemo(() => {
     if (!allowsPlanReview) return null;
@@ -95,11 +93,11 @@ export function SubscriptionPaywall({
     };
   }, [useLocalDisplayQuote, localQuote, planSelection, quote]);
 
-  const loadQuote = useCallback(async (sel?: SubscriptionSelection) => {
+  const loadQuote = useCallback(async (_sel?: SubscriptionSelection) => {
     setLoadingQuote(true);
     setError(null);
     try {
-      const data = await apiClient.getSubscriptionRenewalQuote(sel);
+      const data = await apiClient.getSubscriptionRenewalQuote();
       setQuote(data);
       if (data.current_selection) {
         setPlanSelection({ ...DEFAULT_SUBSCRIPTION_SELECTION, ...data.current_selection });
@@ -113,7 +111,6 @@ export function SubscriptionPaywall({
 
   useEffect(() => {
     if (!open) {
-      setEditingPlan(false);
       setQuote(null);
       setPaying(false);
       setError(null);
@@ -286,12 +283,6 @@ export function SubscriptionPaywall({
                   </li>
                 ))}
               </ul>
-              <button
-                onClick={() => setEditingPlan(true)}
-                className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
-              >
-                <Pencil className="h-3.5 w-3.5" /> Review plan
-              </button>
             </div>
           )}
           {/* Plan picker */}
@@ -361,18 +352,9 @@ export function SubscriptionPaywall({
 
         {/* Footer */}
         <div className="shrink-0 space-y-2 border-t border-gray-100 px-5 py-4">
-          {canPay &&
+              {canPay &&
           (!awaitingCustomDeal || (displayQuote?.total_inr || 0) > 0 || customDealReady) ? (
             <>
-              {canEditPlan && showPlanPicker && !isForcedPlanChoice ? (
-                <button
-                  type="button"
-                  onClick={() => setEditingPlan(false)}
-                  className="w-full rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary hover:bg-primary/5"
-                >
-                  Back
-                </button>
-              ) : null}
               <button
               onClick={handlePay}
               disabled={paying || loadingQuote || !displayQuote}
