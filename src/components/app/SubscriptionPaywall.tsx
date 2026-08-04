@@ -329,20 +329,6 @@ export function SubscriptionPaywall({
                   }
                 })();
               }}
-              onCancelCustomDealRequest={() => {
-                void (async () => {
-                  try {
-                    setCustomDealBusy(true);
-                    await apiClient.cancelCustomDealRequest();
-                    const data = await apiClient.getSubscriptionRenewalQuote(planSelection);
-                    setQuote(data);
-                  } catch {
-                    // non-fatal
-                  } finally {
-                    setCustomDealBusy(false);
-                  }
-                })();
-              }}
             />
           )}
 
@@ -438,7 +424,6 @@ export function PlanPicker({
   awaitingCustomDeal = false,
   customDealReady = false,
   onRequestCustomDeal,
-  onCancelCustomDealRequest,
   customDealBusy = false,
 }: {
   value: SubscriptionSelection;
@@ -449,7 +434,6 @@ export function PlanPicker({
   awaitingCustomDeal?: boolean;
   customDealReady?: boolean;
   onRequestCustomDeal?: () => void;
-  onCancelCustomDealRequest?: () => void;
   customDealBusy?: boolean;
 }) {
   void lockBillingCycle;

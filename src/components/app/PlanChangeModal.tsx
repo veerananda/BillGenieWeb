@@ -211,9 +211,6 @@ export function PlanChangeModal({ open, mode, currentSelection, onClose, onSucce
           <PlanPicker
             value={selection}
             onChange={setSelection}
-            onCancelCustomDealRequest={() => {
-              void apiClient.cancelCustomDealRequest().catch(() => undefined);
-            }}
           />
 
           {loadingQuote && (
