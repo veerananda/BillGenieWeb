@@ -54,7 +54,7 @@ export interface RegisterData {
   phone: string;
   password: string;
   login_id: string;
-  start_mode: 'trial' | 'paid';
+  start_mode: 'trial' | 'paid' | 'custom_request';
   address?: string;
   city?: string;
   state?: string;

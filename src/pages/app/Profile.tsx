@@ -477,7 +477,7 @@ function SubscriptionInfoCard({
                       if (awaitingCustom || isCustomDeal) return;
                       if (
                         !window.confirm(
-                          'BillGenie already has your restaurant details. Submit a custom plan review request? You can still choose a catalog plan later — that withdraws this review.'
+                          'BillGenie already has your restaurant details. Submit a custom plan review request? You can still upgrade or downgrade meanwhile — completing a catalog payment closes this request.'
                         )
                       ) {
                         return;
@@ -512,7 +512,7 @@ function SubscriptionInfoCard({
                       {isCustomDeal
                         ? 'Contact BillGenie support to change negotiated pricing or capacity.'
                         : awaitingCustom
-                          ? 'BillGenie was notified. Choosing a catalog upgrade/downgrade withdraws this review.'
+                          ? 'BillGenie was notified. You can still upgrade or downgrade; completing payment closes this request.'
                           : 'More than 25 tables or a negotiated deal — tap to notify BillGenie. No extra form needed.'}
                     </span>
                   </button>
