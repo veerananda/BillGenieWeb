@@ -59,18 +59,25 @@ export function SubscriptionPaywall({
   const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
   const awaitingCustomDeal = Boolean(quote?.awaiting_custom_deal);
   const customDealReady = Boolean(quote?.is_custom_deal) && !awaitingCustomDeal;
-  const allowsPlanReview =
-    (Boolean(quote?.requires_plan_selection) || isPendingActivation) && !customDealReady;
+  const isForcedPlanChoice = Boolean(quote?.requires_plan_selection) && !isPendingActivation;
+  const canEditPlan =
+    canPay && !customDealReady && (isPendingActivation || Boolean(quote?.requires_plan_selection) || Boolean(quote));
+  const allowsPlanReview = canEditPlan;
   const showPlanPicker =
-    allowsPlanReview && (editingPlan || !isPendingActivation || awaitingCustomDeal);
+    allowsPlanReview && (editingPlan || isForcedPlanChoice || awaitingCustomDeal);
 
   const localQuote = useMemo(() => {
     if (!allowsPlanReview) return null;
     return calculateSubscriptionQuote(planSelection, profile?.city_tier ?? 'tier_2');
   }, [planSelection, allowsPlanReview, profile?.city_tier]);
 
+  const useLocalDisplayQuote =
+    allowsPlanReview &&
+    Boolean(localQuote) &&
+    (showPlanPicker || isPendingActivation || Boolean(quote?.requires_plan_selection));
+
   const displayQuote = useMemo(() => {
-    if (allowsPlanReview && localQuote) {
+    if (useLocalDisplayQuote && localQuote) {
       const sub = periodSubtotalFromQuote(localQuote, planSelection.billing_cycle);
       return {
         total_inr: Math.round(sub * 1.18),
@@ -86,7 +93,7 @@ export function SubscriptionPaywall({
       billing_cycle: quote.billing_cycle,
       line_items: quote.line_items,
     };
-  }, [allowsPlanReview, localQuote, planSelection, quote]);
+  }, [useLocalDisplayQuote, localQuote, planSelection, quote]);
 
   const loadQuote = useCallback(async (sel?: SubscriptionSelection) => {
     setLoadingQuote(true);
@@ -117,10 +124,10 @@ export function SubscriptionPaywall({
 
   // Re-fetch quote when plan changes (debounced, only when picker is visible)
   useEffect(() => {
-    if (!open || !allowsPlanReview || !editingPlan) return;
+    if (!open || !showPlanPicker) return;
     const t = setTimeout(() => loadQuote(planSelection), 350);
     return () => clearTimeout(t);
-  }, [planSelection, open, allowsPlanReview, editingPlan, loadQuote]);
+  }, [planSelection, open, showPlanPicker, loadQuote]);
 
   async function handlePay() {
     setError(null);
@@ -183,13 +190,13 @@ export function SubscriptionPaywall({
     ? 'Custom plan in review'
     : customDealReady
       ? 'Custom plan ready'
-      : isPendingActivation
-        ? showPlanPicker
-          ? 'Review your plan'
-          : 'Payment required'
-        : allowsPlanReview
-          ? 'Choose your plan'
-          : 'Renew subscription';
+      : showPlanPicker
+        ? 'Review your plan'
+        : isPendingActivation
+          ? 'Payment required'
+          : isForcedPlanChoice
+            ? 'Choose your plan'
+            : 'Renew subscription';
 
   const billingLabel = billingCycleLabel(displayQuote?.billing_cycle || 'quarterly');
   const payCta = customDealReady
@@ -200,9 +207,13 @@ export function SubscriptionPaywall({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+      <div
+        className={`relative flex w-full flex-col rounded-2xl bg-white shadow-2xl ${
+          showPlanPicker ? 'max-h-[92vh] max-w-lg' : 'max-h-[90vh] max-w-md'
+        }`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <CreditCard className="h-5 w-5 text-primary" />
             <h2 className="text-base font-bold text-gray-900">{title}</h2>
@@ -213,12 +224,13 @@ export function SubscriptionPaywall({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <p className="text-sm text-gray-600">
             {awaitingCustomDeal ? (
               <>
-                Custom plan review is in progress — BillGenie was notified. You can still pick a
-                catalog plan below; that withdraws the review. Or wait for pricing and pay when ready.
+                Custom plan review is in progress — BillGenie was notified. You can still upgrade,
+                downgrade, or pay for a catalog plan. Completing payment closes this request. Or wait
+                for BillGenie pricing and pay when ready.
               </>
             ) : customDealReady && canPay ? (
               <>
@@ -229,14 +241,14 @@ export function SubscriptionPaywall({
                 . Review the amount below and pay with Razorpay to activate.
               </>
             ) : canPay ? (
-              isPendingActivation ? (
-                showPlanPicker
-                  ? 'Adjust your plans and add-ons before payment.'
-                  : 'Complete payment to continue using this feature.'
-              ) : allowsPlanReview ? (
+              showPlanPicker ? (
+                'Adjust size, add-ons, and billing cycle before payment.'
+              ) : isPendingActivation ? (
+                'Complete payment to continue using this feature.'
+              ) : isForcedPlanChoice ? (
                 'Your 15-day free trial has ended. Select a plan and pay to continue.'
               ) : (
-                'Renew your subscription to continue using BillGenie.'
+                'Renew your current plan, or review it first to change capacity or add-ons.'
               )
             ) : (
               <>
@@ -263,12 +275,12 @@ export function SubscriptionPaywall({
             </div>
           ) : null}
 
-          {/* Pending activation: show plan summary with edit button */}
-          {isPendingActivation && allowsPlanReview && !showPlanPicker && displayQuote && (
+          {/* Collapsed summary + review for pending activation and renewals */}
+          {canEditPlan && !showPlanPicker && !customDealReady && displayQuote && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
               <p className="text-sm font-bold text-gray-800">Your plan summary</p>
               <ul className="space-y-1">
-                {(displayQuote.line_items ?? []).map((item) => (
+                {(displayQuote.line_items ?? []).slice(0, 6).map((item) => (
                   <li key={item.id} className="text-sm text-gray-600">
                     • {item.label}{item.amount > 0 ? ` — ₹${item.amount}` : ''}
                   </li>
@@ -278,7 +290,7 @@ export function SubscriptionPaywall({
                 onClick={() => setEditingPlan(true)}
                 className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
               >
-                <Pencil className="h-3.5 w-3.5" /> Edit plan
+                <Pencil className="h-3.5 w-3.5" /> Review plan
               </button>
             </div>
           )}
@@ -362,10 +374,20 @@ export function SubscriptionPaywall({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-5 py-4 space-y-2">
+        <div className="shrink-0 space-y-2 border-t border-gray-100 px-5 py-4">
           {canPay &&
           (!awaitingCustomDeal || (displayQuote?.total_inr || 0) > 0 || customDealReady) ? (
-            <button
+            <>
+              {canEditPlan && showPlanPicker && !isForcedPlanChoice ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingPlan(false)}
+                  className="w-full rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary hover:bg-primary/5"
+                >
+                  Back
+                </button>
+              ) : null}
+              <button
               onClick={handlePay}
               disabled={paying || loadingQuote || !displayQuote}
               className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
@@ -378,6 +400,7 @@ export function SubscriptionPaywall({
                 payCta
               )}
             </button>
+            </>
           ) : null}
           <button
             onClick={onClose}
@@ -436,9 +459,6 @@ export function PlanPicker({
 
   const activeBand = planBandFromTables(value.max_tables);
   const setBand = (band: PlanBand) => {
-    if (awaitingCustomDeal && onCancelCustomDealRequest) {
-      onCancelCustomDealRequest();
-    }
     set({ max_tables: tablesForPlanBand(band) });
   };
   const cycle = normalizeBillingCycle(value.billing_cycle);
@@ -452,7 +472,7 @@ export function PlanPicker({
         </p>
         <div className="space-y-2">
           {PLAN_BANDS.map((band) => {
-            const active = activeBand === band.id && !awaitingCustomDeal && !customDealReady;
+            const active = activeBand === band.id && !customDealReady;
             const price = bandMonthlyForTier(band.id, cityTier);
             return (
               <button

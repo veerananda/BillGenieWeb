@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard, ChevronLeft } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Loader2, Eye, EyeOff, Sparkles, CreditCard, Handshake, ChevronLeft } from 'lucide-react';
 import { apiClient } from '../../services/api';
 import {
   TRIAL_DURATION_DAYS,
@@ -17,22 +17,16 @@ import {
 import { PlanPicker } from '../../components/app/SubscriptionPaywall';
 import { INDIA_LOCATION_OPTIONS, citiesForState, resolveCityTier } from '../../data/indiaLocations';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function generateLoginId(): string {
   const suffix = Math.floor(Math.random() * 99999).toString().padStart(5, '0');
   return `100${suffix}`;
 }
 
-// ── Step types ────────────────────────────────────────────────────────────────
-
-type StartMode = 'trial' | 'paid';
+type StartMode = 'trial' | 'paid' | 'custom_request';
 type RegisterPath = 'plans' | 'self_serve' | 'custom_lead' | 'lead_done';
 
 interface Step1 { restaurantName: string; cuisine: string; city: string; address: string; state: string; }
 interface Step2 { ownerName: string; email: string; phone: string; }
-
-// ── Stepper ───────────────────────────────────────────────────────────────────
 
 const STEPS = ['Restaurant', 'Owner', 'Plan', 'Security'] as const;
 
@@ -45,7 +39,6 @@ function StepIndicator({ current }: { current: number }) {
         const last = idx === STEPS.length - 1;
         return (
           <div key={label} className={`flex items-start ${last ? 'flex-none' : 'flex-1'}`}>
-            {/* Circle + label */}
             <div className="flex flex-col items-center">
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
@@ -58,7 +51,6 @@ function StepIndicator({ current }: { current: number }) {
                 {label}
               </span>
             </div>
-            {/* Connector — only between steps */}
             {!last && (
               <div className={`mt-4 h-px flex-1 mx-1 transition-colors ${done ? 'bg-primary' : 'bg-gray-200'}`} />
             )}
@@ -68,7 +60,6 @@ function StepIndicator({ current }: { current: number }) {
     </div>
   );
 }
-
 
 function PlanStep({
   subscription,
@@ -99,8 +90,6 @@ function PlanStep({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export function Register() {
   const navigate = useNavigate();
 
@@ -127,8 +116,6 @@ export function Register() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-
   function s1(field: keyof Step1) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setStep1((p) => ({ ...p, [field]: e.target.value }));
@@ -147,8 +134,6 @@ export function Register() {
   }, [loginId]);
   const cityOptions = useMemo(() => citiesForState(step1.state), [step1.state]);
   const cityTier = useMemo<CityTier>(() => resolveCityTier(step1.state, step1.city), [step1.state, step1.city]);
-
-  // ── Validation ────────────────────────────────────────────────────────────
 
   function validate(): string | null {
     if (step === 0) {
@@ -187,6 +172,7 @@ export function Register() {
   function goToSelfServe() {
     setError(null);
     setStep(0);
+    setStartMode('trial');
     setPath('self_serve');
   }
 
@@ -216,8 +202,6 @@ export function Register() {
     }
   }
 
-  // ── Submit ────────────────────────────────────────────────────────────────
-
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -240,11 +224,13 @@ export function Register() {
         start_mode: startMode,
         subscription: startMode === 'paid' ? subscription : undefined,
       });
+      const registrationMessage =
+        startMode === 'custom_request'
+          ? `We sent a verification link to ${response.email}. Open the link, then sign in. Your login number is ${response.login_id}. BillGenie will review your account and set custom pricing — you will get an email when your deal is ready to pay.`
+          : `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}. Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`;
       navigate('/login', {
         replace: true,
-        state: {
-          registrationMessage: `We sent a verification link to ${response.email}. Open the link in your email, then sign in. Your login number is ${response.login_id}. Once BillGenie reviews and approves your restaurant, you'll get a confirmation email and can start using BillGenie.`,
-        },
+        state: { registrationMessage },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
@@ -425,250 +411,299 @@ export function Register() {
 
           {path === 'self_serve' && (
             <>
-          {/* Stepper */}
-          <StepIndicator current={step} />
+              <StepIndicator current={step} />
 
-          <div className="mt-8">
-            {/* ── Step 0: Restaurant info ── */}
-            {step === 0 && (
-              <div className="space-y-4">
-                <div>
-                  <label className={labelCls}>Restaurant name <span className="text-red-500">*</span></label>
-                  <input type="text" placeholder="e.g. Spice Garden" value={step1.restaurantName} onChange={s1('restaurantName')} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Cuisine type <span className="text-xs font-normal text-gray-400">(optional)</span></label>
-                  <input type="text" placeholder="e.g. North Indian, Chinese" value={step1.cuisine} onChange={s1('cuisine')} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>State <span className="text-red-500">*</span></label>
-                  <select
-                    value={step1.state}
-                    onChange={(e) => setStep1((p) => ({ ...p, state: e.target.value, city: '' }))}
-                    className={inputCls}
-                  >
-                    <option value="">Select state</option>
-                    {INDIA_LOCATION_OPTIONS.map((item) => (
-                      <option key={item.state} value={item.state}>{item.state}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>City <span className="text-red-500">*</span></label>
-                  <select
-                    value={step1.city}
-                    onChange={(e) => setStep1((p) => ({ ...p, city: e.target.value }))}
-                    className={inputCls}
-                    disabled={!step1.state}
-                  >
-                    <option value="">{step1.state ? 'Select city' : 'Select state first'}</option>
-                    {cityOptions.map((item) => (
-                      <option key={item.name} value={item.name}>{item.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>Address <span className="text-xs font-normal text-gray-400">(optional)</span></label>
-                  <input type="text" placeholder="Street, area, landmark" value={step1.address} onChange={s1('address')} className={inputCls} />
-                </div>
-                {error && <ErrorBox>{error}</ErrorBox>}
-                <NavButtons onNext={goNext} nextLabel="Next: Owner details" />
-              </div>
-            )}
-
-            {/* ── Step 1: Owner info ── */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <div>
-                  <label className={labelCls}>Owner name <span className="text-red-500">*</span></label>
-                  <input type="text" placeholder="Full name" value={step2.ownerName} onChange={s2('ownerName')} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Email <span className="text-red-500">*</span></label>
-                  <input type="email" autoComplete="email" placeholder="owner@restaurant.com" value={step2.email} onChange={s2('email')} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Phone <span className="text-red-500">*</span></label>
-                  <input type="tel" inputMode="numeric" placeholder="10-digit mobile number" value={step2.phone} onChange={s2('phone')} maxLength={10} className={inputCls} />
-                </div>
-                {error && <ErrorBox>{error}</ErrorBox>}
-                <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Plan" />
-              </div>
-            )}
-
-            {/* ── Step 2: Plan ── */}
-            {step === 2 && (
-              <div className="space-y-6">
-                {/* Start mode picker */}
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">How do you want to start?</p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    {/* Free trial card */}
-                    <button
-                      type="button"
-                      onClick={() => setStartMode('trial')}
-                      className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
-                        startMode === 'trial'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'trial' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
-                        <Sparkles size={18} />
-                      </div>
-                      <p className={`mt-3 text-sm font-bold ${startMode === 'trial' ? 'text-primary' : 'text-gray-900'}`}>
-                        Free trial
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">{TRIAL_DURATION_DAYS} days, no card needed</p>
-                      {startMode === 'trial' && (
-                        <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
-                          <Check size={11} strokeWidth={3} className="text-white" />
-                        </div>
-                      )}
-                    </button>
-
-                    {/* Subscribe now card */}
-                  <button
-                    type="button"
-                    onClick={() => setStartMode('paid')}
-                    className={`flex flex-col items-start rounded-xl border-2 p-4 text-left transition ${
-                      startMode === 'paid'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    <div className={`flex h-9 w-9 items-center justify-center rounded-full ${startMode === 'paid' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
-                      <CreditCard size={18} />
+              <div className="mt-8">
+                {step === 0 && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className={labelCls}>Restaurant name <span className="text-red-500">*</span></label>
+                      <input type="text" placeholder="e.g. Spice Garden" value={step1.restaurantName} onChange={s1('restaurantName')} className={inputCls} />
                     </div>
-                    <p className={`mt-3 text-sm font-bold ${startMode === 'paid' ? 'text-primary' : 'text-gray-900'}`}>
-                      Subscribe now
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">Pick a plan &amp; start today</p>
-                    {startMode === 'paid' && (
-                      <div className="mt-1.5 flex h-5 w-5 items-center justify-center self-end rounded-full bg-primary">
-                        <Check size={11} strokeWidth={3} className="text-white" />
+                    <div>
+                      <label className={labelCls}>Cuisine type <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+                      <input type="text" placeholder="e.g. North Indian, Chinese" value={step1.cuisine} onChange={s1('cuisine')} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>State <span className="text-red-500">*</span></label>
+                      <select
+                        value={step1.state}
+                        onChange={(e) => setStep1((p) => ({ ...p, state: e.target.value, city: '' }))}
+                        className={inputCls}
+                      >
+                        <option value="">Select state</option>
+                        {INDIA_LOCATION_OPTIONS.map((item) => (
+                          <option key={item.state} value={item.state}>{item.state}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>City <span className="text-red-500">*</span></label>
+                      <select
+                        value={step1.city}
+                        onChange={(e) => setStep1((p) => ({ ...p, city: e.target.value }))}
+                        className={inputCls}
+                        disabled={!step1.state}
+                      >
+                        <option value="">{step1.state ? 'Select city' : 'Select state first'}</option>
+                        {cityOptions.map((item) => (
+                          <option key={item.name} value={item.name}>{item.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Address <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+                      <input type="text" placeholder="Street, area, landmark" value={step1.address} onChange={s1('address')} className={inputCls} />
+                    </div>
+                    {error && <ErrorBox>{error}</ErrorBox>}
+                    <NavButtons onNext={goNext} nextLabel="Next: Owner details" />
+                  </div>
+                )}
+
+                {step === 1 && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className={labelCls}>Owner name <span className="text-red-500">*</span></label>
+                      <input type="text" placeholder="Full name" value={step2.ownerName} onChange={s2('ownerName')} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Email <span className="text-red-500">*</span></label>
+                      <input type="email" autoComplete="email" placeholder="owner@restaurant.com" value={step2.email} onChange={s2('email')} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Phone <span className="text-red-500">*</span></label>
+                      <input type="tel" inputMode="numeric" placeholder="10-digit mobile number" value={step2.phone} onChange={s2('phone')} maxLength={10} className={inputCls} />
+                    </div>
+                    {error && <ErrorBox>{error}</ErrorBox>}
+                    <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Plan" />
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="space-y-6">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">How do you want to start?</p>
+                      <div className="mt-3 space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => setStartMode('trial')}
+                          className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition ${
+                            startMode === 'trial'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${startMode === 'trial' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                            <Sparkles size={18} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`text-sm font-bold ${startMode === 'trial' ? 'text-primary' : 'text-gray-900'}`}>
+                                Free trial
+                              </p>
+                              {startMode === 'trial' && (
+                                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                                  <Check size={11} strokeWidth={3} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">{TRIAL_DURATION_DAYS} days, no card needed</p>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setStartMode('paid')}
+                          className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition ${
+                            startMode === 'paid'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${startMode === 'paid' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                            <CreditCard size={18} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`text-sm font-bold ${startMode === 'paid' ? 'text-primary' : 'text-gray-900'}`}>
+                                Subscribe now
+                              </p>
+                              {startMode === 'paid' && (
+                                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                                  <Check size={11} strokeWidth={3} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Pick a plan &amp; start today</p>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setStartMode('custom_request')}
+                          className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition ${
+                            startMode === 'custom_request'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${startMode === 'custom_request' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                            <Handshake size={18} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`text-sm font-bold ${startMode === 'custom_request' ? 'text-primary' : 'text-gray-900'}`}>
+                                Custom plan
+                              </p>
+                              {startMode === 'custom_request' && (
+                                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                                  <Check size={11} strokeWidth={3} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Create your account now — BillGenie sets capacity and pricing, then you pay
+                            </p>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {startMode === 'trial' && (
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-primary">What's included</p>
+                        <ul className="mt-3 space-y-2">
+                          {TRIAL_INCLUDES.map((f) => (
+                            <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
+                              <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
-                  </button>
-                  </div>
-                </div>
 
-                {/* Trial: feature list */}
-                {startMode === 'trial' && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">What's included</p>
-                    <ul className="mt-3 space-y-2">
-                      {TRIAL_INCLUDES.map((f) => (
-                        <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
-                          <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
+                    {startMode === 'paid' && (
+                      <PlanStep subscription={subscription} onChange={setSubscription} cityTier={cityTier} />
+                    )}
+
+                    {startMode === 'custom_request' && (
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                        <p className="text-sm font-bold text-primary">Custom plan with BillGenie</p>
+                        <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                          <li className="flex items-start gap-2">
+                            <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                            Your restaurant account is created now for review
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                            BillGenie sets capacity and pricing — no catalog self-serve price
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                            You get an email when the deal is ready, then pay to activate
+                          </li>
+                        </ul>
+                      </div>
+                    )}
+
+                    <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />
                   </div>
                 )}
 
-                {/* Paid: full plan picker */}
-                {startMode === 'paid' && (
-                  <PlanStep subscription={subscription} onChange={setSubscription} cityTier={cityTier} />
-                )}
+                {step === 3 && (
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Your admin login number</p>
+                      <div className="mt-2 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+                        <span className="flex-1 font-mono text-xl font-extrabold tracking-widest text-primary">
+                          {loginId}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={copyLoginId}
+                          className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/5"
+                        >
+                          {copied ? <><CheckCircle2 size={13} />Copied</> : <><Copy size={13} />Copy</>}
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        This is your admin login number — save it. You will use it with your password every time you log in. Email and phone are only for password recovery.
+                      </p>
+                    </div>
 
-                <NavButtons onBack={goBack} onNext={goNext} nextLabel="Next: Security" />
+                    <div>
+                      <label className={labelCls}>Create password <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          placeholder="At least 6 characters"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className={inputCls + ' pr-10'}
+                        />
+                        <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Confirm password <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <input
+                          type={showConfirm ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          placeholder="Re-enter password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className={inputCls + ' pr-10'}
+                        />
+                        <button type="button" onClick={() => setShowConfirm((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {error && <ErrorBox>{error}</ErrorBox>}
+
+                    <p className="text-center text-xs text-gray-500">
+                      By creating an account, you agree to our{' '}
+                      <Link to="/terms" className="font-medium text-primary hover:underline">
+                        Terms of Service
+                      </Link>{' '}
+                      and{' '}
+                      <Link to="/privacy" className="font-medium text-primary hover:underline">
+                        Privacy Policy
+                      </Link>
+                      .
+                    </p>
+
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={goBack}
+                        disabled={loading}
+                        className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-gray-400 disabled:opacity-50"
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {loading
+                          ? <><Loader2 size={15} className="animate-spin" />Creating…</>
+                          : startMode === 'custom_request'
+                            ? 'Create account & request custom plan'
+                            : 'Create account'}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
-            )}
-
-            {/* ── Step 3: Security (login number + password) ── */}
-            {step === 3 && (
-              <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Login number */}
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Your admin login number</p>
-                  <div className="mt-2 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
-                    <span className="flex-1 font-mono text-xl font-extrabold tracking-widest text-primary">
-                      {loginId}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={copyLoginId}
-                      className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/5"
-                    >
-                      {copied ? <><CheckCircle2 size={13} />Copied</> : <><Copy size={13} />Copy</>}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xs text-gray-500">
-                    This is your admin login number — save it. You will use it with your password every time you log in. Email and phone are only for password recovery.
-                  </p>
-                </div>
-
-                {/* Password */}
-                <div>
-                  <label className={labelCls}>Create password <span className="text-red-500">*</span></label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      placeholder="At least 6 characters"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={inputCls + ' pr-10'}
-                    />
-                    <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className={labelCls}>Confirm password <span className="text-red-500">*</span></label>
-                  <div className="relative">
-                    <input
-                      type={showConfirm ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      placeholder="Re-enter password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={inputCls + ' pr-10'}
-                    />
-                    <button type="button" onClick={() => setShowConfirm((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                {error && <ErrorBox>{error}</ErrorBox>}
-
-                <p className="text-center text-xs text-gray-500">
-                  By creating an account, you agree to our{' '}
-                  <Link to="/terms" className="font-medium text-primary hover:underline">
-                    Terms of Service
-                  </Link>{' '}
-                  and{' '}
-                  <Link to="/privacy" className="font-medium text-primary hover:underline">
-                    Privacy Policy
-                  </Link>
-                  .
-                </p>
-
-                <div className="flex gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={goBack}
-                    disabled={loading}
-                    className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-gray-400 disabled:opacity-50"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {loading ? <><Loader2 size={15} className="animate-spin" />Creating…</> : 'Create account'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
             </>
           )}
 
@@ -683,8 +718,6 @@ export function Register() {
     </div>
   );
 }
-
-// ── Small helpers ─────────────────────────────────────────────────────────────
 
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
