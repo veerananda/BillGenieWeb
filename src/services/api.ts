@@ -48,18 +48,49 @@ export interface AuthCredentials {
 }
 
 export interface RegisterData {
+  login_id: string;
+  register_token: string;
+  billing_cycle: 'quarterly' | 'half_yearly' | 'annual';
   restaurant_name: string;
   owner_name: string;
   email: string;
   phone: string;
   password: string;
-  login_id: string;
-  start_mode: 'trial' | 'paid' | 'custom_request';
   address?: string;
   city?: string;
   state?: string;
   cuisine?: string;
-  subscription?: import('../data/pricing').SubscriptionSelection;
+}
+
+export interface AccountRequestPayload {
+  name: string;
+  phone: string;
+  restaurant_name: string;
+  address: string;
+  city?: string;
+  state?: string;
+  notes?: string;
+  source?: 'app' | 'web';
+}
+
+export interface AccountInvitePreview {
+  login_id: string;
+  restaurant_name: string;
+  name: string;
+  phone: string;
+  address: string;
+  city?: string;
+  state?: string;
+  max_tables: number;
+  extra_staff: number;
+  extra_chefs: number;
+  extra_managers: number;
+  inventory: boolean;
+  expenses: boolean;
+  history_extended: boolean;
+  monthly_price: number;
+  annual_price: number;
+  cycle_prices: Record<string, number>;
 }
 
 export interface CustomPlanLeadRequest {
@@ -612,6 +643,26 @@ class APIClient {
       ...data,
       source: data.source || 'web',
     });
+  }
+
+  async submitAccountRequest(
+    data: AccountRequestPayload
+  ): Promise<{ message: string; login_id: string }> {
+    return this.makeRequest('/public/account-requests', 'POST', {
+      ...data,
+      source: data.source || 'web',
+    });
+  }
+
+  async previewAccountInvite(
+    loginId: string,
+    registerToken: string
+  ): Promise<AccountInvitePreview> {
+    const response = await this.makeRequest('/public/account-requests/preview', 'POST', {
+      login_id: loginId,
+      register_token: registerToken,
+    });
+    return response?.invite ?? response;
   }
 
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
@@ -1305,6 +1356,12 @@ class APIClient {
     billing_cycle?: 'quarterly' | 'half_yearly' | 'annual';
   }): Promise<{ message: string; awaiting_custom_deal: boolean }> {
     return this.makeRequest('/subscription/request-custom-deal', 'POST', data || {});
+  }
+
+  async notifyPlanChange(notes?: string): Promise<{ message: string }> {
+    return this.makeRequest('/subscription/notify-plan-change', 'POST', {
+      notes: notes || '',
+    });
   }
 
   async cancelCustomDealRequest(): Promise<{ message: string; awaiting_custom_deal: boolean }> {

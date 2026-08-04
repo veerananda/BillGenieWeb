@@ -59,12 +59,11 @@ export function SubscriptionPaywall({
   const isPendingActivation = quote?.subscription_phase === 'pending_payment' || pendingPayment;
   const awaitingCustomDeal = Boolean(quote?.awaiting_custom_deal);
   const customDealReady = Boolean(quote?.is_custom_deal) && !awaitingCustomDeal;
-  const isForcedPlanChoice = Boolean(quote?.requires_plan_selection) && !isPendingActivation;
-  const canEditPlan =
-    canPay && !customDealReady && (isPendingActivation || Boolean(quote?.requires_plan_selection) || Boolean(quote));
-  const allowsPlanReview = canEditPlan;
-  const showPlanPicker =
-    allowsPlanReview && (editingPlan || isForcedPlanChoice || awaitingCustomDeal);
+  // Deal-first: pay current negotiated quote only — no self-serve review/picker.
+  const isForcedPlanChoice = false;
+  const canEditPlan = false;
+  const allowsPlanReview = false;
+  const showPlanPicker = false;
 
   const localQuote = useMemo(() => {
     if (!allowsPlanReview) return null;
@@ -95,11 +94,11 @@ export function SubscriptionPaywall({
     };
   }, [useLocalDisplayQuote, localQuote, planSelection, quote]);
 
-  const loadQuote = useCallback(async (sel?: SubscriptionSelection) => {
+  const loadQuote = useCallback(async (_sel?: SubscriptionSelection) => {
     setLoadingQuote(true);
     setError(null);
     try {
-      const data = await apiClient.getSubscriptionRenewalQuote(sel);
+      const data = await apiClient.getSubscriptionRenewalQuote();
       setQuote(data);
       if (data.current_selection) {
         setPlanSelection({ ...DEFAULT_SUBSCRIPTION_SELECTION, ...data.current_selection });
