@@ -308,7 +308,15 @@ export function Register() {
             </label>
             <label className={labelClass}>
               Register token
-              <input className={fieldClass} value={registerToken} onChange={(e) => setRegisterToken(e.target.value)} />
+              <input
+                className={fieldClass}
+                value={registerToken}
+                onChange={(e) => setRegisterToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6-digit code"
+                autoComplete="one-time-code"
+              />
             </label>
             <button
               type="submit"
