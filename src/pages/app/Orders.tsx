@@ -314,26 +314,24 @@ function TableCard({
       )}
       </div>
     </button>
-    {occupied ? (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenQr();
-        }}
-        title="Customer assistance QR"
-        aria-label={`Customer assistance QR for ${table.name}`}
-        className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
-          fill === 'yellow' || fill === 'rose'
-            ? 'bg-white/70 text-amber-950 hover:bg-white'
-            : fill
-              ? 'bg-white/25 text-white hover:bg-white/40'
-              : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
-        }`}
-      >
-        <QrCode className="h-3.5 w-3.5" />
-      </button>
-    ) : null}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpenQr();
+      }}
+      title="Table QR"
+      aria-label={`Table QR for ${table.name}`}
+      className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
+        fill === 'yellow' || fill === 'rose'
+          ? 'bg-white/70 text-amber-950 hover:bg-white'
+          : fill
+            ? 'bg-white/25 text-white hover:bg-white/40'
+            : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
+      }`}
+    >
+      <QrCode className="h-3.5 w-3.5" />
+    </button>
     </div>
   );
 }
@@ -1475,7 +1473,7 @@ function OrderDetailPanel({
             <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 space-y-2 shadow-sm">
               <p className="text-sm font-semibold text-gray-800">Staff print</p>
               <p className="text-xs text-gray-400">
-                Customer bill review appears on their assistance QR page when you start checkout.
+                Customer bill review appears on their table QR page when you start checkout.
               </p>
               <button
                 type="button"
@@ -2308,15 +2306,12 @@ export function Orders() {
 
   const openTileAssistanceQr = useCallback(
     async (table: RestaurantTable) => {
-      if (!table.is_occupied) {
-        return;
-      }
       setTileQrTable(table);
       setTileQrLoading(true);
       setTileQrUrl(null);
       try {
         const order = getOrderForTable(table);
-        if (order?.id) {
+        if (table.is_occupied && order?.id) {
           try {
             await apiClient.setTableOccupied(table.id, order.id);
           } catch (occupyErr) {
@@ -2327,7 +2322,7 @@ export function Orders() {
         setTileQrUrl(response.assistance_url);
       } catch (err) {
         setTileQrTable(null);
-        window.alert(err instanceof Error ? err.message : 'Could not create assistance QR');
+        window.alert(err instanceof Error ? err.message : 'Could not open table QR');
       } finally {
         setTileQrLoading(false);
       }

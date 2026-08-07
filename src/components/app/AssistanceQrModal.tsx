@@ -22,8 +22,8 @@ export function AssistanceQrModal({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Table ${tableName} assistance`,
-          text: `Scan for table ${tableName} assistance`,
+          title: `Table ${tableName}`,
+          text: `Scan for table ${tableName} menu, call waiter, and bill`,
           url: assistanceUrl,
         });
         return;
@@ -33,18 +33,19 @@ export function AssistanceQrModal({
     }
     try {
       await navigator.clipboard.writeText(assistanceUrl);
-      alert('Assistance link copied to clipboard');
+      alert('Table QR link copied to clipboard');
     } catch {
       alert(assistanceUrl);
     }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Customer assistance QR" maxWidth="sm" centered>
+    <Modal open={open} onClose={onClose} title="Table QR" maxWidth="sm" centered>
       <div className="space-y-4 text-center">
         <p className="text-sm text-gray-600">
-          Ask the customer to scan this QR for table <span className="font-semibold text-gray-800">{tableName}</span>.
-          They can call a waiter, see this order&apos;s bill items, and download the bill once checkout starts.
+          Ask the customer to scan this fixed QR for table{' '}
+          <span className="font-semibold text-gray-800">{tableName}</span>. They can browse the menu, call a
+          waiter, and review/download the bill after checkout starts. The same QR works for the next guest.
         </p>
 
         <div className="mx-auto flex min-h-[252px] min-w-[252px] items-center justify-center rounded-2xl bg-gray-50 p-4">
