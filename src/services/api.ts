@@ -12,7 +12,7 @@ import {
   setAccessToken,
 } from '../lib/tokenStorage';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://billgenie-api.fly.dev';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://api.thebillgenie.com';
 
 const RESTAURANT_ID_KEY = 'restaurant_id';
 const USER_ID_KEY = 'user_id';
