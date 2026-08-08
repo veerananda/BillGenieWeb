@@ -1050,6 +1050,7 @@ class APIClient {
     table_id: string;
     table_name: string;
     order_id?: string;
+    unlock_code?: string;
     assistance_token: string;
     assistance_url: string;
   }> {

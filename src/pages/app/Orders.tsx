@@ -289,6 +289,7 @@ function OrderDetailPanel({
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [assistanceOpen, setAssistanceOpen] = useState(false);
   const [assistanceUrl, setAssistanceUrl] = useState<string | null>(null);
+  const [assistanceUnlockCode, setAssistanceUnlockCode] = useState<string | null>(null);
   const [assistanceLoading, setAssistanceLoading] = useState(false);
 
   // Split bill state
@@ -582,6 +583,7 @@ function OrderDetailPanel({
     setAssistanceOpen(true);
     setAssistanceLoading(true);
     setAssistanceUrl(null);
+    setAssistanceUnlockCode(null);
     setPaymentError(null);
     try {
       // Ensure table is linked to this order before requesting QR.
@@ -595,6 +597,7 @@ function OrderDetailPanel({
       }
       const response = await apiClient.getTableAssistanceQr(table.id);
       setAssistanceUrl(response.assistance_url);
+      setAssistanceUnlockCode(response.unlock_code ?? null);
     } catch (err: unknown) {
       setAssistanceOpen(false);
       setPaymentError(err instanceof Error ? err.message : 'Could not create assistance QR');
@@ -1419,8 +1422,13 @@ function OrderDetailPanel({
         open={assistanceOpen}
         tableName={table.name}
         assistanceUrl={assistanceUrl}
+        unlockCode={assistanceUnlockCode}
         loading={assistanceLoading}
-        onClose={() => setAssistanceOpen(false)}
+        onClose={() => {
+          setAssistanceOpen(false);
+          setAssistanceUrl(null);
+          setAssistanceUnlockCode(null);
+        }}
       />
 
       {/* Cancel confirm modal */}
@@ -1956,6 +1964,7 @@ export function Orders() {
   // Assistance QR opened from table tile
   const [tileQrTable, setTileQrTable] = useState<RestaurantTable | null>(null);
   const [tileQrUrl, setTileQrUrl] = useState<string | null>(null);
+  const [tileQrUnlockCode, setTileQrUnlockCode] = useState<string | null>(null);
   const [tileQrLoading, setTileQrLoading] = useState(false);
 
   // Shared fetch + reconcile logic — used by initial load and background poll
@@ -2063,6 +2072,7 @@ export function Orders() {
       setTileQrTable(table);
       setTileQrLoading(true);
       setTileQrUrl(null);
+      setTileQrUnlockCode(null);
       try {
         const order = getOrderForTable(table);
         if (table.is_occupied && order?.id) {
@@ -2074,6 +2084,7 @@ export function Orders() {
         }
         const response = await apiClient.getTableAssistanceQr(table.id);
         setTileQrUrl(response.assistance_url);
+        setTileQrUnlockCode(response.unlock_code ?? null);
       } catch (err) {
         setTileQrTable(null);
         window.alert(err instanceof Error ? err.message : 'Could not open table QR');
@@ -2087,6 +2098,7 @@ export function Orders() {
   const closeTileAssistanceQr = useCallback(() => {
     setTileQrTable(null);
     setTileQrUrl(null);
+    setTileQrUnlockCode(null);
   }, []);
 
   const closePanel = useCallback(() => {
@@ -2255,6 +2267,7 @@ export function Orders() {
         onClose={closeTileAssistanceQr}
         tableName={tileQrTable?.name ?? ''}
         assistanceUrl={tileQrUrl}
+        unlockCode={tileQrUnlockCode}
         loading={tileQrLoading}
       />
     </div>
