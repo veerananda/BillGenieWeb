@@ -19,7 +19,7 @@ type WSEvent =
 type WSPayload = Record<string, unknown>;
 type EventCallback = (payload: WSPayload) => void;
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? 'wss://billgenie-api.fly.dev';
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? 'wss://api.thebillgenie.com';
 const WS_DEBUG = import.meta.env.DEV;
 
 const RECONNECT_DELAY_MS = 3000;

@@ -34,7 +34,6 @@ import {
   isAdjustableOrderItem,
   isBlockedDisplayCategory,
   orderHasServedItems,
-  formatOrderLineDisplayName,
 } from '../../lib/orderHelpers';
 import { useAttendants } from '../../lib/useAttendants';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
@@ -56,7 +55,6 @@ import type { MenuItem, MenuItemVariant } from '../../store/menuSlice';
 import type {
   RestaurantTable,
   Order,
-  OrderItem,
   CompletePaymentRequest,
   CreateOrderRequest,
 } from '../../services/api';
@@ -69,6 +67,15 @@ import { UpiPaymentDisplay } from '../../components/app/UpiPaymentDisplay';
 import { Badge } from '../../components/app/Badge';
 import { EmptyState } from '../../components/app/EmptyState';
 import { MenuItemOrderCard } from '../../components/app/MenuItemOrderCard';
+import {
+  billableItems,
+  cartDisplayName,
+  cartLineKey,
+  fmt,
+  resolveItemTotal,
+  tableNeedsAssistance,
+} from './orders/ordersHelpers';
+import { TableCard, VegBadge } from './orders/OrdersTableCard';
 
 // ── Helper types ──────────────────────────────────────────────────────────────
 
@@ -82,259 +89,6 @@ interface CartItem {
 }
 
 type PaymentMethod = 'cash' | 'upi' | 'split';
-
-function cartLineKey(menuItemId: string, variantId?: string) {
-  return `${menuItemId}::${variantId ?? ''}`;
-}
-
-function cartDisplayName(
-  item: MenuItem,
-  variantLabel: string | undefined,
-  categoryBlocklist: string[] | null | undefined,
-) {
-  return formatOrderLineDisplayName(item.name, item.category, { categoryBlocklist }, variantLabel);
-}
-
-// ── Small helpers ─────────────────────────────────────────────────────────────
-
-
-function fmt(n: number | undefined | null) {
-  return `₹${(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-
-function resolveItemTotal(item: OrderItem, menuMap: Map<string, MenuItem>): number {
-  if (item.total > 0) return item.total;
-  const price = item.unit_rate || item.menu_item?.price || menuMap.get(item.menu_id)?.price || 0;
-  return price * item.quantity;
-}
-
-function getDerivedItemStatus(order: Order): 'ready' | 'cooking' | null {
-  const items = (order.items ?? []).filter((i) => i.status !== 'cancelled');
-  if (items.some((i) => i.status === 'ready')) return 'ready';
-  if (items.some((i) => i.status === 'cooking')) return 'cooking';
-  return null;
-}
-
-function hasUnacknowledgedKitchenCancels(
-  order: Order | undefined,
-  acknowledgedByOrderId: Record<string, string[]>
-): boolean {
-  if (!order?.items?.length) return false;
-  const acked = new Set(acknowledgedByOrderId[order.id] || []);
-  return order.items.some((i) => i.status === 'cancelled' && !acked.has(i.id));
-}
-
-function getUnacknowledgedCancelledCount(
-  order: Order | undefined,
-  acknowledgedByOrderId: Record<string, string[]>
-): number {
-  if (!order?.items?.length) return 0;
-  const acked = new Set(acknowledgedByOrderId[order.id] || []);
-  return order.items.filter((i) => i.status === 'cancelled' && !acked.has(i.id)).length;
-}
-
-function billableItems(order: Order | undefined): OrderItem[] {
-  return (order?.items ?? []).filter((i) => i.status !== 'cancelled');
-}
-
-function VegBadge({ isVeg }: { isVeg: boolean }) {
-  return isVeg ? (
-    <Leaf className="h-3.5 w-3.5 shrink-0 text-green-600" />
-  ) : (
-    <Beef className="h-3.5 w-3.5 shrink-0 text-red-600" />
-  );
-}
-
-// ── Table card ─────────────────────────────────────────────────────────────────
-
-function billSubtotal(order: Order): number {
-  const fromItems = billableItems(order).reduce((sum, item) => {
-    if (item.total > 0) return sum + item.total;
-    return sum + (item.unit_rate || 0) * item.quantity;
-  }, 0);
-  if (fromItems > 0) return fromItems;
-  return order.sub_total > 0 ? order.sub_total : order.total;
-}
-
-function tableNeedsAssistance(table: RestaurantTable): boolean {
-  return Boolean(table.assistance_requested_at);
-}
-
-function TableCard({
-  table,
-  order,
-  onClick,
-  onOpenQr,
-  kitchenEnabled,
-  acknowledgedCancelledByOrderId,
-}: {
-  table: RestaurantTable;
-  order: Order | undefined;
-  onClick: () => void;
-  onOpenQr: () => void;
-  kitchenEnabled: boolean;
-  acknowledgedCancelledByOrderId: Record<string, string[]>;
-}) {
-  const occupied = table.is_occupied;
-  const needsAssistance = tableNeedsAssistance(table);
-  const derived = kitchenEnabled && occupied && order ? getDerivedItemStatus(order) : null;
-  const kitchenCancelled =
-    kitchenEnabled && occupied && hasUnacknowledgedKitchenCancels(order, acknowledgedCancelledByOrderId);
-  const cancelledCount = kitchenEnabled
-    ? getUnacknowledgedCancelledCount(order, acknowledgedCancelledByOrderId)
-    : 0;
-
-  const readyCount = kitchenEnabled
-    ? (order?.items?.filter((i) => i.status === 'ready').length ?? 0)
-    : 0;
-  const activeItems = billableItems(order);
-
-  // Solid fill: blue = assistance, rose = kitchen cancelled, yellow = ready, green = in use.
-  const fill: 'blue' | 'yellow' | 'rose' | 'green' | null = needsAssistance
-    ? 'blue'
-    : kitchenCancelled
-    ? 'rose'
-    : derived === 'ready'
-    ? 'yellow'
-    : occupied
-    ? 'green'
-    : null;
-  const onDarkFill = fill === 'green' || fill === 'blue';
-  const nameClass =
-    onDarkFill
-      ? 'text-white'
-      : fill === 'yellow'
-        ? 'text-amber-950'
-        : fill === 'rose'
-          ? 'text-rose-950'
-          : 'text-gray-900';
-  const chipClass =
-    onDarkFill
-      ? 'bg-white/25 text-white'
-      : fill === 'rose'
-        ? 'bg-white/70 text-rose-900'
-        : 'bg-white/60 text-amber-900';
-
-  return (
-    <div className="relative h-[128px]">
-      {needsAssistance && [0, 0.55, 1.1].map((delay) => (
-        <span
-          key={delay}
-          className="ring-pulse pointer-events-none absolute inset-0 rounded-xl border-2 border-blue-300"
-          style={{ animationDelay: `${delay}s` }}
-        />
-      ))}
-    <button
-      onClick={onClick}
-      className={`group flex h-full w-full flex-col gap-1.5 overflow-hidden rounded-xl border-2 p-3 pr-9 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-        fill === 'blue'
-          ? 'border-[#3419e2] bg-[#3419e2]'
-          : fill === 'yellow'
-          ? 'border-amber-300 bg-amber-300'
-          : fill === 'rose'
-          ? 'border-rose-400 bg-rose-400'
-          : fill === 'green'
-          ? 'border-primary bg-primary'
-          : 'border-gray-200 bg-white hover:border-gray-300'
-      }`}
-    >
-      {/* Badge row */}
-      <div className="flex shrink-0 items-start justify-between gap-2">
-        {fill ? (
-          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${chipClass}`}>
-            <span className="flex items-center gap-1">
-              {fill === 'blue' ? (
-                <>Needs attention</>
-              ) : fill === 'yellow' ? (
-                <>
-                  <CheckCircle className="h-3 w-3" />
-                  Ready to serve
-                </>
-              ) : fill === 'rose' ? (
-                <>{cancelledCount === 1 ? '1 item cancelled' : `${cancelledCount} items cancelled`}</>
-              ) : (
-                'In use'
-              )}
-            </span>
-          </span>
-        ) : (
-          <Badge variant="vacant">Vacant</Badge>
-        )}
-      </div>
-
-      {/* Table name */}
-      <span className={`shrink-0 truncate text-sm font-bold ${nameClass}`}>
-        {table.name}{table.capacity ? ` (${table.capacity})` : ''}
-      </span>
-
-      {/* Content */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-      {needsAssistance ? (
-        <div className="space-y-1">
-          <p className="text-xs font-bold text-white">Customer requested assistance</p>
-          <p className="text-xs text-white/80">Tap to acknowledge</p>
-        </div>
-      ) : occupied && order ? (
-        <div className="space-y-1">
-          {kitchenCancelled ? (
-            <>
-              <p className="line-clamp-2 text-xs font-bold text-rose-950">
-                {cancelledCount === 1 ? '1 item cancelled' : `${cancelledCount} items cancelled`}
-              </p>
-            </>
-          ) : derived === 'ready' ? (
-            <>
-              <p className="line-clamp-2 text-xs font-bold text-amber-950">
-                {readyCount} {readyCount === 1 ? 'item' : 'items'} ready to serve
-              </p>
-            </>
-          ) : (
-            <>
-              <p className={`text-xs ${onDarkFill ? 'text-white/85' : 'text-gray-500'}`}>
-                {activeItems.length > 0
-                  ? (() => { const qty = activeItems.reduce((s, i) => s + i.quantity, 0); return `${qty} Item${qty !== 1 ? 's' : ''}`; })()
-                  : 'No items yet'}
-              </p>
-              {activeItems.length > 0 && (
-                <p className={`text-sm font-semibold ${onDarkFill ? 'text-white' : 'text-gray-900'}`}>{fmt(billSubtotal(order))}</p>
-              )}
-              {kitchenEnabled && derived === 'cooking' && (
-                <span className="inline-flex items-center rounded-full bg-white/25 px-2 py-0.5 text-xs font-medium text-white">
-                  Cooking…
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      ) : occupied ? (
-        <p className="text-xs text-white/85">Occupied</p>
-      ) : (
-        <p className="text-xs text-gray-400">Tap to take an order</p>
-      )}
-      </div>
-    </button>
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpenQr();
-      }}
-      title="Table QR"
-      aria-label={`Table QR for ${table.name}`}
-      className={`absolute right-2 top-2 z-10 rounded-lg p-1.5 shadow-sm transition-colors ${
-        fill === 'yellow' || fill === 'rose'
-          ? 'bg-white/70 text-amber-950 hover:bg-white'
-          : fill
-            ? 'bg-white/25 text-white hover:bg-white/40'
-            : 'border border-gray-200 bg-white text-primary hover:bg-primary/10'
-      }`}
-    >
-      <QrCode className="h-3.5 w-3.5" />
-    </button>
-    </div>
-  );
-}
 
 // ── Vacant table panel ────────────────────────────────────────────────────────
 
