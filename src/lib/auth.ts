@@ -9,6 +9,7 @@ import {
 const KEYS = {
   role: 'user_role',
   name: 'user_name',
+  loginId: 'user_login_id',
   restaurantId: 'restaurant_id',
   userId: 'user_id',
   canCancelOrders: 'can_cancel_orders',
@@ -36,6 +37,8 @@ export function setAuth(response: AuthResponse): void {
   clearLegacyRefreshToken();
   if (response.role) localStorage.setItem(KEYS.role, response.role);
   if (response.name) localStorage.setItem(KEYS.name, response.name);
+  const loginId = (response.login_id || response.staff_key || '').trim();
+  if (loginId) localStorage.setItem(KEYS.loginId, loginId);
   if (response.restaurant_id) localStorage.setItem(KEYS.restaurantId, response.restaurant_id);
   if (response.user_id) localStorage.setItem(KEYS.userId, response.user_id);
   localStorage.setItem(KEYS.canCancelOrders, response.can_cancel_orders ? 'true' : 'false');

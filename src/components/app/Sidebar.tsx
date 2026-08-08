@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   UtensilsCrossed,
@@ -18,7 +19,14 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { selectAuthRole, selectAuthName, selectCanRestockInventory, clearAuth } from '../../store/authSlice';
+import {
+  selectAuthRole,
+  selectAuthName,
+  selectAuthLoginId,
+  selectCanRestockInventory,
+  clearAuth,
+  setLoginId,
+} from '../../store/authSlice';
 import { selectProfile } from '../../store/profileSlice';
 import { parseSubscriptionLimits } from '../../lib/subscriptionLimits';
 import {
@@ -72,9 +80,27 @@ export function Sidebar({ onClose }: Props) {
   const navigate = useNavigate();
   const role = useAppSelector(selectAuthRole);
   const name = useAppSelector(selectAuthName);
+  const loginId = useAppSelector(selectAuthLoginId);
   const profile = useAppSelector(selectProfile);
   const canRestock = useAppSelector(selectCanRestockInventory);
   const { guardAction } = useSubscriptionPaywall();
+
+  useEffect(() => {
+    if (loginId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await apiClient.getAuthProfile();
+        const id = (p.login_id || p.staff_key || '').trim();
+        if (!cancelled && id) dispatch(setLoginId(id));
+      } catch {
+        // ignore — menu still shows name/role
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, loginId]);
 
   const limits = parseSubscriptionLimits(
     (profile?.subscription_limits as unknown as Record<string, unknown>) ?? null
@@ -173,6 +199,11 @@ export function Sidebar({ onClose }: Props) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{name ?? 'User'}</div>
+            {loginId ? (
+              <div className="text-xs font-medium text-gray-600 truncate" title={loginId}>
+                Login ID · {loginId}
+              </div>
+            ) : null}
             <div className="text-xs text-gray-400">{roleLabel}</div>
           </div>
           <button

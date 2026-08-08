@@ -268,9 +268,9 @@ export function Register() {
       {path === 'request_done' ? (
         <div className="space-y-4 rounded-2xl border border-primary/30 bg-primary/5 p-5 text-center">
           <CheckCircle2 className="mx-auto h-10 w-10 text-primary" />
-          <h2 className="text-lg font-bold text-gray-900">Account requested</h2>
+          <h2 className="text-lg font-bold text-gray-900">Request received</h2>
           <p className="text-sm text-gray-600">
-            Save this login ID. BillGenie will contact you and share a register token after pricing.
+            Keep this reference number for all future interactions with BillGenie.
           </p>
           <p className="font-mono text-3xl font-extrabold tracking-wide text-primary">{assignedLoginId}</p>
           <button
@@ -284,23 +284,21 @@ export function Register() {
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold"
           >
             <Copy className="h-4 w-4" />
-            {copied ? 'Copied' : 'Copy login ID'}
+            {copied ? 'Copied' : 'Copy reference number'}
           </button>
-          <div className="flex flex-col gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginId(assignedLoginId);
-                setPath('complete');
-              }}
-              className="rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white"
-            >
-              I have a register token
-            </button>
-            <Link to="/login" className="text-sm font-semibold text-primary">
-              Back to sign in
-            </Link>
-          </div>
+          <p className="text-sm text-gray-600">
+            Sit back and relax — BillGenie will reach out to you shortly to offer you the best plan.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setAssignedLoginId('');
+              setPath('chooser');
+            }}
+            className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white"
+          >
+            Back to get started
+          </button>
         </div>
       ) : null}
 

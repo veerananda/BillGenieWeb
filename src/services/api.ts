@@ -18,6 +18,7 @@ const RESTAURANT_ID_KEY = 'restaurant_id';
 const USER_ID_KEY = 'user_id';
 const USER_NAME_KEY = 'user_name';
 const USER_ROLE_KEY = 'user_role';
+const USER_LOGIN_ID_KEY = 'user_login_id';
 const CAN_CANCEL_ORDERS_KEY = 'can_cancel_orders';
 const CAN_RESTOCK_INVENTORY_KEY = 'can_restock_inventory';
 const CAN_DEDUCT_INVENTORY_KEY = 'can_deduct_inventory';
@@ -714,12 +715,18 @@ class APIClient {
     }
     clearAccessToken();
     clearLegacyRefreshToken();
-    [RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, CAN_DEDUCT_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
+    [RESTAURANT_ID_KEY, USER_ID_KEY, USER_NAME_KEY, USER_ROLE_KEY, USER_LOGIN_ID_KEY, CAN_CANCEL_ORDERS_KEY, CAN_RESTOCK_INVENTORY_KEY, CAN_DEDUCT_INVENTORY_KEY, MENU_MANAGEMENT_ACCESS_KEY].forEach((k) =>
       localStorage.removeItem(k)
     );
   }
 
-  async getAuthProfile(): Promise<{ name?: string; role?: string; user_id?: string }> {
+  async getAuthProfile(): Promise<{
+    name?: string;
+    role?: string;
+    user_id?: string;
+    login_id?: string;
+    staff_key?: string;
+  }> {
     const r = await this.makeRequest('/auth/profile');
     return r?.data ?? r;
   }
@@ -804,6 +811,8 @@ class APIClient {
     if (authData.user_id) localStorage.setItem(USER_ID_KEY, authData.user_id);
     if (authData.role) localStorage.setItem(USER_ROLE_KEY, authData.role);
     if (authData.name) localStorage.setItem(USER_NAME_KEY, authData.name);
+    const loginId = (authData.login_id || authData.staff_key || '').trim();
+    if (loginId) localStorage.setItem(USER_LOGIN_ID_KEY, loginId);
     localStorage.setItem(CAN_CANCEL_ORDERS_KEY, authData.can_cancel_orders ? 'true' : 'false');
     localStorage.setItem(CAN_RESTOCK_INVENTORY_KEY, authData.can_restock_inventory ? 'true' : 'false');
     localStorage.setItem(CAN_DEDUCT_INVENTORY_KEY, authData.can_deduct_inventory ? 'true' : 'false');
