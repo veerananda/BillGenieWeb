@@ -3,6 +3,11 @@ import { ArrowRight } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FeatureCard } from '../components/FeatureCard';
 import { CATEGORY_LABELS, FEATURES, type FeatureCategory } from '../data/features';
+import {
+  BILLGENIE_SUPPORT_EMAIL,
+  STARTS_FROM_PER_DAY,
+  formatInr,
+} from '../data/pricing';
 
 const CATEGORY_ORDER: FeatureCategory[] = ['operations', 'kitchen', 'staff', 'insights'];
 
@@ -83,14 +88,21 @@ export function Features() {
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-primary-dark/30 blur-3xl" />
         <div className="relative mx-auto max-w-2xl px-6">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">
-            See what it costs to turn these on
+            Ready to bring this to your floor?
           </h2>
-          <p className="mt-3 text-white/70">Simple modular pricing — pay only for what you use.</p>
+          <p className="mt-3 text-white/70">
+            Starting at {formatInr(STARTS_FROM_PER_DAY)}/day. Request an account for a quote — or
+            email{' '}
+            <a href={`mailto:${BILLGENIE_SUPPORT_EMAIL}`} className="font-semibold text-white underline">
+              {BILLGENIE_SUPPORT_EMAIL}
+            </a>
+            .
+          </p>
           <Link
-            to="/pricing"
+            to="/register?path=request"
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-primary-mid hover:shadow-lg active:scale-95"
           >
-            View pricing <ArrowRight size={18} />
+            Request an account <ArrowRight size={18} />
           </Link>
         </div>
       </section>

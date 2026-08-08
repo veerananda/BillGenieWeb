@@ -26,18 +26,20 @@ export function TermsOfService() {
       <h2>Subscriptions and payments</h2>
       <ul>
         <li>
-          Paid plans are billed quarterly, half-yearly, or annually as selected. Prices are shown before payment and
-          may include applicable GST.
+          Subscription pricing is set for your restaurant (often after discussing capacity and
+          features with us). The amount and billing period are confirmed before you pay and may
+          include applicable GST.
         </li>
         <li>
           Payments are processed by Razorpay. By subscribing, you also agree to Razorpay&apos;s
           terms where applicable.
         </li>
         <li>
-          Free trials, where offered, convert to paid plans unless cancelled before the trial ends.
+          Failure to pay may result in restricted access to features until payment is completed.
         </li>
         <li>
-          Failure to pay may result in restricted access to features until payment is completed.
+          For pricing questions, email{' '}
+          <a href="mailto:hello@thebillgenie.com">hello@thebillgenie.com</a>.
         </li>
       </ul>
 

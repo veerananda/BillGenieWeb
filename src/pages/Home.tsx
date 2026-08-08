@@ -1,14 +1,18 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Zap, ShieldCheck, Clock } from 'lucide-react';
+import { ArrowRight, Zap, ShieldCheck, Mail } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FeatureCard } from '../components/FeatureCard';
 import { HOME_HIGHLIGHTS } from '../data/features';
-import { SHARED_PLAN_FEATURES, STARTS_FROM_MONTHLY, TRIAL_DURATION_DAYS, formatInr } from '../data/pricing';
+import {
+  BILLGENIE_SUPPORT_EMAIL,
+  STARTS_FROM_PER_DAY,
+  formatInr,
+} from '../data/pricing';
 
 const TRUST_ITEMS = [
   { icon: Zap, label: 'Set up in under 10 minutes' },
-  { icon: ShieldCheck, label: 'No credit card required' },
-  { icon: Clock, label: `${TRIAL_DURATION_DAYS}-day free trial` },
+  { icon: ShieldCheck, label: 'Built for Indian restaurants' },
+  { icon: Mail, label: 'Pricing after you request an account' },
 ];
 
 export function Home() {
@@ -18,7 +22,6 @@ export function Home() {
     <div>
       {/* ── Hero ─────────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-linear-to-b from-primary-light/70 via-primary-light/30 to-surface">
-        {/* decorative blobs */}
         <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
         <div className="pointer-events-none absolute -left-32 bottom-0 h-72 w-72 rounded-full bg-primary-light/60 blur-3xl" />
 
@@ -29,7 +32,7 @@ export function Home() {
           </span>
 
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold tracking-tight text-ink sm:text-5xl md:text-6xl leading-tight">
-            Run your restaurant's billing and floor from one app
+            Run your restaurant&apos;s billing and floor from one app
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-ink-soft leading-relaxed">
             BillGenie brings dine-in billing, counter orders, QR self-service, a live kitchen
@@ -38,10 +41,10 @@ export function Home() {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
-              to="/register"
+              to="/register?path=request"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg active:scale-95"
             >
-              Start your {TRIAL_DURATION_DAYS}-day free trial
+              Request an account
               <ArrowRight size={18} />
             </Link>
             <Link
@@ -52,7 +55,6 @@ export function Home() {
             </Link>
           </div>
 
-          {/* Trust bar */}
           <div className="mt-10 flex flex-wrap items-center justify-center gap-6">
             {TRUST_ITEMS.map(({ icon: Icon, label }) => (
               <div key={label} className="flex items-center gap-2 text-sm text-ink-soft">
@@ -124,44 +126,35 @@ export function Home() {
 
       {/* ── Pricing teaser ───────────────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-6 py-20">
-        <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-sm md:flex">
-          <div className="p-10 md:w-1/2">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary">
-              Simple pricing
-            </span>
-            <h2 className="mt-3 text-3xl font-bold text-ink">
-              Starts from {formatInr(STARTS_FROM_MONTHLY)}
-              <span className="text-base font-medium text-ink-soft">/month</span>
-            </h2>
-            <p className="mt-2 text-ink-soft">
-              Starter, Growth, or Scale by table size — plus a {TRIAL_DURATION_DAYS}-day free trial.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {SHARED_PLAN_FEATURES.slice(0, 4).map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-ink-soft">
-                  <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" />
-                  {item}
-                </li>
-              ))}
-            </ul>
+        <div className="overflow-hidden rounded-3xl border border-border bg-white p-10 text-center shadow-sm">
+          <span className="text-xs font-bold uppercase tracking-widest text-primary">Pricing</span>
+          <h2 className="mt-3 text-3xl font-bold text-ink">
+            Starting at {formatInr(STARTS_FROM_PER_DAY)}
+            <span className="text-base font-medium text-ink-soft">/day</span>
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-ink-soft">
+            Starting at {formatInr(STARTS_FROM_PER_DAY)}/day. Request an account and we&apos;ll
+            follow up with pricing for your restaurant — or email{' '}
+            <a
+              href={`mailto:${BILLGENIE_SUPPORT_EMAIL}`}
+              className="font-semibold text-primary hover:underline"
+            >
+              {BILLGENIE_SUPPORT_EMAIL}
+            </a>
+            .
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              to="/register?path=request"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary-dark transition-colors"
+            >
+              Request an account <ArrowRight size={16} />
+            </Link>
             <Link
               to="/pricing"
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary-dark transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
             >
-              See full pricing & add-ons <ArrowRight size={16} />
-            </Link>
-          </div>
-          <div className="bg-linear-to-br from-primary-light/60 to-primary/10 p-10 md:w-1/2">
-            <h3 className="text-sm font-semibold text-ink">Add what your restaurant needs</h3>
-            <p className="mt-2 text-sm text-ink-soft">
-              Kitchen displays, extended history, inventory, and more are all optional
-              add-ons — pay only for what you turn on.
-            </p>
-            <Link
-              to="/register"
-              className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-            >
-              Start free trial <ArrowRight size={14} />
+              More about pricing
             </Link>
           </div>
         </div>
@@ -176,13 +169,18 @@ export function Home() {
             Ready to simplify your billing?
           </h2>
           <p className="mt-3 text-white/70">
-            Start a {TRIAL_DURATION_DAYS}-day free trial — no credit card required.
+            Starting at {formatInr(STARTS_FROM_PER_DAY)}/day. Request an account and we&apos;ll
+            follow up — or email{' '}
+            <a href={`mailto:${BILLGENIE_SUPPORT_EMAIL}`} className="font-semibold text-white underline">
+              {BILLGENIE_SUPPORT_EMAIL}
+            </a>
+            .
           </p>
           <Link
-            to="/register"
+            to="/register?path=request"
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-primary-mid hover:shadow-lg active:scale-95"
           >
-            Start free trial <ArrowRight size={18} />
+            Request an account <ArrowRight size={18} />
           </Link>
         </div>
       </section>
