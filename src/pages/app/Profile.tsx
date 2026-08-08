@@ -635,10 +635,7 @@ export function Profile() {
     setSuccessMsg(null);
     try {
       const payload = {
-        name: form.name.trim() || undefined,
-        address: form.address.trim() || undefined,
-        // State/city are set at signup and are not editable on profile.
-        contact_number: form.contact_number.trim() || undefined,
+        // Name / address / phone / cuisine / location are view-only on this page.
         upi_id: form.upi_id.trim() || undefined,
         upi_qr_code: form.upi_qr_code || undefined,
         is_self_service: form.is_self_service,
@@ -788,7 +785,7 @@ export function Profile() {
     <div className="space-y-6">
       <PageHeader
         title="Restaurant Profile"
-        subtitle="Manage your restaurant's public information and settings"
+        subtitle="View restaurant details and manage settings"
       />
 
       {/* Section 0: Subscription (shown first, before the form) */}
@@ -803,21 +800,21 @@ export function Profile() {
         {/* Section 1: Restaurant Info */}
         <SectionCard title="Restaurant Info">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Restaurant Name *">
+            <Field label="Restaurant Name">
               <input
                 type="text"
-                value={form.name}
-                onChange={(e) => set('name', e.target.value)}
-                placeholder="e.g. Spice Garden"
+                value={form.name || '—'}
+                disabled
+                readOnly
                 className={inputClass}
               />
             </Field>
             <Field label="Phone Number">
               <input
                 type="tel"
-                value={form.contact_number}
-                onChange={(e) => set('contact_number', e.target.value)}
-                placeholder="+91 00000 00000"
+                value={form.contact_number || '—'}
+                disabled
+                readOnly
                 className={inputClass}
               />
             </Field>
@@ -825,9 +822,9 @@ export function Profile() {
           <Field label="Address">
             <input
               type="text"
-              value={form.address}
-              onChange={(e) => set('address', e.target.value)}
-              placeholder="Street address"
+              value={form.address || '—'}
+              disabled
+              readOnly
               className={inputClass}
             />
           </Field>
@@ -851,20 +848,21 @@ export function Profile() {
               />
             </Field>
           </div>
-          <p className="text-xs text-gray-500">
-            State and city are set during signup and cannot be changed here.
-          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Cuisine type" optional>
               <input
                 type="text"
-                value={form.cuisine}
-                onChange={(e) => set('cuisine', e.target.value)}
-                placeholder="e.g. Indian, Chinese"
+                value={form.cuisine || '—'}
+                disabled
+                readOnly
                 className={inputClass}
               />
             </Field>
           </div>
+          <p className="text-xs text-gray-500">
+            Restaurant name, address, phone, and location are set at signup. Contact BillGenie
+            support to change them.
+          </p>
         </SectionCard>
 
         {/* Section 2: Tables */}
