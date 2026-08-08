@@ -31,7 +31,7 @@ export function Footer() {
                 </li>
                 <li>
                   <Link to="/register" className="hover:text-primary">
-                    Start free trial
+                    Sign up
                   </Link>
                 </li>
                 <li>

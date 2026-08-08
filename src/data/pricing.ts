@@ -44,6 +44,9 @@ export const PLAN_MONTHLY_BY_TIER: Record<PlanBand, Record<CityTier, number>> = 
 
 export const BASIC_MONTHLY_PRICE = PLAN_MONTHLY_BY_TIER.starter.tier_2;
 export const STARTS_FROM_MONTHLY = PLAN_MONTHLY_BY_TIER.starter.tier_3;
+/** Marketing teaser only — equivalent of lowest catalog monthly / 30. */
+export const STARTS_FROM_PER_DAY = Math.max(1, Math.floor(STARTS_FROM_MONTHLY / 30));
+export const BILLGENIE_SUPPORT_EMAIL = 'hello@thebillgenie.com';
 export const BASIC_MONTHLY_BY_TIER: Record<CityTier, number> = PLAN_MONTHLY_BY_TIER.starter;
 export const ANNUAL_MULTIPLIER = 11;
 export const QUARTERLY_MULTIPLIER = 3;

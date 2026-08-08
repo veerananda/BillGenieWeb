@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Copy, Loader2, ChevronLeft } from 'lucide-react';
 import { apiClient, type AccountInvitePreview } from '../../services/api';
 import {
@@ -12,9 +12,17 @@ import { INDIA_LOCATION_OPTIONS, citiesForState } from '../../data/indiaLocation
 
 type RegisterPath = 'chooser' | 'request' | 'request_done' | 'complete';
 
+function initialRegisterPath(searchParams: URLSearchParams): RegisterPath {
+  const raw = (searchParams.get('path') || searchParams.get('step') || '').toLowerCase();
+  if (raw === 'request' || searchParams.get('request') === '1') return 'request';
+  if (raw === 'complete') return 'complete';
+  return 'chooser';
+}
+
 export function Register() {
   const navigate = useNavigate();
-  const [path, setPath] = useState<RegisterPath>('chooser');
+  const [searchParams] = useSearchParams();
+  const [path, setPath] = useState<RegisterPath>(() => initialRegisterPath(searchParams));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -445,6 +453,15 @@ export function Register() {
         Already have an account?{' '}
         <Link to="/login" className="font-semibold text-primary">
           Sign in
+        </Link>
+      </p>
+      <p className="mt-3 text-center text-sm text-gray-500">
+        <Link to="/terms" className="font-semibold text-primary hover:underline">
+          Terms
+        </Link>
+        <span className="mx-2 text-gray-400">·</span>
+        <Link to="/privacy" className="font-semibold text-primary hover:underline">
+          Privacy
         </Link>
       </p>
     </div>
